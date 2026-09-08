@@ -29,6 +29,25 @@ function safeNext(next: string | null) {
   return next && next.startsWith("/") ? next : null;
 }
 
+function isUniqueViolation(err: unknown) {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    ((err as { code?: string }).code === "23505" ||
+      String((err as Error).message ?? "").includes("duplicate key"))
+  );
+}
+
+function infraError(scope: string, err: unknown) {
+  // Log the real cause server-side (visible in Vercel Runtime Logs),
+  // return a safe message to the browser.
+  console.error(`[zybble] ${scope} failed:`, err);
+  return {
+    error:
+      "Something went wrong on our side — please try again in a moment. If it persists, the database may not be reachable (see /api/health).",
+  };
+}
+
 export async function signup(
   _prev: AuthState,
   formData: FormData,
@@ -50,8 +69,11 @@ export async function signup(
       .values({ name, email, passwordHash: await hashPassword(password) })
       .returning({ id: users.id });
     userId = created.id;
-  } catch {
-    return { error: "An account with this email already exists. Log in instead." };
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return { error: "An account with this email already exists. Log in instead." };
+    }
+    return infraError("signup", err);
   }
 
   await setSessionCookie(userId);
@@ -70,11 +92,16 @@ export async function login(
     return { error: parsed.error.issues[0]?.message ?? "Invalid details" };
   }
 
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.email, parsed.data.email))
-    .limit(1);
+  let user: typeof users.$inferSelect | undefined;
+  try {
+    [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, parsed.data.email))
+      .limit(1);
+  } catch (err) {
+    return infraError("login", err);
+  }
 
   if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
     return { error: "Incorrect email or password." };

@@ -20,10 +20,11 @@ export function appOrigin(req: Request) {
 /** Step 1 — redirect the user to Google's consent screen. */
 export async function GET(req: Request) {
   const origin = appOrigin(req);
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
 
   if (!clientId || !clientSecret) {
+    console.error("[zybble] google oauth start: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set");
     return NextResponse.redirect(
       new URL("/auth?error=google_not_configured", origin),
     );

@@ -16,12 +16,12 @@ import { uid } from "@/lib/utils";
 const API = "https://api.razorpay.com/v1";
 
 export function razorpayConfigured() {
-  return Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+  return Boolean(process.env.RAZORPAY_KEY_ID?.trim() && process.env.RAZORPAY_KEY_SECRET?.trim());
 }
 
 function authHeader() {
-  const key = process.env.RAZORPAY_KEY_ID!;
-  const secret = process.env.RAZORPAY_KEY_SECRET!;
+  const key = process.env.RAZORPAY_KEY_ID!.trim();
+  const secret = process.env.RAZORPAY_KEY_SECRET!.trim();
   return "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
 }
 

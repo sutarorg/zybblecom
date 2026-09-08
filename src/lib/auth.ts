@@ -33,16 +33,18 @@ export async function createSessionToken(userId: string) {
     .sign(getSecret());
 }
 
+export const SESSION_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+  maxAge: THIRTY_DAYS,
+};
+
 export async function setSessionCookie(userId: string) {
   const token = await createSessionToken(userId);
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: THIRTY_DAYS,
-  });
+  store.set(SESSION_COOKIE, token, SESSION_COOKIE_OPTIONS);
 }
 
 export async function clearSessionCookie() {

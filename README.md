@@ -314,3 +314,20 @@ curl -X POST https://<your-domain>/api/cron/settle \
 ```
 
 Make a test purchase (test mode shows the simulated gateway if keys are unset), then press **Run settlement now** in **Admin → Payouts** to see the full pipeline end-to-end.
+
+---
+
+## 9. Troubleshooting sign-in on your deployment
+
+If **email or Google sign-in fails on Vercel**, work through this list — it covers every known cause:
+
+0. **Deploy the latest commit first.** Many auth fixes only help once deployed: `git push` (Vercel auto-deploys), wait for **Deployments → Ready**, then hard-refresh the site.
+1. **Check `/api/health` first.** Open `https://<your-domain>/api/health`. It reports whether the database is reachable, which tables exist, and gives a precise hint when something is missing.
+2. **`"Missing tables …"` in the health response** → the schema was never pushed to the production database. Run **§8.3** (`npx drizzle-kit push` + the guard-index SQL) with your production `DATABASE_URL`, then refresh `/api/health`.
+3. **`"Missing columns: users.google_sub"` in the health response (schema drift)** → the database was pushed *before* the Google-auth update and never re-pushed. Run `npx drizzle-kit push` again with your production `DATABASE_URL` — Drizzle only adds what's missing. Until you do, **login and Google sign-in query a column that doesn't exist and crash**, while public pages keep working.
+4. **`db: "error"` in the health response** → `DATABASE_URL` is wrong or unreachable in **Vercel → Project → Settings → Environment Variables**. The app applies TLS automatically for hosted Postgres (Neon/Supabase/RDS), so plain connection strings work. After editing env vars: **Deployments → ⋯ → Redeploy** (env changes never apply to old builds).
+5. **Google button shows "Google sign-in isn't configured"** → `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are not set in Vercel (§3.7). Values are trimmed automatically, but make sure there is no trailing whitespace or quotes.
+6. **Google redirects back with another error** → open **Vercel → Deployments → Runtime Logs** and look for `[zybble] google oauth failed:` lines — the exact Google error is logged there. The usual causes are in Google Cloud → Credentials: the **redirect URI must exactly match** `https://<your-domain>/api/auth/google/callback` (no trailing slash), the **JavaScript origin** must be `https://<your-domain>`, and if the **OAuth consent screen is in "Testing" mode**, every Google account that signs in must be listed under **Test users** (or publish the app).
+7. **Sign-in succeeds but you're instantly logged out** → `AUTH_SECRET` changed between deploys or is missing on some instances. Set one fixed value (§3.2) and redeploy.
+8. **Email login says "Incorrect email or password"** for the demo accounts → those accounts are only seeded when the schema exists; if you set `SEED_DEMO=false`, create your own account via **Sign up** first. The admin is created from `ADMIN_EMAIL` / `ADMIN_PASSWORD` on first boot.
+9. **Everything 500s, not just auth** → `DATABASE_URL` is missing entirely (the app refuses to start without it). Set it and redeploy.

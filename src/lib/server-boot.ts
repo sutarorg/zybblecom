@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   courses,
@@ -254,11 +254,32 @@ async function seedDemo() {
   console.log("[zybble] demo seed ready (set SEED_DEMO=false to disable)");
 }
 
+/** Idempotent schema patches — self-heals column/index drift on databases
+ *  that were pushed before an upgrade, so auth can't be broken by a stale
+ *  schema. Full table creation still belongs to `drizzle-kit push`. */
+async function ensureSchemaPatch() {
+  await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub text`);
+  await db.execute(
+    sql`CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_unique ON users (google_sub)`,
+  );
+  await db.execute(
+    sql`CREATE UNIQUE INDEX IF NOT EXISTS purchases_paid_unique ON purchases (buyer_id, course_id) WHERE status = 'paid'`,
+  );
+}
+
 let booted = false;
 
 export async function boot() {
   if (booted) return;
   booted = true;
+
+  try {
+    await ensureSchemaPatch();
+  } catch (err) {
+    // Tables may not exist yet on a brand-new database — drizzle-kit push
+    // covers that; the patch will simply retry on the next boot.
+    console.error("[zybble] schema patch skipped:", err instanceof Error ? err.message : err);
+  }
 
   try {
     await seedCore();
