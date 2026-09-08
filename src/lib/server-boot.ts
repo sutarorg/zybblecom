@@ -25,12 +25,26 @@ async function upsertUser(name: string, email: string, password: string, isAdmin
   return created;
 }
 
-/** Idempotent demo seed — creates the admin, demo creator/buyer, courses,
- *  a settled payout and a pending balance so every dashboard has real data. */
-async function seed() {
+/** Core seed (always runs): platform settings row + the admin account. */
+async function seedCore() {
   await getPlatformSettings();
 
-  await upsertUser("Zybble Admin", "admin@zybble.com", "admin12345", true);
+  const admin = await upsertUser(
+    process.env.ADMIN_NAME ?? "Zybble Admin",
+    process.env.ADMIN_EMAIL ?? "admin@zybble.com",
+    process.env.ADMIN_PASSWORD ?? "admin12345",
+    true,
+  );
+  if (!process.env.ADMIN_EMAIL) {
+    console.log("[zybble] default admin created: admin@zybble.com / admin12345");
+    console.log("[zybble] set ADMIN_EMAIL, ADMIN_PASSWORD and ADMIN_NAME to customize it");
+  }
+  return admin;
+}
+
+/** Demo seed (skippable with SEED_DEMO=false): creator/buyer accounts,
+ *  two published courses, a settled payout and a pending balance. */
+async function seedDemo() {
   const creator = await upsertUser("Aarav Mehta", "creator@zybble.com", "creator12345");
   const buyer = await upsertUser("Ishita Rao", "buyer@zybble.com", "buyer12345");
 
@@ -198,7 +212,7 @@ async function seed() {
     return p;
   }
 
-  // A settled sale from 5 days ago + its 4-PM payout from 4 days ago.
+  // A settled sale from 5 days ago + its payout from 4 days ago.
   const p1 = await ensurePaid("order_sim_seed_h1", course1.id, 5);
   if (p1 && !p1.payoutId) {
     const [existingPayout] = await db
@@ -225,7 +239,7 @@ async function seed() {
     await db.update(purchases).set({ payoutId: payoutRow.id }).where(eq(purchases.id, p1.id));
   }
 
-  // A fresh unsettled sale — lands in the next 4:00 PM run.
+  // A fresh unsettled sale — lands in the next settlement run.
   await ensurePaid("order_sim_seed_pending", course2.id, 1);
 
   // Buyer progress: 3/5 lessons done in course 1.
@@ -237,7 +251,7 @@ async function seed() {
       .onConflictDoNothing();
   }
 
-  console.log("[zybble] demo seed ready");
+  console.log("[zybble] demo seed ready (set SEED_DEMO=false to disable)");
 }
 
 let booted = false;
@@ -247,12 +261,22 @@ export async function boot() {
   booted = true;
 
   try {
-    await seed();
+    await seedCore();
+    if (process.env.SEED_DEMO !== "false") {
+      await seedDemo();
+    }
   } catch (err) {
     console.error("[zybble] seed failed (continuing):", err);
   }
 
-  // Scheduled settlement — every day at 4:00 PM.
+  // On Vercel, serverless instances don't stay alive — the 4:00 PM settlement
+  // is triggered by Vercel Cron hitting /api/cron/settle (see vercel.json).
+  // Everywhere else (VPS, Docker, local `next start`), arm an in-process cron.
+  if (process.env.VERCEL) {
+    console.log("[zybble] Vercel detected — settlements via Vercel Cron (/api/cron/settle)");
+    return;
+  }
+
   try {
     const cron = (await import("node-cron")).default;
     const { runSettlement } = await import("@/lib/settlement");

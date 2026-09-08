@@ -26,11 +26,14 @@ Zybble ([zybble.com](https://zybble.com)) is a mobile-first course-selling platf
 
 ```bash
 npm install
-npx drizzle-kit push      # create tables in PostgreSQL
-npm run dev               # http://localhost:3000
+cp .env.example .env    # then fill in values (see §3)
+npx drizzle-kit push    # create tables in PostgreSQL
+# one extra guard index against duplicate enrollments:
+psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS purchases_paid_unique ON purchases (buyer_id, course_id) WHERE status = 'paid';"
+npm run dev             # http://localhost:3000
 ```
 
-Production:
+Production (VPS / Docker / any Node host):
 
 ```bash
 npm run build && npm start
@@ -150,7 +153,12 @@ Protects the HTTP settlement trigger (`/api/cron/settle`) so only your scheduler
 1. Generate: `openssl rand -base64 24` → set as `CRON_SECRET`.
 2. Call it with either an `Authorization: Bearer <CRON_SECRET>` header or `?secret=<CRON_SECRET>`.
 
-> An in-process scheduler already runs the settlement **every day at 4:00 PM** automatically — this endpoint is for external schedulers (system cron, GitHub Actions, Vercel Cron) and manual admin runs.
+> **On Vercel this variable is required**: Vercel Cron automatically sends
+> `Authorization: Bearer <CRON_SECRET>` when invoking the job declared in
+> `vercel.json` — no extra setup needed. Everywhere else, an in-process
+> scheduler runs the settlement **every day at 4:00 PM** automatically, and
+> this endpoint covers external schedulers (system cron, GitHub Actions) and
+> manual admin runs.
 
 ### 3.9 `SETTLEMENT_TZ`
 
@@ -217,3 +225,92 @@ src/
 | `npm run build` / `npm start` | Production build / serve |
 | `npx drizzle-kit push` | Apply `src/db/schema.ts` to PostgreSQL |
 | `npm run typecheck` | TypeScript check |
+
+---
+
+## 8. Deploy to production on Vercel (via GitHub) — click-by-click
+
+The repo is deployment-ready: `.env` is git-ignored (only `.env.example` is committed), `vercel.json` already declares the daily settlement cron, and the app auto-detects Vercel.
+
+### 8.1 Push the code to GitHub
+
+```bash
+git init
+git add -A
+git commit -m "Zybble — initial release"
+git branch -M main
+```
+
+Then either use the GitHub CLI:
+
+```bash
+gh repo create zybble --private --source=. --push
+```
+
+…or create the repo manually: <https://github.com/new> → name it `zybble` → **Create repository** → then:
+
+```bash
+git remote add origin https://github.com/<your-username>/zybble.git
+git push -u origin main
+```
+
+### 8.2 Create a production database
+
+Follow **§3.1 (Neon)** to create a hosted PostgreSQL database and copy its pooled connection string — this becomes your production `DATABASE_URL`. (Vercel Postgres or Supabase work identically.)
+
+### 8.3 Apply the schema to the production database
+
+From your own machine (drizzle.config.ts reads `DATABASE_URL` from `.env`):
+
+```bash
+# temporarily point .env's DATABASE_URL at the production database, then:
+npx drizzle-kit push
+psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS purchases_paid_unique ON purchases (buyer_id, course_id) WHERE status = 'paid';"
+```
+
+### 8.4 Import the repo into Vercel
+
+1. Go to <https://vercel.com> → **Log in** → **Continue with GitHub**.
+2. Dashboard → **Add New…** → **Project**.
+3. Under **Import Git Repository** find `zybble` (click **Adjust GitHub App Permissions** and grant access if it isn't listed) → **Import**.
+4. **Framework Preset** shows **Next.js** automatically — leave Build and Output Settings untouched.
+5. Expand **Environment Variables** and add these rows (values from §3):
+
+   | Key | Value |
+   | --- | --- |
+   | `DATABASE_URL` | Your Neon/production connection string (§3.1) |
+   | `AUTH_SECRET` | `openssl rand -base64 32` (§3.2) |
+   | `NEXT_PUBLIC_APP_URL` | `https://<your-project>.vercel.app` for now — update to `https://zybble.com` after adding the domain |
+   | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | §3.4 (leave empty to stay in test mode) |
+   | `RAZORPAY_WEBHOOK_SECRET` | §3.5 |
+   | `RAZORPAYX_ACCOUNT_NUMBER` | §3.6 (empty = simulated payouts) |
+   | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | §3.7 |
+   | `CRON_SECRET` | `openssl rand -base64 24` — **required** (§3.8) |
+   | `SETTLEMENT_TZ` | `Asia/Kolkata` |
+   | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | Your admin login (created on first boot) |
+   | `SEED_DEMO` | `false` for a clean production start, `true` to include demo courses |
+
+6. Click **Deploy** and wait ~2 minutes.
+
+### 8.5 The 4:00 PM settlement on Vercel
+
+- `vercel.json` declares it: `path: /api/cron/settle`, `schedule: 30 10 * * *` — cron schedules on Vercel are **UTC**, and `10:30 UTC` = **4:00 PM Asia/Kolkata**. After deploying, see it under **Project → Settings → Cron Jobs**.
+- Vercel Cron automatically sends `Authorization: Bearer $CRON_SECRET`, so just make sure `CRON_SECRET` is set. (Hobby plans allow one invocation per day — this schedule fits.)
+- To change the time, edit the `schedule` in `vercel.json` (UTC) and redeploy. On non-Vercel hosts (`next start`, Docker, VPS) the in-process scheduler arms itself at 16:00 in `SETTLEMENT_TZ` instead — both paths run the same settlement engine.
+
+### 8.6 Post-deploy wiring (2 minutes)
+
+1. **Razorpay webhook** (§3.5): set the URL to `https://<your-domain>/api/webhooks/razorpay`.
+2. **Google OAuth** (§3.7): add `https://<your-domain>` as a JavaScript origin and `https://<your-domain>/api/auth/google/callback` as a redirect URI in the Google Cloud console.
+3. **Custom domain**: Vercel → **Settings → Domains** → add `zybble.com` → follow the DNS instructions (A record `76.76.21.21` or CNAME `cname.vercel-dns.com`) → HTTPS is automatic. Then update `NEXT_PUBLIC_APP_URL`, the webhook URL, and the Google URIs to the final domain and **Redeploy**.
+4. On first request the app seeds the admin account (and demo data unless `SEED_DEMO=false`). Log in at `/auth`.
+
+### 8.7 Verify the deployment
+
+```bash
+curl https://<your-domain>/api/health                        # {"ok":true}
+curl -X POST https://<your-domain>/api/cron/settle \
+  -H "Authorization: Bearer <CRON_SECRET>"                   # settlement summary JSON
+```
+
+Make a test purchase (test mode shows the simulated gateway if keys are unset), then press **Run settlement now** in **Admin → Payouts** to see the full pipeline end-to-end.
