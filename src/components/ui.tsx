@@ -36,12 +36,15 @@ export function Button({
 export function Card({
   className,
   children,
+  style,
 }: {
   className?: string;
   children: ReactNode;
+  style?: React.CSSProperties;
 }) {
   return (
     <div
+      style={style}
       className={cx(
         "rounded-3xl border border-line bg-white shadow-[var(--shadow-card)]",
         className,

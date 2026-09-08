@@ -11,7 +11,9 @@ import { runSettlement } from "@/lib/settlement";
  */
 async function handle(req: Request) {
   const expected = process.env.CRON_SECRET;
-  const provided = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const provided =
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
+    new URL(req.url).searchParams.get("secret");
 
   let ok = expected && provided === expected;
   if (!ok) {

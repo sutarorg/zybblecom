@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Users, IndianRupee, CalendarDays } from "lucide-react";
 import { Card } from "@/components/ui";
 import { formatINR } from "@/lib/money";
 
@@ -8,9 +9,7 @@ export function Calculator() {
   const [price, setPrice] = useState(1499);
   const [students, setStudents] = useState(60);
 
-  const gross = price * 100 * students;
-  const fee = Math.round(gross * 0.1);
-  const keep = gross - fee;
+  const monthly = price * 100 * students;
 
   const sliderStyle = (value: number, min: number, max: number) =>
     ({ "--fill": `${((value - min) / (max - min)) * 100}%` }) as React.CSSProperties;
@@ -67,37 +66,43 @@ export function Calculator() {
         </div>
       </Card>
 
-      <Card className="flex flex-col justify-between gap-6 bg-ink p-6 text-paper sm:p-8">
+      <div className="flex flex-col justify-between gap-6 rounded-3xl border border-ink bg-ink p-6 text-paper shadow-[var(--shadow-card)] sm:p-8">
         <div className="space-y-4">
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
-            <span className="text-sm text-paper/60">Monthly sales</span>
-            <span className="font-display text-xl font-semibold">{formatINR(gross)}</span>
-          </div>
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
-            <span className="text-sm text-paper/60">Zybble fee · 10%</span>
-            <span className="font-display text-xl font-semibold text-red-300">
-              −{formatINR(fee)}
+          <div className="flex items-center justify-between gap-3 border-b border-white/15 pb-4">
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-paper/80">
+              <IndianRupee className="size-4 text-lime" /> Price per student
+            </span>
+            <span className="font-display text-xl font-semibold text-white">
+              {formatINR(price * 100)}
             </span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-paper/60">Settled to you · 90%</span>
-            <span className="font-display text-xl font-semibold text-lime">
-              {formatINR(keep)}
+          <div className="flex items-center justify-between gap-3 border-b border-white/15 pb-4">
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-paper/80">
+              <Users className="size-4 text-lime" /> Monthly students
+            </span>
+            <span className="font-display text-xl font-semibold text-white">{students}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-paper/80">
+              <CalendarDays className="size-4 text-lime" /> Yearly projection
+            </span>
+            <span className="font-display text-xl font-semibold text-white">
+              {formatINR(monthly * 12)}
             </span>
           </div>
         </div>
         <div className="rounded-2xl bg-lime p-5 text-ink">
-          <p className="text-xs font-semibold uppercase tracking-wide opacity-70">
-            You keep every month
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink/60">
+            Projected monthly revenue
           </p>
-          <p className="font-display text-4xl font-bold tracking-tight sm:text-5xl">
-            {formatINR(keep)}
+          <p className="font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+            {formatINR(monthly)}
           </p>
-          <p className="mt-1 text-sm font-medium opacity-70">
-            {formatINR(keep * 12)} per year
+          <p className="mt-1 text-sm font-medium text-ink/60">
+            from {students} student{students === 1 ? "" : "s"} at {formatINR(price * 100)} each
           </p>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

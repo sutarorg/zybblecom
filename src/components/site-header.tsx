@@ -26,8 +26,11 @@ export async function SiteHeader() {
             <Link href="/#how-it-works" className={buttonClasses("ghost", "sm")}>
               How it works
             </Link>
-            <Link href="/#pricing" className={buttonClasses("ghost", "sm")}>
-              Fees
+            <Link href="/#why-zybble" className={buttonClasses("ghost", "sm")}>
+              Why Zybble
+            </Link>
+            <Link href="/#faq" className={buttonClasses("ghost", "sm")}>
+              FAQ
             </Link>
             {user && (
               <>

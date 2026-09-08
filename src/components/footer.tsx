@@ -7,14 +7,14 @@ export function Footer() {
         <div className="space-y-3">
           <Logo />
           <p className="max-w-xs text-sm text-ink-soft">
-            Sell what you know with a single link. You keep 90% of every sale,
-            settled to your bank daily at 4:00 PM.
+            Sell what you know with a single link. Secure checkout, instant
+            student access and automatic payouts straight to your bank.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-x-16 gap-y-2 text-sm text-ink-soft">
           <a href="/#how-it-works" className="hover:text-ink">How it works</a>
-          <a href="/#pricing" className="hover:text-ink">Fees</a>
-          <a href="/auth" className="hover:text-ink">Log in</a>
+          <a href="/#why-zybble" className="hover:text-ink">Why Zybble</a>
+          <a href="/#faq" className="hover:text-ink">FAQ</a>
           <a href="/auth?mode=signup" className="hover:text-ink">Become a creator</a>
         </div>
       </div>

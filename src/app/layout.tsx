@@ -5,11 +5,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://zybble.com"),
   title: {
-    default: "Zybble — Sell what you know. Keep 90%.",
+    default: "Zybble — Sell what you know with a single link",
     template: "%s · Zybble",
   },
   description:
-    "Zybble lets anyone instantly create, publish and sell courses with a single shareable link. Secure Razorpay payments, daily 4 PM settlements, you keep 90% of every sale.",
+    "Zybble lets anyone instantly create, publish and sell courses with a single shareable link. Secure Razorpay checkout, instant student access, and automatic payouts straight to your bank.",
   openGraph: {
     siteName: "Zybble",
     type: "website",

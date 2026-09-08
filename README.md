@@ -1,0 +1,219 @@
+# Zybble — sell what you know, with a single link
+
+Zybble ([zybble.com](https://zybble.com)) is a mobile-first course-selling platform:
+
+- **Instant creators** — every registered user can create and publish courses immediately. No approvals.
+- **Link-first selling** — each course gets a unique shareable URL (`zybble.com/c/<slug>`). There is no public marketplace or explore page; the creator's link *is* the store.
+- **Razorpay payments** — secure checkout with server-side signature verification and webhook confirmation.
+- **Automatic daily settlements** — a scheduled payout run at **4:00 PM** transfers eligible creator earnings to their bank accounts with full audit records.
+- **90 / 10 split** — Zybble keeps a 10% platform fee, creators receive 90%. All financial math happens server-side in integer paise.
+
+---
+
+## 1. Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| Framework | Next.js 16 (App Router) + React 19 |
+| Database | PostgreSQL via Drizzle ORM |
+| Styling | Tailwind CSS v4 |
+| Payments | Razorpay Orders API + checkout.js + webhooks |
+| Payouts | RazorpayX (contacts → fund accounts → payouts) |
+| Auth | Email/password (bcrypt + JWT session cookie) and Google OAuth 2.0 |
+| Scheduler | `node-cron` in-process (daily 16:00) + protected HTTP endpoint |
+
+## 2. Quick start
+
+```bash
+npm install
+npx drizzle-kit push      # create tables in PostgreSQL
+npm run dev               # http://localhost:3000
+```
+
+Production:
+
+```bash
+npm run build && npm start
+```
+
+**Demo accounts** (seeded automatically on first boot):
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Admin | `admin@zybble.com` | `admin12345` |
+| Creator (has 2 published courses) | `creator@zybble.com` | `creator12345` |
+| Buyer | `buyer@zybble.com` | `buyer12345` |
+
+> **Test mode** — if Razorpay keys are absent, the platform simulates the gateway
+> end-to-end (orders, payment success/failure, signature flow, payouts). The moment
+> live keys are set, simulation is permanently disabled.
+
+## 3. Environment variables — where to find every value
+
+All variables live in **`.env`** at the project root. Below is each one with
+click-by-click instructions.
+
+### 3.1 `DATABASE_URL` ✱ required
+
+PostgreSQL connection string.
+
+**Local PostgreSQL:** keep the default `postgresql://postgres:postgres@127.0.0.1:5432/app_db`, then create the DB:
+
+```bash
+psql postgresql://postgres:postgres@127.0.0.1:5432/postgres -c "CREATE DATABASE app_db;"
+```
+
+**Neon (free hosted option):**
+1. Go to <https://neon.tech> → **Sign up** → **Create a project**.
+2. Pick a name (e.g. `zybble`) and region → **Create project**.
+3. On the project dashboard click **Connect** → copy the **connection string** (it looks like `postgresql://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require`).
+4. Paste it as `DATABASE_URL`.
+
+### 3.2 `AUTH_SECRET` ✱ required in production
+
+Signs session cookies and test-mode payment tokens. Any long random string works:
+
+```bash
+openssl rand -base64 32
+```
+
+Paste the output as `AUTH_SECRET`. Rotate it any time — users will simply be logged out.
+
+### 3.3 `NEXT_PUBLIC_APP_URL` ✱ required for Google OAuth in production
+
+The public origin of the app, no trailing slash — used to build the absolute Google redirect URL.
+
+- Local development: leave unset (`http://localhost:3000` is used).
+- Production: set `NEXT_PUBLIC_APP_URL=https://zybble.com`.
+
+### 3.4 Razorpay keys — `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET`
+
+Enables live checkout, payment signature verification, and RazorpayX payouts.
+
+1. Go to <https://dashboard.razorpay.com> and log in (KYC required for **live** mode; **test** mode works immediately).
+2. Use the mode toggle in the top-left to pick **Test** (recommended first) or **Live**.
+3. In the left sidebar click **Settings** → **API Keys**.
+4. Click **Generate Test Key** (or **Regenerate Live Key**).
+5. A dialog shows the **Key Id** (`rzp_test_...` / `rzp_live_...`) and **Key Secret**.
+6. Copy **Key Id** → `RAZORPAY_KEY_ID`, **Key Secret** → `RAZORPAY_KEY_SECRET`. The secret is shown only once — save it immediately.
+
+### 3.5 `RAZORPAY_WEBHOOK_SECRET`
+
+Verifies that webhook calls genuinely come from Razorpay (the app returns `400` otherwise).
+
+1. First invent your own secret, e.g. `openssl rand -base64 24` → set it as `RAZORPAY_WEBHOOK_SECRET`.
+2. Razorpay Dashboard → **Settings** → **Webhooks** → **+ Add New Webhook**.
+3. **Webhook URL**: `https://zybble.com/api/webhooks/razorpay` (use your real domain; for local testing use a tunnel like `ngrok http 3000`).
+4. **Secret**: paste the *same* value you set in step 1.
+5. Under **Active events** tick **`payment.captured`** and **`payment.failed`**.
+6. Click **Create Webhook**. Razorpay will now POST signed events to the platform.
+
+### 3.6 `RAZORPAYX_ACCOUNT_NUMBER`
+
+The RazorpayX current account that **funds** creator payouts (the daily 4:00 PM settlement).
+
+1. Razorpay Dashboard → left sidebar → **RazorpayX** → **Get started** and complete RazorpayX activation for your business.
+2. In RazorpayX open **Accounts & Settings** (or **My Account**).
+3. Copy your **RazorpayX current account number**.
+4. Set it as `RAZORPAYX_ACCOUNT_NUMBER`.
+5. Keep the account funded — payouts with insufficient balance either queue or fail (the run records the failure and retries the purchase batch next run).
+
+> No separate API keys are needed for payouts — the same `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` authenticate RazorpayX. If this variable is empty, payouts stay in simulation mode.
+> In **test mode**, RazorpayX payouts also require enabling **Payouts** in test mode and using test funds; until then, leave this empty and enjoy the simulator.
+
+### 3.7 Google sign-in — `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`
+
+Powers the **Continue with Google** button on the auth page.
+
+1. Go to <https://console.cloud.google.com> and sign in with a Google account.
+2. Top bar → project picker → **New Project** → name it (e.g. `Zybble`) → **Create**.
+3. Left menu → **APIs & Services** → **OAuth consent screen** → **Get started**.
+4. Enter **App name** (`Zybble`) and a **User support email** → click **Next**.
+5. Audience: choose **External** → **Next** → add your contact email → **Next** → agree → **Create**.
+6. Left menu → **APIs & Services** → **Credentials** → **+ Create Credentials** → **OAuth client ID**.
+7. **Application type**: **Web application**. Name: `Zybble Web`.
+8. **Authorized JavaScript origins** → **+ Add URI**: add
+   - `http://localhost:3000`
+   - `https://zybble.com` (your real domain)
+9. **Authorized redirect URIs** → **+ Add URI**: add
+   - `http://localhost:3000/api/auth/google/callback`
+   - `https://zybble.com/api/auth/google/callback`
+10. Click **Create**. A dialog shows **Client ID** (`....apps.googleusercontent.com`) and **Client Secret** (`GOCSPX-...`).
+11. Copy them into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, restart the app.
+
+The callback route verifies the ID token's signature/audience with Google before creating or linking the user.
+
+### 3.8 `CRON_SECRET`
+
+Protects the HTTP settlement trigger (`/api/cron/settle`) so only your scheduler can invoke it.
+
+1. Generate: `openssl rand -base64 24` → set as `CRON_SECRET`.
+2. Call it with either an `Authorization: Bearer <CRON_SECRET>` header or `?secret=<CRON_SECRET>`.
+
+> An in-process scheduler already runs the settlement **every day at 4:00 PM** automatically — this endpoint is for external schedulers (system cron, GitHub Actions, Vercel Cron) and manual admin runs.
+
+### 3.9 `SETTLEMENT_TZ`
+
+IANA timezone for the built-in 16:00 schedule. Default `Asia/Kolkata`. Example: `Asia/Dubai`, `Europe/London`.
+
+---
+
+## 4. How money flows
+
+```
+Buyer ──/c/slug──▶ Order created (Razorpay, server-side)        purchase: created
+        ──checkout.js──▶ signature verified server-side         purchase: paid
+        ──webhook (double-entry confirmation, idempotent)──▶    purchase: paid
+                                                                    │
+Admin fee 10% ──▶ purchases.fee_paise        (platform revenue)     │
+Creator 90%  ──▶ purchases.creator_paise     (pending balance)      │
+        ──daily 4:00 PM settlement run──▶                           ▼
+        payout record + RazorpayX transfer ──▶ creator bank account
+```
+
+Duplicate-purchase protection: a partial unique index on `(buyer_id, course_id) WHERE status = 'paid'`, plus transactional re-checks, make double enrollment impossible — a colliding second payment is flagged for refund instead.
+
+## 5. Payout rules (admin-configurable)
+
+Configured in **Admin → Settings** and enforced by the settlement engine:
+
+- **Platform fee %** (default 10) — applied to all future orders.
+- **Minimum payout** (default ₹1) — smaller balances roll over to the next run.
+- **Clearing period hours** (default 0) — a sale becomes eligible N hours after purchase.
+
+A payout is skipped (and retried next run) if the creator has no bank account on file. Failed gateway transfers unlink their purchases so the next run retries them.
+
+## 6. Project structure
+
+```
+src/
+├─ app/
+│  ├─ page.tsx                  # Landing page
+│  ├─ auth/                     # Email + Google sign-in
+│  ├─ c/[slug]/                 # Public shareable course page (the store)
+│  ├─ learn/[courseId]/         # Course player + progress
+│  ├─ my-courses/               # Buyer dashboard
+│  ├─ creator/                  # Studio: courses, sales, payouts, bank
+│  ├─ admin/                    # Admin: users, courses, orders, payouts, settings
+│  └─ api/
+│     ├─ checkout/              # Order creation, verification, test simulator
+│     ├─ webhooks/razorpay/     # Signed payment webhooks (source of truth)
+│     ├─ auth/google/           # Google OAuth start + callback
+│     └─ cron/settle/           # Protected settlement trigger
+├─ db/schema.ts                 # Users, courses, lessons, purchases, payouts…
+├─ lib/
+│  ├─ razorpay.ts               # Orders, signature/webhook verify, RazorpayX payouts
+│  ├─ settlement.ts             # The 4:00 PM settlement engine
+│  ├─ checkout.ts               # Idempotent mark-paid with duplicate guard
+│  └─ server-boot.ts            # Demo seed + node-cron scheduler (16:00 daily)
+└─ instrumentation.ts           # Boots seed + scheduler with the server
+```
+
+## 7. Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start dev server |
+| `npm run build` / `npm start` | Production build / serve |
+| `npx drizzle-kit push` | Apply `src/db/schema.ts` to PostgreSQL |
+| `npm run typecheck` | TypeScript check |

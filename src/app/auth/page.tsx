@@ -16,9 +16,9 @@ async function AuthedRedirect() {
 export default async function AuthPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; next?: string }>;
+  searchParams: Promise<{ mode?: string; next?: string; error?: string }>;
 }) {
-  const { mode, next } = await searchParams;
+  const { mode, next, error } = await searchParams;
   return (
     <main className="flex min-h-dvh flex-col items-center px-4 py-10">
       <Suspense>
@@ -35,7 +35,11 @@ export default async function AuthPage({
             : "Log in to your studio, courses and payouts."}
         </p>
         <div className="mt-6">
-          <AuthForm initialMode={mode === "signup" ? "signup" : "login"} next={next ?? null} />
+          <AuthForm
+            initialMode={mode === "signup" ? "signup" : "login"}
+            next={next ?? null}
+            error={error ?? null}
+          />
         </div>
       </Card>
 

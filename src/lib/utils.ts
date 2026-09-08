@@ -1,5 +1,12 @@
+import { twMerge } from "tailwind-merge";
+
+/**
+ * Class combiner that resolves Tailwind conflicts deterministically —
+ * the last conflicting utility always wins (e.g. `bg-white` + `bg-ink`
+ * correctly yields ink regardless of generated stylesheet order).
+ */
 export function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
+  return twMerge(parts.filter(Boolean).join(" "));
 }
 
 export function slugify(input: string) {
