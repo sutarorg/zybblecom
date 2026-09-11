@@ -44,16 +44,20 @@ Any hosted Postgres works; these steps are for Neon (free tier is enough):
    `postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/DBNAME?sslmode=require`
 4. Save it — this is your `DATABASE_URL`.
 
-### Apply the database schema
+### Apply the database schema — this step is mandatory
 
-From the project folder on your machine:
+> ⚠️ **Sign-up, log-in, and every course page will 500 until the schema is pushed.** A live database connection (`/api/health` reachable) is not enough — the tables must actually exist.
+
+From the project folder on your machine, with the **exact same connection string** you put in Vercel (`DATABASE_URL`):
 
 ```bash
 npm install
 DATABASE_URL="paste-your-connection-string-here" npx drizzle-kit push --force
 ```
 
-`drizzle.config.ts` reads `DATABASE_URL` from the environment, so this works from anywhere — no config edits. You should see `Changes applied`. All 9 tables (users, sessions, courses, chapters, lessons, coupons, orders, enrollments, lesson_progress, settlements) now exist.
+`drizzle.config.ts` reads `DATABASE_URL` from the environment, so this works from anywhere — no config edits. You should see `Changes applied`. All 10 tables (users, sessions, courses, chapters, lessons, coupons, orders, enrollments, lesson_progress, settlements) now exist.
+
+**Verify afterwards:** open `https://your-domain/api/health` — it must return `{"ok":true,"db":true,...}`. The health probe now validates that the schema exists (not just the socket), so `ok:false` after a deploy almost always means this step was skipped or pointed at a different database than the one Vercel is using.
 
 ## Step 3 — Configure Google OAuth
 
@@ -131,6 +135,9 @@ Without these, free enrollment works and paid checkout shows a clear "payments n
 | `APP_SECURE_COOKIES` | Always `true` on Vercel (HTTPS) | `true` |
 
 6. Click **Deploy**. Wait ~1–2 minutes for the build; Vercel shows **Congratulations** with your live URL.
+
+   > **Reminder:** the schema push (Step 2) must have been run against the same `DATABASE_URL` you just added. If you generated a fresh Neon connection string while configuring Vercel, run `DATABASE_URL="<value>" npx drizzle-kit push --force` now — otherwise sign-up and log-in will 500.
+
 7. **Finished the first deploy?** Confirm the actual production domain (top of the project → **Domains**). If it's different from what you used:
    - Vercel: **Settings** → **Environment Variables** → pencil on `NEXT_PUBLIC_APP_URL` → set the real domain → **Save** → **Deployments** → ⋯ on latest → **Redeploy**.
    - Google Cloud: **Credentials** → **Zybble web** → add `https://REAL-DOMAIN/api/auth/google/callback` to **Authorized redirect URIs** → **Save** (propagates within ~5 minutes).
@@ -183,6 +190,8 @@ Rules: the path is always `/api/auth/google/callback`, **HTTPS only** in product
 
 | Symptom | Cause & fix |
 |---|---|
+| **Sign-up / log-in / every course page fails with a 500 (`x-action: postprocess` on Vercel), while `/api/health` says the DB is up** | **The schema was never pushed to the production database** (or it was pushed to a *different* database than `DATABASE_URL` on Vercel points to). Fix: run `DATABASE_URL="<the exact Vercel value>" npx drizzle-kit push --force` locally, then re-check `/api/health` — it now verifies the tables exist, not just connectivity. |
+| Sign-in form shows "database hasn't been set up yet" | Same as above — run the schema push against the exact `DATABASE_URL` configured in Vercel. |
 | Google shows `Error 400: redirect_uri_mismatch` | The callback URI isn't registered or doesn't match `NEXT_PUBLIC_APP_URL`. Compare character-for-character (https vs http, trailing slash) in Google Cloud → Credentials → Zybble web, then retry after ~5 minutes. |
 | `access_blocked: This app hasn't been verified` | Consent screen is in **Testing**. Add the account under **Audience → Test users**, or click **Publish app**. |
 | `/login?error=state` | Stale or blocked cookies (often third-party-cookie blocking in incognito). Reload `/login` and sign in again; ensure `APP_SECURE_COOKIES` matches the scheme (`true` only on HTTPS). |
