@@ -1,47 +1,68 @@
 "use server";
 
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { courses, progress, purchases } from "@/db/schema";
+import { chapters, courses, lessonProgress, lessons } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { getEnrollment } from "@/lib/queries";
 
-export async function toggleLessonComplete(lessonId: string, courseId: string) {
-  const user = await requireUser(`/learn/${courseId}`);
+export type ProgressResult =
+  | { ok: true; completed: boolean; done: number; total: number }
+  | { ok: false; error: string };
 
-  // Verify the user can access this course (bought it or created it).
-  const [course] = await db.select().from(courses).where(eq(courses.id, courseId)).limit(1);
-  if (!course) return;
-  if (course.creatorId !== user.id && !user.isAdmin) {
-    const [own] = await db
-      .select({ id: purchases.id })
-      .from(purchases)
-      .where(
-        and(
-          eq(purchases.buyerId, user.id),
-          eq(purchases.courseId, courseId),
-          eq(purchases.status, "paid"),
-        ),
-      )
-      .limit(1);
-    if (!own) return;
-  }
+export async function toggleLessonComplete(lessonId: string): Promise<ProgressResult> {
+  const user = await requireUser();
+
+  const [row] = await db
+    .select({ lesson: lessons, course: courses })
+    .from(lessons)
+    .innerJoin(chapters, eq(lessons.chapterId, chapters.id))
+    .innerJoin(courses, eq(chapters.courseId, courses.id))
+    .where(eq(lessons.id, lessonId))
+    .limit(1);
+  if (!row) return { ok: false, error: "Lesson not found." };
+
+  const enrollment = await getEnrollment(row.course.id, user.id);
+  if (!enrollment) return { ok: false, error: "You're not enrolled in this course." };
 
   const [existing] = await db
     .select()
-    .from(progress)
-    .where(and(eq(progress.userId, user.id), eq(progress.lessonId, lessonId)))
+    .from(lessonProgress)
+    .where(and(eq(lessonProgress.lessonId, lessonId), eq(lessonProgress.studentId, user.id)))
     .limit(1);
 
+  let completed: boolean;
   if (existing) {
-    await db.delete(progress).where(eq(progress.id, existing.id));
+    await db.delete(lessonProgress).where(eq(lessonProgress.id, existing.id));
+    completed = false;
   } else {
     await db
-      .insert(progress)
-      .values({ userId: user.id, courseId, lessonId })
+      .insert(lessonProgress)
+      .values({ lessonId, courseId: row.course.id, studentId: user.id })
       .onConflictDoNothing();
+    completed = true;
   }
 
-  revalidatePath(`/learn/${courseId}`);
-  revalidatePath("/my-courses");
+  const [total] = await db
+    .select({ count: sql<number>`count(${lessons.id})::int` })
+    .from(chapters)
+    .leftJoin(lessons, eq(lessons.chapterId, chapters.id))
+    .where(eq(chapters.courseId, row.course.id));
+
+  const [done] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(lessonProgress)
+    .where(
+      and(eq(lessonProgress.courseId, row.course.id), eq(lessonProgress.studentId, user.id)),
+    );
+
+  revalidatePath(`/learn`);
+  revalidatePath(`/learn/${row.course.slug}`);
+  return {
+    ok: true,
+    completed,
+    done: done?.count ?? 0,
+    total: total?.count ?? 0,
+  };
 }

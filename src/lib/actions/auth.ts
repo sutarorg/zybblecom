@@ -1,117 +1,83 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import {
-  clearSessionCookie,
+  createSession,
+  destroySession,
   hashPassword,
-  setSessionCookie,
+  homeFor,
+  isAdminEmail,
   verifyPassword,
 } from "@/lib/auth";
 
-export type AuthState = { error?: string } | null;
+export type AuthState = { error?: string };
+
+function safeNext(next: string | undefined, fallback: string) {
+  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+  return fallback;
+}
 
 const signupSchema = z.object({
-  name: z.string().trim().min(2, "Tell us your name").max(80),
-  email: z.string().trim().toLowerCase().email("Enter a valid email"),
-  password: z.string().min(8, "Password must be at least 8 characters").max(100),
+  name: z.string().trim().min(2, "Tell us your name."),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address."),
+  password: z.string().min(8, "Password must be at least 8 characters."),
+  role: z.enum(["creator", "buyer"]),
+  next: z.string().optional(),
 });
 
-const loginSchema = z.object({
-  email: z.string().trim().toLowerCase().email("Enter a valid email"),
-  password: z.string().min(1, "Enter your password"),
-});
-
-function safeNext(next: string | null) {
-  return next && next.startsWith("/") ? next : null;
-}
-
-function isUniqueViolation(err: unknown) {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    ((err as { code?: string }).code === "23505" ||
-      String((err as Error).message ?? "").includes("duplicate key"))
-  );
-}
-
-function infraError(scope: string, err: unknown) {
-  // Log the real cause server-side (visible in Vercel Runtime Logs),
-  // return a safe message to the browser.
-  console.error(`[zybble] ${scope} failed:`, err);
-  return {
-    error:
-      "Something went wrong on our side — please try again in a moment. If it persists, the database may not be reachable (see /api/health).",
-  };
-}
-
-export async function signup(
-  _prev: AuthState,
-  formData: FormData,
-): Promise<AuthState> {
+export async function signupAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const parsed = signupSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),
     password: formData.get("password"),
+    role: formData.get("role") === "creator" ? "creator" : "buyer",
+    next: formData.get("next") ?? undefined,
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid details" };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid details." };
   }
-  const { name, email, password } = parsed.data;
+  const { name, email, password, role, next } = parsed.data;
+  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+  if (existing) return { error: "An account with this email already exists. Try logging in." };
 
-  let userId: string;
-  try {
-    const [created] = await db
-      .insert(users)
-      .values({ name, email, passwordHash: await hashPassword(password) })
-      .returning({ id: users.id });
-    userId = created.id;
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      return { error: "An account with this email already exists. Log in instead." };
-    }
-    return infraError("signup", err);
-  }
-
-  await setSessionCookie(userId);
-  redirect(safeNext(formData.get("next") as string | null) ?? "/creator");
+  const finalRole = isAdminEmail(email) ? "admin" : role;
+  const [user] = await db
+    .insert(users)
+    .values({ name, email, passwordHash: hashPassword(password), role: finalRole })
+    .returning();
+  await createSession(user.id);
+  redirect(safeNext(next, homeFor(user)));
 }
 
-export async function login(
-  _prev: AuthState,
-  formData: FormData,
-): Promise<AuthState> {
+const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address."),
+  password: z.string().min(1, "Enter your password."),
+  next: z.string().optional(),
+});
+
+export async function loginAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const parsed = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
+    next: formData.get("next") ?? undefined,
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid details" };
+    return { error: parsed.error.issues[0]?.message ?? "Invalid credentials." };
   }
-
-  let user: typeof users.$inferSelect | undefined;
-  try {
-    [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, parsed.data.email))
-      .limit(1);
-  } catch (err) {
-    return infraError("login", err);
-  }
-
-  if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+  const { email, password, next } = parsed.data;
+  const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  if (!user || !verifyPassword(password, user.passwordHash)) {
     return { error: "Incorrect email or password." };
   }
-
-  await setSessionCookie(user.id);
-  redirect(safeNext(formData.get("next") as string | null) ?? "/");
+  await createSession(user.id);
+  redirect(safeNext(next, homeFor(user)));
 }
 
-export async function logout() {
-  await clearSessionCookie();
-  redirect("/");
+export async function logoutAction() {
+  await destroySession();
+  redirect("/login");
 }

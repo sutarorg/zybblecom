@@ -1,133 +1,120 @@
-import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
-import { eq, or } from "drizzle-orm";
-import crypto from "crypto";
+import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import {
-  createSessionToken,
-  hashPassword,
-  SESSION_COOKIE,
-  SESSION_COOKIE_OPTIONS,
-} from "@/lib/auth";
-import {
-  appOrigin,
-  GOOGLE_NEXT_COOKIE,
-  GOOGLE_STATE_COOKIE,
-} from "@/app/api/auth/google/route";
+import { createSession, homeFor, isAdminEmail } from "@/lib/auth";
+import { STATE_COOKIE, appOrigin } from "@/lib/oauth";
 
-type GoogleTokenInfo = {
-  aud: string;
-  sub: string;
-  email: string;
-  email_verified: string;
+export const dynamic = "force-dynamic";
+
+type IdTokenPayload = {
+  aud?: string;
+  exp?: number;
+  email?: string;
+  email_verified?: boolean;
   name?: string;
 };
 
-/** Step 2 — exchange the code, verify the ID token, sign the user in. */
-export async function GET(req: Request) {
-  const origin = appOrigin(req);
+function decodeIdToken(idToken: string): IdTokenPayload | null {
+  try {
+    const [, payload] = idToken.split(".");
+    if (!payload) return null;
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as IdTokenPayload;
+  } catch {
+    return null;
+  }
+}
 
-  const fail = (reason: string, detail?: unknown) => {
-    // The browser gets a friendly redirect; the real cause goes to the
-    // deployment's runtime logs (Vercel → Deployments → Runtime Logs).
-    console.error(`[zybble] google oauth failed: ${reason}`, detail ?? "");
-    return NextResponse.redirect(new URL(`/auth?error=${reason}`, origin));
-  };
+function safeNext(next: string | undefined, fallback: string) {
+  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+  return fallback;
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const fail = (code: string, at: "login" | "signup" = "login") =>
+    NextResponse.redirect(new URL(`/${at}?error=${code}`, url.origin));
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return fail("oauth-config");
+
+  // Google returned an error (user cancelled, etc.)
+  if (url.searchParams.get("error")) return fail("google");
+
+  const code = url.searchParams.get("code");
+  const stateParam = url.searchParams.get("state");
+  if (!code || !stateParam) return fail("google");
+
+  // CSRF protection — state must match the cookie we set before redirecting out.
+  const store = await cookies();
+  const storedState = store.get(STATE_COOKIE)?.value;
+  store.delete(STATE_COOKIE);
+  if (!storedState || storedState !== stateParam) return fail("state");
+
+  let next = "";
+  let role: "creator" | "buyer" = "buyer";
+  try {
+    const [, meta] = stateParam.split(".");
+    if (meta) {
+      const parsed = JSON.parse(Buffer.from(meta, "base64url").toString("utf8")) as {
+        n?: string;
+        r?: string;
+      };
+      if (parsed.n) next = parsed.n;
+      if (parsed.r === "creator" || parsed.r === "buyer") role = parsed.r;
+    }
+  } catch {
+    /* meta is optional — state equality is what matters */
+  }
+
+  // Exchange the authorization code for tokens (server-to-server).
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: `${appOrigin(request)}/api/auth/google/callback`,
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!tokenRes.ok) return fail("google");
+
+  const tokenBody = (await tokenRes.json().catch(() => null)) as { id_token?: string } | null;
+  if (!tokenBody?.id_token) return fail("google");
+
+  const payload = decodeIdToken(tokenBody.id_token);
+  if (!payload || payload.aud !== clientId) return fail("google");
+  if (!payload.exp || payload.exp * 1000 < Date.now()) return fail("google");
+
+  const email = payload.email?.toLowerCase().trim();
+  if (!email || !payload.email_verified) return fail("email");
+
+  const name =
+    payload.name?.trim() ||
+    email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   try {
-    const { searchParams } = new URL(req.url);
+    const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
-    const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-    if (!clientId || !clientSecret) return fail("google_not_configured");
-
-    const oauthError = searchParams.get("error");
-    if (oauthError) return fail("google_denied", oauthError);
-
-    const code = searchParams.get("code");
-    const state = searchParams.get("state");
-    const store = await cookies();
-    const expectedState = store.get(GOOGLE_STATE_COOKIE)?.value;
-    const next = store.get(GOOGLE_NEXT_COOKIE)?.value;
-
-    if (!code || !state || !expectedState || state !== expectedState) {
-      return fail("google_state", {
-        hasCode: Boolean(code),
-        stateMatches: state === expectedState,
-      });
-    }
-
-    // Exchange the authorization code for tokens.
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: `${origin}/api/auth/google/callback`,
-      }),
-      cache: "no-store",
-    });
-    if (!tokenRes.ok) {
-      return fail("google_token", await tokenRes.text().catch(() => tokenRes.status));
-    }
-
-    const tokens = (await tokenRes.json()) as { id_token?: string };
-    if (!tokens.id_token) return fail("google_token", "no id_token in response");
-
-    // Verify the ID token with Google and check the audience matches our app.
-    const infoRes = await fetch(
-      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokens.id_token)}`,
-      { cache: "no-store" },
-    );
-    if (!infoRes.ok) return fail("google_verify", infoRes.status);
-    const info = (await infoRes.json()) as GoogleTokenInfo;
-
-    if (info.aud !== clientId || !info.email || info.email_verified !== "true") {
-      return fail("google_verify", { audMatches: info.aud === clientId });
-    }
-
-    const email = info.email.toLowerCase();
-    const name = info.name?.trim() || email.split("@")[0];
-
-    // Find by Google subject, then by email (account linking), else create.
-    let [user] = await db
-      .select()
-      .from(users)
-      .where(or(eq(users.googleSub, info.sub), eq(users.email, email)))
-      .limit(1);
-
-    if (user) {
-      if (!user.googleSub) {
-        await db.update(users).set({ googleSub: info.sub }).where(eq(users.id, user.id));
-      }
-    } else {
-      [user] = await db
+    let user = existing;
+    if (!user) {
+      const finalRole = isAdminEmail(email) ? "admin" : role;
+      const [created] = await db
         .insert(users)
-        .values({
-          name,
-          email,
-          googleSub: info.sub,
-          // Random placeholder hash — the account is Google-authenticated.
-          passwordHash: await hashPassword(crypto.randomBytes(24).toString("hex")),
-        })
+        .values({ name, email, passwordHash: "oauth:google", role: finalRole })
         .returning();
+      user = created;
     }
 
-    // Set the session cookie directly on the redirect response — the most
-    // portable approach across Node/serverless runtimes.
-    const token = await createSessionToken(user.id);
-    const res = NextResponse.redirect(
-      new URL(next && next.startsWith("/") ? next : "/", origin),
-    );
-    res.cookies.set(SESSION_COOKIE, token, SESSION_COOKIE_OPTIONS);
-    res.cookies.delete(GOOGLE_STATE_COOKIE);
-    res.cookies.delete(GOOGLE_NEXT_COOKIE);
-    return res;
-  } catch (err) {
-    return fail("google_verify", err);
+    await createSession(user.id);
+
+    const target = safeNext(next, homeFor(user));
+    return NextResponse.redirect(new URL(target, url.origin));
+  } catch {
+    return fail("google");
   }
 }

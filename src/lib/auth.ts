@@ -1,87 +1,83 @@
-import { cache } from "react";
+import crypto from "node:crypto";
+import { and, eq, gt } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { SignJWT, jwtVerify } from "jose";
-import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { users, type User } from "@/db/schema";
+import { sessions, users, type User, type UserRole } from "@/db/schema";
 
-export const SESSION_COOKIE = "zybble_session";
-const THIRTY_DAYS = 60 * 60 * 24 * 30;
+const SESSION_COOKIE = "zybble_session";
+const SESSION_DAYS = 30;
 
-function getSecret() {
-  return new TextEncoder().encode(
-    process.env.AUTH_SECRET || "zybble-dev-session-secret-do-not-use-in-prod",
-  );
+function sha256(input: string) {
+  return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-export async function hashPassword(password: string) {
-  return bcrypt.hash(password, 10);
+export function hashPassword(password: string) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `scrypt:${salt}:${hash}`;
 }
 
-export async function verifyPassword(password: string, hash: string) {
-  return bcrypt.compare(password, hash);
+export function verifyPassword(password: string, stored: string) {
+  try {
+    const [scheme, salt, hash] = stored.split(":");
+    if (scheme !== "scrypt" || !salt || !hash) return false;
+    const candidate = crypto.scryptSync(password, salt, 64);
+    const expected = Buffer.from(hash, "hex");
+    return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+  } catch {
+    return false;
+  }
 }
 
-export async function createSessionToken(userId: string) {
-  return new SignJWT({})
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(userId)
-    .setIssuedAt()
-    .setExpirationTime(`${THIRTY_DAYS}s`)
-    .sign(getSecret());
-}
-
-export const SESSION_COOKIE_OPTIONS = {
-  httpOnly: true,
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-  maxAge: THIRTY_DAYS,
-};
-
-export async function setSessionCookie(userId: string) {
-  const token = await createSessionToken(userId);
+export async function createSession(userId: string) {
+  const token = crypto.randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  await db.insert(sessions).values({ tokenHash: sha256(token), userId, expiresAt });
   const store = await cookies();
-  store.set(SESSION_COOKIE, token, SESSION_COOKIE_OPTIONS);
+  store.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.APP_SECURE_COOKIES === "true",
+    expires: expiresAt,
+    path: "/",
+  });
 }
 
-export async function clearSessionCookie() {
+export async function destroySession() {
   const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (token) {
+    await db.delete(sessions).where(eq(sessions.tokenHash, sha256(token)));
+  }
   store.delete(SESSION_COOKIE);
 }
 
-/** Current request's user, memoised per-request. */
-export const getSessionUser = cache(async (): Promise<User | null> => {
+export async function getCurrentUser(): Promise<User | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  try {
-    const { payload } = await jwtVerify(token, getSecret());
-    if (!payload.sub) return null;
-    const rows = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, payload.sub))
-      .limit(1);
-    return rows[0] ?? null;
-  } catch {
-    return null;
-  }
-});
+  const rows = await db
+    .select({ user: users })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, new Date())))
+    .limit(1);
+  return rows[0]?.user ?? null;
+}
 
-export async function requireUser(next?: string): Promise<User> {
-  const user = await getSessionUser();
-  if (!user) {
-    redirect(next ? `/auth?next=${encodeURIComponent(next)}` : "/auth");
-  }
+export function homeFor(user: Pick<User, "role">): string {
+  if (user.role === "admin") return "/admin";
+  if (user.role === "creator") return "/dashboard";
+  return "/learn";
+}
+
+export async function requireUser(roles?: UserRole[]): Promise<User> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (roles && !roles.includes(user.role)) redirect(homeFor(user));
   return user;
 }
 
-export async function requireAdmin(): Promise<User> {
-  const user = await getSessionUser();
-  if (!user) redirect("/auth");
-  if (!user.isAdmin) redirect("/");
-  return user;
-}
+export const isAdminEmail = (email: string) =>
+  (process.env.ADMIN_EMAIL ?? "admin@zybble.com").toLowerCase() === email.toLowerCase();

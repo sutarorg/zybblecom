@@ -1,66 +1,85 @@
 "use server";
 
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { db } from "@/db";
-import { courses, platformSettings } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth";
-import { runSettlement, type SettlementSummary } from "@/lib/settlement";
-import { getPlatformSettings } from "@/lib/settings";
+import { courses, orders, settlements } from "@/db/schema";
+import { requireUser } from "@/lib/auth";
 
-/** Admin moderation: force publish/unpublish any course. */
-export async function adminSetCourseStatus(courseId: string, status: "draft" | "published") {
-  await requireAdmin();
-  await db
-    .update(courses)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(courses.id, courseId));
-  revalidatePath("/admin/courses");
+export type AdminResult =
+  | { ok: true; id?: string; amount?: number }
+  | { ok: false; error: string };
+
+export async function createSettlementAction(creatorId: string, note?: string): Promise<AdminResult> {
+  await requireUser(["admin"]);
+
+  try {
+    return await db.transaction(async (tx) => {
+      const unsettled = await tx
+        .select({ id: orders.id, earning: orders.creatorEarningPaise })
+        .from(orders)
+        .innerJoin(courses, eq(orders.courseId, courses.id))
+        .where(
+          and(
+            eq(courses.creatorId, creatorId),
+            eq(orders.status, "paid"),
+            isNull(orders.settlementId),
+          ),
+        );
+
+      if (unsettled.length === 0) {
+        return { ok: false, error: "This creator has no unsettled earnings." };
+      }
+
+      const amount = unsettled.reduce((sum, r) => sum + r.earning, 0);
+      const [settlement] = await tx
+        .insert(settlements)
+        .values({ creatorId, amountPaise: amount, note: note?.trim() || null })
+        .returning();
+
+      await tx
+        .update(orders)
+        .set({ settlementId: settlement.id })
+        .where(inArray(orders.id, unsettled.map((o) => o.id)));
+
+      return { ok: true, id: settlement.id, amount };
+    });
+  } catch {
+    return { ok: false, error: "Could not create the payout. Please try again." };
+  } finally {
+    revalidatePath("/admin");
+    revalidatePath("/admin/settlements");
+  }
 }
 
-export async function runSettlementNow(): Promise<{
-  error?: string;
-  summary?: SettlementSummary;
-}> {
-  await requireAdmin();
-  const summary = await runSettlement("manual");
-  revalidatePath("/admin");
-  revalidatePath("/admin/payouts");
-  revalidatePath("/admin/orders");
-  return { summary };
-}
-
-const settingsSchema = z.object({
-  feePercent: z.coerce.number().int().min(0).max(30),
-  minPayoutRupees: z.coerce.number().int().min(1).max(1_000_000),
-  pendingHours: z.coerce.number().int().min(0).max(720),
-});
-
-export type SettingsState = { error?: string; success?: string } | null;
-
-export async function savePlatformSettings(
-  _prev: SettingsState,
-  formData: FormData,
-): Promise<SettingsState> {
-  await requireAdmin();
-  const current = await getPlatformSettings();
-  const parsed = settingsSchema.safeParse({
-    feePercent: formData.get("feePercent") ?? current.feePercent,
-    minPayoutRupees: formData.get("minPayoutRupees") ?? current.minPayoutPaise / 100,
-    pendingHours: formData.get("pendingHours") ?? current.pendingHours,
-  });
-  if (!parsed.success) return { error: "Invalid settings values." };
+export async function markSettlementPaidAction(settlementId: string): Promise<AdminResult> {
+  await requireUser(["admin"]);
+  const [row] = await db.select().from(settlements).where(eq(settlements.id, settlementId)).limit(1);
+  if (!row) return { ok: false, error: "Payout not found." };
+  if (row.status === "paid") return { ok: false, error: "This payout is already marked as paid." };
 
   await db
-    .update(platformSettings)
-    .set({
-      feePercent: parsed.data.feePercent,
-      minPayoutPaise: parsed.data.minPayoutRupees * 100,
-      pendingHours: parsed.data.pendingHours,
-    })
-    .where(eq(platformSettings.id, 1));
+    .update(settlements)
+    .set({ status: "paid", paidAt: new Date() })
+    .where(eq(settlements.id, settlementId));
 
   revalidatePath("/admin");
-  return { success: "Platform settings updated." };
+  revalidatePath("/admin/settlements");
+  revalidatePath("/dashboard/earnings");
+  return { ok: true, id: settlementId };
+}
+
+export async function getUnsettledForCreator(creatorId: string) {
+  const [row] = await db
+    .select({ amount: sql<number>`coalesce(sum(${orders.creatorEarningPaise}), 0)::bigint` })
+    .from(orders)
+    .innerJoin(courses, eq(orders.courseId, courses.id))
+    .where(
+      and(
+        eq(courses.creatorId, creatorId),
+        eq(orders.status, "paid"),
+        isNull(orders.settlementId),
+      ),
+    );
+  return Number(row?.amount ?? 0);
 }

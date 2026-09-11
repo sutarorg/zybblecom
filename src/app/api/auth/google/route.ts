@@ -1,58 +1,44 @@
+import crypto from "node:crypto";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { STATE_COOKIE, appOrigin } from "@/lib/oauth";
 
-export const GOOGLE_STATE_COOKIE = "zybble_google_state";
-export const GOOGLE_NEXT_COOKIE = "zybble_google_next";
+export const dynamic = "force-dynamic";
 
-export function appOrigin(req: Request) {
-  const configured = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-  if (configured) return configured;
-  // Behind a proxy (Vercel, nginx, sandboxes) the request URL host is
-  // internal — reconstruct the public origin from forwarded headers.
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (host) {
-    const proto = req.headers.get("x-forwarded-proto") ?? "https";
-    return `${proto}://${host}`;
-  }
-  return new URL(req.url).origin;
-}
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const from = url.searchParams.get("from") === "signup" ? "signup" : "login";
+  const loginFail = (code: string) =>
+    NextResponse.redirect(new URL(`/${from}?error=${code}`, url.origin));
 
-/** Step 1 — redirect the user to Google's consent screen. */
-export async function GET(req: Request) {
-  const origin = appOrigin(req);
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return loginFail("oauth-config");
 
-  if (!clientId || !clientSecret) {
-    console.error("[zybble] google oauth start: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set");
-    return NextResponse.redirect(
-      new URL("/auth?error=google_not_configured", origin),
-    );
-  }
+  const next = url.searchParams.get("next") ?? "";
+  const roleParam = url.searchParams.get("role");
+  const role = roleParam === "creator" || roleParam === "buyer" ? roleParam : "";
 
-  const { searchParams } = new URL(req.url);
-  const next = searchParams.get("next");
-  const state = crypto.randomBytes(16).toString("hex");
+  const rand = crypto.randomBytes(24).toString("base64url");
+  const meta = Buffer.from(JSON.stringify({ n: next, r: role }), "utf8").toString("base64url");
+  const state = `${rand}.${meta}`;
 
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", `${origin}/api/auth/google/callback`);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "openid email profile");
-  url.searchParams.set("state", state);
-  url.searchParams.set("prompt", "select_account");
-
-  const res = NextResponse.redirect(url);
-  const cookieOpts = {
+  const store = await cookies();
+  store.set(STATE_COOKIE, state, {
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    secure: process.env.APP_SECURE_COOKIES === "true",
     path: "/",
     maxAge: 600,
-  };
-  res.cookies.set(GOOGLE_STATE_COOKIE, state, cookieOpts);
-  if (next && next.startsWith("/")) {
-    res.cookies.set(GOOGLE_NEXT_COOKIE, next, cookieOpts);
-  }
-  return res;
+  });
+
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("redirect_uri", `${appOrigin(request)}/api/auth/google/callback`);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("prompt", "select_account");
+
+  return NextResponse.redirect(authUrl);
 }

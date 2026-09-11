@@ -1,107 +1,129 @@
-import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
+import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { courses, purchases } from "@/db/schema";
-import { getSessionUser } from "@/lib/auth";
-import { computeSplit } from "@/lib/money";
-import { createOrder, razorpayConfigured } from "@/lib/razorpay";
-import { getPlatformSettings } from "@/lib/settings";
-import { uid } from "@/lib/utils";
+import { coupons, courses, enrollments, orders } from "@/db/schema";
+import { getCurrentUser } from "@/lib/auth";
+import { computeCoursePrice, grantEnrollment } from "@/lib/queries";
 
-const schema = z.object({ courseId: z.string().uuid() });
+function json(status: number, body: Record<string, unknown>) {
+  return NextResponse.json(body, { status });
+}
 
-export async function POST(req: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: "auth_required" }, { status: 401 });
+async function createRazorpayOrder(amountPaise: number, receipt: string) {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) return { configured: false as const };
+
+  const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+  const res = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ amount: amountPaise, currency: "INR", receipt }),
+  });
+  const body = (await res.json().catch(() => null)) as
+    | { id?: string; error?: { description?: string } }
+    | null;
+  if (!res.ok || !body?.id) {
+    return {
+      configured: true as const,
+      error: body?.error?.description ?? "the gateway rejected the order",
+    };
   }
+  return { configured: true as const, keyId, id: body.id };
+}
 
-  const body = await req.json().catch(() => null);
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid course" }, { status: 400 });
+export async function POST(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) return json(401, { error: "Please log in to continue." });
+
+  let payload: { slug?: string; coupon?: string };
+  try {
+    payload = await request.json();
+  } catch {
+    return json(400, { error: "Invalid request." });
   }
+  const slug = payload.slug?.trim();
+  if (!slug) return json(400, { error: "Missing course." });
 
-  const [course] = await db
-    .select()
-    .from(courses)
-    .where(eq(courses.id, parsed.data.courseId))
+  const [course] = await db.select().from(courses).where(eq(courses.slug, slug)).limit(1);
+  if (!course || course.status !== "published") return json(404, { error: "Course not found." });
+  if (course.creatorId === user.id) return json(400, { error: "You can't buy your own course." });
+
+  const [enrollment] = await db
+    .select({ id: enrollments.id })
+    .from(enrollments)
+    .where(and(eq(enrollments.courseId, course.id), eq(enrollments.studentId, user.id)))
     .limit(1);
+  if (enrollment) return json(409, { error: "You're already enrolled in this course." });
 
-  if (!course || course.status !== "published") {
-    return NextResponse.json({ error: "This course is not available." }, { status: 404 });
-  }
-  if (course.creatorId === user.id) {
-    return NextResponse.json({ error: "You created this course — open it in Studio." }, { status: 400 });
-  }
+  const price = await computeCoursePrice(course, payload.coupon);
+  if (!price.ok) return json(400, { error: price.error });
 
-  const [existing] = await db
-    .select({ id: purchases.id })
-    .from(purchases)
-    .where(
-      and(
-        eq(purchases.buyerId, user.id),
-        eq(purchases.courseId, course.id),
-        eq(purchases.status, "paid"),
-      ),
-    )
-    .limit(1);
-  if (existing) {
-    return NextResponse.json({ error: "already_owned" }, { status: 409 });
-  }
-
-  const settings = await getPlatformSettings();
-  const gross = course.pricePaise;
-  const { feePaise, creatorPaise } = computeSplit(gross, settings.feePercent);
-
-  // Free course — enroll instantly, no gateway involved.
-  if (gross === 0) {
-    try {
-      await db.insert(purchases).values({
+  // Free flow — no gateway needed.
+  if (price.net === 0) {
+    const [order] = await db
+      .insert(orders)
+      .values({
         courseId: course.id,
-        creatorId: course.creatorId,
         buyerId: user.id,
-        razorpayOrderId: uid("free_"),
-        grossPaise: 0,
-        feePaise: 0,
-        creatorPaise: 0,
+        couponId: price.coupon?.id ?? null,
+        grossPaise: price.gross,
+        discountPaise: price.discount,
+        netPaise: 0,
+        platformFeePaise: 0,
+        creatorEarningPaise: 0,
         status: "paid",
-        method: "free",
-        paidAt: new Date(),
-      });
-    } catch {
-      return NextResponse.json({ error: "already_owned" }, { status: 409 });
+        provider: "free",
+      })
+      .returning();
+    if (price.coupon) {
+      await db
+        .update(coupons)
+        .set({ usedCount: price.coupon.usedCount + 1 })
+        .where(eq(coupons.id, price.coupon.id));
     }
-    return NextResponse.json({ free: true, courseId: course.id });
+    await grantEnrollment(course.id, user.id, order.id);
+    return json(200, { kind: "free", courseSlug: course.slug, courseTitle: course.title });
   }
 
-  const { orderId, keyId, testMode } = await createOrder({
-    amountPaise: gross,
-    receipt: uid("zy_").slice(0, 40),
-    notes: { courseId: course.id, buyer: user.email, brand: "zybble" },
-  });
+  const rzp = await createRazorpayOrder(price.net, "");
+  if (!rzp.configured) {
+    return json(503, {
+      error:
+        "Payments are not configured yet. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the server to enable paid checkout.",
+    });
+  }
+  if ("error" in rzp) {
+    return json(502, { error: `The payment gateway couldn't create the order (${rzp.error}).` });
+  }
 
-  await db.insert(purchases).values({
-    courseId: course.id,
-    creatorId: course.creatorId,
-    buyerId: user.id,
-    razorpayOrderId: orderId,
-    grossPaise: gross,
-    feePaise,
-    creatorPaise,
-    status: "created",
-  });
+  const [order] = await db
+    .insert(orders)
+    .values({
+      courseId: course.id,
+      buyerId: user.id,
+      couponId: price.coupon?.id ?? null,
+      grossPaise: price.gross,
+      discountPaise: price.discount,
+      netPaise: price.net,
+      status: "pending",
+      provider: "razorpay",
+      providerOrderId: rzp.id,
+    })
+    .returning();
 
-  return NextResponse.json({
-    orderId,
-    keyId,
-    testMode,
-    amountPaise: gross,
+  return json(200, {
+    kind: "paid",
+    keyId: rzp.keyId,
+    orderId: rzp.id,
+    internalOrderId: order.id,
+    amount: price.net,
     currency: "INR",
+    courseSlug: course.slug,
     courseTitle: course.title,
-    courseId: course.id,
     prefill: { name: user.name, email: user.email },
-    gatewayLabel: razorpayConfigured() ? "Razorpay" : "Test mode",
   });
 }

@@ -1,124 +1,111 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { cx } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
-export function buttonClasses(
-  variant: "ink" | "brand" | "outline" | "ghost" | "lime" | "danger" = "ink",
-  size: "sm" | "md" | "lg" = "md",
-) {
-  return cx(
-    "inline-flex items-center justify-center gap-2 rounded-full font-semibold tracking-tight transition-all duration-200 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50",
-    size === "sm" && "h-9 px-4 text-[13px]",
-    size === "md" && "h-11 px-5 text-sm",
-    size === "lg" && "h-13 px-7 text-base",
-    variant === "ink" && "bg-ink text-paper hover:bg-black hover:shadow-lg",
-    variant === "brand" &&
-      "bg-brand text-white shadow-[0_10px_30px_-10px_rgba(91,61,245,0.7)] hover:bg-brand-deep",
-    variant === "lime" && "bg-lime text-ink hover:brightness-95",
-    variant === "outline" &&
-      "border border-ink/15 bg-white/60 text-ink hover:border-ink/35 hover:bg-white",
-    variant === "ghost" && "text-ink-soft hover:bg-ink/5 hover:text-ink",
-    variant === "danger" && "bg-red-600 text-white hover:bg-red-700",
-  );
-}
-
-export function Button({
-  variant = "ink",
-  size = "md",
-  className,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "ink" | "brand" | "outline" | "ghost" | "lime" | "danger";
-  size?: "sm" | "md" | "lg";
-}) {
-  return <button className={cx(buttonClasses(variant, size), className)} {...props} />;
-}
-
-export function Card({
-  className,
-  children,
-  style,
+export function PageHeader({
+  eyebrow,
+  title,
+  sub,
+  actions,
 }: {
-  className?: string;
-  children: ReactNode;
-  style?: React.CSSProperties;
+  eyebrow?: string;
+  title: string;
+  sub?: string;
+  actions?: ReactNode;
 }) {
   return (
-    <div
-      style={style}
-      className={cx(
-        "rounded-3xl border border-line bg-white shadow-[var(--shadow-card)]",
-        className,
-      )}
-    >
-      {children}
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        {eyebrow && (
+          <span className="eyebrow">
+            <span className="eyebrow-dot" /> {eyebrow}
+          </span>
+        )}
+        <h1 className="mt-1.5 text-2xl font-semibold tracking-[-0.02em] sm:text-3xl">{title}</h1>
+        {sub && <p className="mt-1.5 max-w-xl text-[14px] text-mut">{sub}</p>}
+      </div>
+      {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
   );
 }
 
-export function Badge({
-  tone = "neutral",
-  children,
-  className,
+export function StatCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone = "grape",
 }: {
-  tone?: "neutral" | "brand" | "green" | "amber" | "red" | "ink";
-  children: ReactNode;
-  className?: string;
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "grape" | "mint" | "amber" | "ink";
 }) {
+  const tones = {
+    grape: "bg-grape-soft text-grape",
+    mint: "bg-mint-soft text-mint",
+    amber: "bg-amber-soft text-amber",
+    ink: "bg-ink text-paper",
+  } as const;
   return (
-    <span
-      className={cx(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-        tone === "neutral" && "bg-ink/6 text-ink-soft",
-        tone === "brand" && "bg-brand/10 text-brand",
-        tone === "green" && "bg-emerald-100 text-emerald-700",
-        tone === "amber" && "bg-amber-100 text-amber-700",
-        tone === "red" && "bg-red-100 text-red-700",
-        tone === "ink" && "bg-ink text-paper",
-        className,
-      )}
-    >
-      {children}
-    </span>
+    <div className="card p-5 shadow-card">
+      <span className={cn("grid size-9 place-items-center rounded-xl", tones[tone])}>
+        <Icon className="size-4" />
+      </span>
+      <p className="mt-4 text-[22px] font-bold tracking-tight tabular-nums">{value}</p>
+      <p className="mt-0.5 text-[12.5px] font-medium text-mut">{label}</p>
+      {sub && <p className="mt-1 text-[11.5px] text-mut/80">{sub}</p>}
+    </div>
   );
 }
 
 export function EmptyState({
-  icon,
+  icon: Icon,
   title,
-  body,
-  action,
+  sub,
+  children,
 }: {
-  icon: ReactNode;
+  icon: LucideIcon;
   title: string;
-  body: string;
-  action?: ReactNode;
+  sub: string;
+  children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-ink/15 bg-white/50 px-6 py-14 text-center">
-      <div className="grid size-14 place-items-center rounded-2xl bg-cream text-ink-soft">
-        {icon}
-      </div>
-      <p className="font-display text-lg font-semibold">{title}</p>
-      <p className="max-w-sm text-sm text-ink-soft">{body}</p>
-      {action}
+    <div className="card grid place-items-center border-dashed px-6 py-16 text-center">
+      <span className="grid size-14 place-items-center rounded-2xl bg-grape-soft text-grape">
+        <Icon className="size-6" />
+      </span>
+      <h3 className="mt-5 text-[17px] font-semibold tracking-tight">{title}</h3>
+      <p className="mt-1.5 max-w-sm text-[13.5px] leading-relaxed text-mut">{sub}</p>
+      {children && <div className="mt-6">{children}</div>}
     </div>
   );
 }
 
-export function Spinner({ className }: { className?: string }) {
-  return (
-    <span
-      className={cx(
-        "inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent",
-        className,
-      )}
-      aria-label="Loading"
-    />
-  );
+export function OrderStatusBadge({ status }: { status: "pending" | "paid" | "failed" }) {
+  if (status === "paid") return <span className="badge badge-mint">Paid</span>;
+  if (status === "pending") return <span className="badge badge-amber">Pending</span>;
+  return <span className="badge badge-rose">Failed</span>;
 }
 
-export const inputClasses =
-  "h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink outline-none transition placeholder:text-ink-soft/50 focus:border-brand focus:ring-4 focus:ring-brand/15";
+export function CourseStatusBadge({ status }: { status: "draft" | "published" }) {
+  if (status === "published") return <span className="badge badge-mint">Published</span>;
+  return <span className="badge badge-neutral">Draft</span>;
+}
 
-export const labelClasses =
-  "mb-1.5 block text-[13px] font-semibold text-ink-soft";
+export function SettlementBadge({ status }: { status: "pending" | "paid" }) {
+  if (status === "paid") return <span className="badge badge-mint">Paid</span>;
+  return <span className="badge badge-amber">Processing</span>;
+}
+
+export function ProgressBar({ value, className }: { value: number; className?: string }) {
+  return (
+    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-cream", className)}>
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-grape to-[#b7a4ff] transition-all duration-500"
+        style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
+      />
+    </div>
+  );
+}

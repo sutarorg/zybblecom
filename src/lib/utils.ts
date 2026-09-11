@@ -1,101 +1,117 @@
-import { twMerge } from "tailwind-merge";
+export const COMMISSION_RATE = 0.1;
+export const MIN_PAID_PRICE_INR = 49;
 
-/**
- * Class combiner that resolves Tailwind conflicts deterministically —
- * the last conflicting utility always wins (e.g. `bg-white` + `bg-ink`
- * correctly yields ink regardless of generated stylesheet order).
- */
-export function cx(...parts: Array<string | false | null | undefined>) {
-  return twMerge(parts.filter(Boolean).join(" "));
+export function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+export function formatINR(paise: number, opts?: { freeLabel?: boolean }) {
+  if (paise === 0) return opts?.freeLabel ? "Free" : "₹0";
+  const rupees = paise / 100;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: paise % 100 === 0 ? 0 : 2,
+  }).format(rupees);
+}
+
+export function formatDate(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(d));
+}
+
+export function formatDateTime(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(d));
 }
 
 export function slugify(input: string) {
-  return (
-    input
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/[\s_]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 60) || "course"
-  );
-}
-
-export function uid(prefix: string) {
-  const rand = globalThis.crypto
-    .getRandomValues(new Uint8Array(10))
-    .reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
-  return `${prefix}${rand}`;
-}
-
-/** Never send a full account number to the client — mask it server-side. */
-export function maskAccount(accountNumber: string) {
-  const tail = accountNumber.slice(-4);
-  return `•••• •••• ${tail}`;
+  const slug = input
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  return slug || "course";
 }
 
 export function initials(name: string) {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "Z";
 }
 
-export const CATEGORIES = [
-  "Design",
-  "Development",
-  "Business",
-  "Marketing",
-  "Data & AI",
-  "Creator",
-  "Lifestyle",
-  "Other",
-] as const;
+const ACCENTS: [string, string][] = [
+  ["#6D4CFF", "#9D7BFF"],
+  ["#0E8A6D", "#57C79A"],
+  ["#C2502F", "#F0905C"],
+  ["#1F5FBF", "#6FA8F0"],
+  ["#8A3B8F", "#D08BD4"],
+  ["#A87B11", "#E5C45C"],
+];
 
-export const GRADIENT_PRESETS: Record<
-  string,
-  { label: string; css: string; swatch: string }
-> = {
-  violet: {
-    label: "Ultraviolet",
-    css: "linear-gradient(135deg,#1b1145 0%,#5b3df5 55%,#9d7bff 100%)",
-    swatch: "#5b3df5",
-  },
-  lime: {
-    label: "Citron",
-    css: "linear-gradient(135deg,#16330c 0%,#4c8618 55%,#c8f542 100%)",
-    swatch: "#9ed627",
-  },
-  ember: {
-    label: "Ember",
-    css: "linear-gradient(135deg,#3d0b0b 0%,#c2410c 55%,#ffb03a 100%)",
-    swatch: "#ea5f1e",
-  },
-  ocean: {
-    label: "Abyss",
-    css: "linear-gradient(135deg,#04222e 0%,#0e7490 55%,#6ee7d8 100%)",
-    swatch: "#1295a8",
-  },
-  rose: {
-    label: "Bloom",
-    css: "linear-gradient(135deg,#3d0a24 0%,#be185d 55%,#ffa7c4 100%)",
-    swatch: "#d43d7e",
-  },
-};
+export function courseGradient(seed: string) {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const [from, to] = ACCENTS[h % ACCENTS.length];
+  return `linear-gradient(135deg, ${from} 0%, ${to} 100%)`;
+}
 
-export function thumbnailStyle(thumbnail: string): React.CSSProperties {
-  if (thumbnail.startsWith("gradient:")) {
-    const key = thumbnail.split(":")[1];
-    const preset = GRADIENT_PRESETS[key] ?? GRADIENT_PRESETS.violet;
-    return { background: preset.css };
+export function pct(done: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((done / total) * 100));
+}
+
+export function toYouTubeEmbed(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+    if (host.endsWith("youtube.com")) {
+      const v = u.searchParams.get("v");
+      if (v) return `https://www.youtube.com/embed/${v}`;
+      const m = u.pathname.match(/^\/(shorts|embed|live)\/([\w-]+)/);
+      if (m) return `https://www.youtube.com/embed/${m[2]}`;
+    }
+    return null;
+  } catch {
+    return null;
   }
-  return {
-    backgroundImage: `url(${thumbnail})`,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  };
+}
+
+export function toVimeoEmbed(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.endsWith("vimeo.com")) return null;
+    const id = u.pathname.split("/").filter(Boolean)[0];
+    return id && /^\d+$/.test(id) ? `https://player.vimeo.com/video/${id}` : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isDirectVideo(url: string) {
+  return /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url);
+}
+
+export function isSafeHttpUrl(url: string) {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
 }

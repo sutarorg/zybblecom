@@ -1,41 +1,49 @@
-import { relations } from "drizzle-orm";
 import {
   boolean,
   index,
   integer,
+  jsonb,
+  pgEnum,
   pgTable,
-  serial,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
-// ---------------------------------------------------------------------------
-// Users — every registered user can be a buyer AND an instant creator.
-// ---------------------------------------------------------------------------
-export const users = pgTable(
-  "users",
+export const userRoleEnum = pgEnum("user_role", ["admin", "creator", "buyer"]);
+export const courseStatusEnum = pgEnum("course_status", ["draft", "published"]);
+export const lessonTypeEnum = pgEnum("lesson_type", ["video", "pdf", "text"]);
+export const orderStatusEnum = pgEnum("order_status", ["pending", "paid", "failed"]);
+export const settlementStatusEnum = pgEnum("settlement_status", ["pending", "paid"]);
+export const couponTypeEnum = pgEnum("coupon_type", ["percent", "flat"]);
+
+const createdAt = () =>
+  timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
+
+export const users = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  role: userRoleEnum("role").notNull().default("buyer"),
+  createdAt: createdAt(),
+});
+
+export const sessions = pgTable(
+  "sessions",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    name: text("name").notNull(),
-    email: text("email").notNull(),
-    passwordHash: text("password_hash").notNull(),
-    googleSub: text("google_sub"),
-    isAdmin: boolean("is_admin").notNull().default(false),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    tokenHash: text("token_hash").notNull().unique(),
+    userId: uuid("user_id")
       .notNull()
-      .defaultNow(),
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
   },
-  (t) => [
-    uniqueIndex("users_email_unique").on(t.email),
-    uniqueIndex("users_google_sub_unique").on(t.googleSub),
-  ],
+  (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
-// ---------------------------------------------------------------------------
-// Courses
-// ---------------------------------------------------------------------------
 export const courses = pgTable(
   "courses",
   {
@@ -43,207 +51,165 @@ export const courses = pgTable(
     creatorId: uuid("creator_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    slug: text("slug").notNull(),
     title: text("title").notNull(),
-    category: text("category").notNull().default("Other"),
+    slug: text("slug").notNull().unique(),
     description: text("description").notNull().default(""),
-    // Either an image URL or a "gradient:<key>" preset token.
-    thumbnail: text("thumbnail").notNull().default("gradient:violet"),
+    coverUrl: text("cover_url"),
     pricePaise: integer("price_paise").notNull().default(0),
-    status: text("status", { enum: ["draft", "published"] })
-      .notNull()
-      .default("draft"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    currency: text("currency").notNull().default("INR"),
+    status: courseStatusEnum("status").notNull().default("draft"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [
-    uniqueIndex("courses_slug_unique").on(t.slug),
-    index("courses_creator_idx").on(t.creatorId),
-  ],
+  (t) => [index("courses_creator_idx").on(t.creatorId)],
+);
+
+export const chapters = pgTable(
+  "chapters",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("chapters_course_idx").on(t.courseId)],
 );
 
 export const lessons = pgTable(
   "lessons",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    courseId: uuid("course_id")
+    chapterId: uuid("chapter_id")
       .notNull()
-      .references(() => courses.id, { onDelete: "cascade" }),
+      .references(() => chapters.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    content: text("content").notNull().default(""),
-    durationMin: integer("duration_min").notNull().default(5),
+    type: lessonTypeEnum("type").notNull().default("video"),
+    body: text("body").notNull().default(""),
+    videoUrl: text("video_url"),
+    fileUrl: text("file_url"),
+    durationMin: integer("duration_min"),
+    isPreview: boolean("is_preview").notNull().default(false),
     position: integer("position").notNull().default(0),
+    resources: jsonb("resources").$type<{ label: string; url: string }[]>().notNull().default([]),
+    createdAt: createdAt(),
   },
-  (t) => [index("lessons_course_idx").on(t.courseId)],
+  (t) => [index("lessons_chapter_idx").on(t.chapterId)],
 );
 
-// ---------------------------------------------------------------------------
-// Purchases / transactions. Money is stored in paise (1 INR = 100 paise).
-// ---------------------------------------------------------------------------
-export const purchases = pgTable(
-  "purchases",
+export const coupons = pgTable(
+  "coupons",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     courseId: uuid("course_id")
       .notNull()
       .references(() => courses.id, { onDelete: "cascade" }),
-    creatorId: uuid("creator_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    buyerId: uuid("buyer_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    razorpayOrderId: text("razorpay_order_id").notNull(),
-    razorpayPaymentId: text("razorpay_payment_id"),
-    grossPaise: integer("gross_paise").notNull(),
-    feePaise: integer("fee_paise").notNull(),
-    creatorPaise: integer("creator_paise").notNull(),
-    status: text("status", {
-      enum: ["created", "paid", "failed", "refunded"],
-    })
-      .notNull()
-      .default("created"),
-    method: text("method"),
-    failureReason: text("failure_reason"),
-    payoutId: uuid("payout_id"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    paidAt: timestamp("paid_at", { withTimezone: true }),
+    code: text("code").notNull(),
+    type: couponTypeEnum("type").notNull(),
+    value: integer("value").notNull(),
+    maxUses: integer("max_uses"),
+    usedCount: integer("used_count").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
   },
-  (t) => [
-    uniqueIndex("purchases_order_unique").on(t.razorpayOrderId),
-    index("purchases_buyer_idx").on(t.buyerId),
-    index("purchases_creator_idx").on(t.creatorId),
-    index("purchases_status_idx").on(t.status),
-    index("purchases_payout_idx").on(t.payoutId),
-  ],
+  (t) => [uniqueIndex("coupons_course_code_idx").on(t.courseId, t.code)],
 );
 
-// ---------------------------------------------------------------------------
-// Creator payout (settlement) destination — banking data is server-only.
-// ---------------------------------------------------------------------------
-export const payoutAccounts = pgTable(
-  "payout_accounts",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    holderName: text("holder_name").notNull(),
-    accountNumber: text("account_number").notNull(),
-    ifsc: text("ifsc").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [uniqueIndex("payout_accounts_user_unique").on(t.userId)],
-);
-
-export const payouts = pgTable(
-  "payouts",
+export const settlements = pgTable(
+  "settlements",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     creatorId: uuid("creator_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     amountPaise: integer("amount_paise").notNull(),
-    purchaseCount: integer("purchase_count").notNull().default(0),
-    status: text("status", { enum: ["processing", "processed", "failed"] })
-      .notNull()
-      .default("processing"),
-    razorpayPayoutId: text("razorpay_payout_id"),
-    failureReason: text("failure_reason"),
-    trigger: text("trigger", { enum: ["scheduled", "manual"] })
-      .notNull()
-      .default("scheduled"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    processedAt: timestamp("processed_at", { withTimezone: true }),
+    status: settlementStatusEnum("status").notNull().default("pending"),
+    note: text("note"),
+    createdAt: createdAt(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
   },
-  (t) => [
-    index("payouts_creator_idx").on(t.creatorId),
-    index("payouts_status_idx").on(t.status),
-  ],
+  (t) => [index("settlements_creator_idx").on(t.creatorId)],
 );
 
-// ---------------------------------------------------------------------------
-// Learning progress
-// ---------------------------------------------------------------------------
-export const progress = pgTable(
-  "progress",
+export const orders = pgTable(
+  "orders",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
     courseId: uuid("course_id")
       .notNull()
       .references(() => courses.id, { onDelete: "cascade" }),
+    buyerId: uuid("buyer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    couponId: uuid("coupon_id").references(() => coupons.id, { onDelete: "set null" }),
+    grossPaise: integer("gross_paise").notNull(),
+    discountPaise: integer("discount_paise").notNull().default(0),
+    netPaise: integer("net_paise").notNull(),
+    platformFeePaise: integer("platform_fee_paise").notNull().default(0),
+    creatorEarningPaise: integer("creator_earning_paise").notNull().default(0),
+    status: orderStatusEnum("status").notNull().default("pending"),
+    provider: text("provider").notNull().default("razorpay"),
+    providerOrderId: text("provider_order_id"),
+    providerPaymentId: text("provider_payment_id"),
+    settlementId: uuid("settlement_id").references(() => settlements.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("orders_course_idx").on(t.courseId),
+    index("orders_buyer_idx").on(t.buyerId),
+    index("orders_status_idx").on(t.status),
+    uniqueIndex("orders_provider_order_idx").on(t.providerOrderId),
+  ],
+);
+
+export const enrollments = pgTable(
+  "enrollments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("enroll_unique_idx").on(t.courseId, t.studentId)],
+);
+
+export const lessonProgress = pgTable(
+  "lesson_progress",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     lessonId: uuid("lesson_id")
       .notNull()
       .references(() => lessons.id, { onDelete: "cascade" }),
-    completedAt: timestamp("completed_at", { withTimezone: true })
+    courseId: uuid("course_id")
       .notNull()
-      .defaultNow(),
+      .references(() => courses.id, { onDelete: "cascade" }),
+    completedAt: timestamp("completed_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("progress_user_lesson_unique").on(t.userId, t.lessonId)],
+  (t) => [
+    uniqueIndex("progress_unique_idx").on(t.studentId, t.lessonId),
+    index("progress_course_idx").on(t.courseId),
+    index("progress_student_idx").on(t.studentId),
+  ],
 );
 
-// ---------------------------------------------------------------------------
-// Platform-wide settings (single row, id = 1)
-// ---------------------------------------------------------------------------
-export const platformSettings = pgTable("platform_settings", {
-  id: serial("id").primaryKey(),
-  feePercent: integer("fee_percent").notNull().default(10),
-  minPayoutPaise: integer("min_payout_paise").notNull().default(100),
-  pendingHours: integer("pending_hours").notNull().default(0),
-});
-
-// ---------------------------------------------------------------------------
-// Relations
-// ---------------------------------------------------------------------------
-export const usersRelations = relations(users, ({ many, one }) => ({
-  courses: many(courses),
-  purchases: many(purchases),
-  payouts: many(payouts),
-  payoutAccount: one(payoutAccounts),
-}));
-
-export const coursesRelations = relations(courses, ({ one, many }) => ({
-  creator: one(users, { fields: [courses.creatorId], references: [users.id] }),
-  lessons: many(lessons),
-  purchases: many(purchases),
-}));
-
-export const lessonsRelations = relations(lessons, ({ one }) => ({
-  course: one(courses, { fields: [lessons.courseId], references: [courses.id] }),
-}));
-
-export const purchasesRelations = relations(purchases, ({ one }) => ({
-  course: one(courses, { fields: [purchases.courseId], references: [courses.id] }),
-  buyer: one(users, { fields: [purchases.buyerId], references: [users.id] }),
-  creator: one(users, { fields: [purchases.creatorId], references: [users.id] }),
-  payout: one(payouts, { fields: [purchases.payoutId], references: [payouts.id] }),
-}));
-
-export const payoutsRelations = relations(payouts, ({ one, many }) => ({
-  creator: one(users, { fields: [payouts.creatorId], references: [users.id] }),
-  purchases: many(purchases),
-}));
-
 export type User = typeof users.$inferSelect;
+export type UserRole = User["role"];
 export type Course = typeof courses.$inferSelect;
+export type Chapter = typeof chapters.$inferSelect;
 export type Lesson = typeof lessons.$inferSelect;
-export type Purchase = typeof purchases.$inferSelect;
-export type Payout = typeof payouts.$inferSelect;
-export type PayoutAccount = typeof payoutAccounts.$inferSelect;
-export type PlatformSettings = typeof platformSettings.$inferSelect;
+export type LessonType = Lesson["type"];
+export type Coupon = typeof coupons.$inferSelect;
+export type Order = typeof orders.$inferSelect;
+export type Enrollment = typeof enrollments.$inferSelect;
+export type Settlement = typeof settlements.$inferSelect;

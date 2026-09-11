@@ -1,333 +1,215 @@
-# Zybble — sell what you know, with a single link
+# Zybble
 
-Zybble ([zybble.com](https://zybble.com)) is a mobile-first course-selling platform:
+**Direct course selling for independent creators.** Zybble is a direct course-selling platform — not a marketplace. Creators build courses, publish them to unique URLs (`/c/{slug}`), and share those links anywhere. Buyers purchase only through shared course links; there is no public catalog.
 
-- **Instant creators** — every registered user can create and publish courses immediately. No approvals.
-- **Link-first selling** — each course gets a unique shareable URL (`zybble.com/c/<slug>`). There is no public marketplace or explore page; the creator's link *is* the store.
-- **Razorpay payments** — secure checkout with server-side signature verification and webhook confirmation.
-- **Automatic daily settlements** — a scheduled payout run at **4:00 PM** transfers eligible creator earnings to their bank accounts with full audit records.
-- **90 / 10 split** — Zybble keeps a 10% platform fee, creators receive 90%. All financial math happens server-side in integer paise.
+## Stack
 
----
-
-## 1. Tech stack
-
-| Layer | Choice |
-| --- | --- |
-| Framework | Next.js 16 (App Router) + React 19 |
-| Database | PostgreSQL via Drizzle ORM |
-| Styling | Tailwind CSS v4 |
-| Payments | Razorpay Orders API + checkout.js + webhooks |
-| Payouts | RazorpayX (contacts → fund accounts → payouts) |
-| Auth | Email/password (bcrypt + JWT session cookie) and Google OAuth 2.0 |
-| Scheduler | `node-cron` in-process (daily 16:00) + protected HTTP endpoint |
-
-## 2. Quick start
-
-```bash
-npm install
-cp .env.example .env    # then fill in values (see §3)
-npx drizzle-kit push    # create tables in PostgreSQL
-# one extra guard index against duplicate enrollments:
-psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS purchases_paid_unique ON purchases (buyer_id, course_id) WHERE status = 'paid';"
-npm run dev             # http://localhost:3000
-```
-
-Production (VPS / Docker / any Node host):
-
-```bash
-npm run build && npm start
-```
-
-**Demo accounts** (seeded automatically on first boot):
-
-| Role | Email | Password |
-| --- | --- | --- |
-| Admin | `admin@zybble.com` | `admin12345` |
-| Creator (has 2 published courses) | `creator@zybble.com` | `creator12345` |
-| Buyer | `buyer@zybble.com` | `buyer12345` |
-
-> **Test mode** — if Razorpay keys are absent, the platform simulates the gateway
-> end-to-end (orders, payment success/failure, signature flow, payouts). The moment
-> live keys are set, simulation is permanently disabled.
-
-## 3. Environment variables — where to find every value
-
-All variables live in **`.env`** at the project root. Below is each one with
-click-by-click instructions.
-
-### 3.1 `DATABASE_URL` ✱ required
-
-PostgreSQL connection string.
-
-**Local PostgreSQL:** keep the default `postgresql://postgres:postgres@127.0.0.1:5432/app_db`, then create the DB:
-
-```bash
-psql postgresql://postgres:postgres@127.0.0.1:5432/postgres -c "CREATE DATABASE app_db;"
-```
-
-**Neon (free hosted option):**
-1. Go to <https://neon.tech> → **Sign up** → **Create a project**.
-2. Pick a name (e.g. `zybble`) and region → **Create project**.
-3. On the project dashboard click **Connect** → copy the **connection string** (it looks like `postgresql://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require`).
-4. Paste it as `DATABASE_URL`.
-
-### 3.2 `AUTH_SECRET` ✱ required in production
-
-Signs session cookies and test-mode payment tokens. Any long random string works:
-
-```bash
-openssl rand -base64 32
-```
-
-Paste the output as `AUTH_SECRET`. Rotate it any time — users will simply be logged out.
-
-### 3.3 `NEXT_PUBLIC_APP_URL` ✱ required for Google OAuth in production
-
-The public origin of the app, no trailing slash — used to build the absolute Google redirect URL.
-
-- Local development: leave unset (`http://localhost:3000` is used).
-- Production: set `NEXT_PUBLIC_APP_URL=https://zybble.com`.
-
-### 3.4 Razorpay keys — `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET`
-
-Enables live checkout, payment signature verification, and RazorpayX payouts.
-
-1. Go to <https://dashboard.razorpay.com> and log in (KYC required for **live** mode; **test** mode works immediately).
-2. Use the mode toggle in the top-left to pick **Test** (recommended first) or **Live**.
-3. In the left sidebar click **Settings** → **API Keys**.
-4. Click **Generate Test Key** (or **Regenerate Live Key**).
-5. A dialog shows the **Key Id** (`rzp_test_...` / `rzp_live_...`) and **Key Secret**.
-6. Copy **Key Id** → `RAZORPAY_KEY_ID`, **Key Secret** → `RAZORPAY_KEY_SECRET`. The secret is shown only once — save it immediately.
-
-### 3.5 `RAZORPAY_WEBHOOK_SECRET`
-
-Verifies that webhook calls genuinely come from Razorpay (the app returns `400` otherwise).
-
-1. First invent your own secret, e.g. `openssl rand -base64 24` → set it as `RAZORPAY_WEBHOOK_SECRET`.
-2. Razorpay Dashboard → **Settings** → **Webhooks** → **+ Add New Webhook**.
-3. **Webhook URL**: `https://zybble.com/api/webhooks/razorpay` (use your real domain; for local testing use a tunnel like `ngrok http 3000`).
-4. **Secret**: paste the *same* value you set in step 1.
-5. Under **Active events** tick **`payment.captured`** and **`payment.failed`**.
-6. Click **Create Webhook**. Razorpay will now POST signed events to the platform.
-
-### 3.6 `RAZORPAYX_ACCOUNT_NUMBER`
-
-The RazorpayX current account that **funds** creator payouts (the daily 4:00 PM settlement).
-
-1. Razorpay Dashboard → left sidebar → **RazorpayX** → **Get started** and complete RazorpayX activation for your business.
-2. In RazorpayX open **Accounts & Settings** (or **My Account**).
-3. Copy your **RazorpayX current account number**.
-4. Set it as `RAZORPAYX_ACCOUNT_NUMBER`.
-5. Keep the account funded — payouts with insufficient balance either queue or fail (the run records the failure and retries the purchase batch next run).
-
-> No separate API keys are needed for payouts — the same `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` authenticate RazorpayX. If this variable is empty, payouts stay in simulation mode.
-> In **test mode**, RazorpayX payouts also require enabling **Payouts** in test mode and using test funds; until then, leave this empty and enjoy the simulator.
-
-### 3.7 Google sign-in — `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`
-
-Powers the **Continue with Google** button on the auth page.
-
-1. Go to <https://console.cloud.google.com> and sign in with a Google account.
-2. Top bar → project picker → **New Project** → name it (e.g. `Zybble`) → **Create**.
-3. Left menu → **APIs & Services** → **OAuth consent screen** → **Get started**.
-4. Enter **App name** (`Zybble`) and a **User support email** → click **Next**.
-5. Audience: choose **External** → **Next** → add your contact email → **Next** → agree → **Create**.
-6. Left menu → **APIs & Services** → **Credentials** → **+ Create Credentials** → **OAuth client ID**.
-7. **Application type**: **Web application**. Name: `Zybble Web`.
-8. **Authorized JavaScript origins** → **+ Add URI**: add
-   - `http://localhost:3000`
-   - `https://zybble.com` (your real domain)
-9. **Authorized redirect URIs** → **+ Add URI**: add
-   - `http://localhost:3000/api/auth/google/callback`
-   - `https://zybble.com/api/auth/google/callback`
-10. Click **Create**. A dialog shows **Client ID** (`....apps.googleusercontent.com`) and **Client Secret** (`GOCSPX-...`).
-11. Copy them into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, restart the app.
-
-The callback route verifies the ID token's signature/audience with Google before creating or linking the user.
-
-### 3.8 `CRON_SECRET`
-
-Protects the HTTP settlement trigger (`/api/cron/settle`) so only your scheduler can invoke it.
-
-1. Generate: `openssl rand -base64 24` → set as `CRON_SECRET`.
-2. Call it with either an `Authorization: Bearer <CRON_SECRET>` header or `?secret=<CRON_SECRET>`.
-
-> **On Vercel this variable is required**: Vercel Cron automatically sends
-> `Authorization: Bearer <CRON_SECRET>` when invoking the job declared in
-> `vercel.json` — no extra setup needed. Everywhere else, an in-process
-> scheduler runs the settlement **every day at 4:00 PM** automatically, and
-> this endpoint covers external schedulers (system cron, GitHub Actions) and
-> manual admin runs.
-
-### 3.9 `SETTLEMENT_TZ`
-
-IANA timezone for the built-in 16:00 schedule. Default `Asia/Kolkata`. Example: `Asia/Dubai`, `Europe/London`.
+- **Next.js 16** (App Router, React 19) + TypeScript
+- **PostgreSQL** via **Drizzle ORM**
+- **Tailwind CSS v4**
+- **Google OAuth 2.0** + email/password auth (scrypt hashing, http-only cookie sessions)
+- **Razorpay** checkout (REST orders + HMAC-SHA256 signature verification)
 
 ---
 
-## 4. How money flows
+# Deployment guide — click by click
 
-```
-Buyer ──/c/slug──▶ Order created (Razorpay, server-side)        purchase: created
-        ──checkout.js──▶ signature verified server-side         purchase: paid
-        ──webhook (double-entry confirmation, idempotent)──▶    purchase: paid
-                                                                    │
-Admin fee 10% ──▶ purchases.fee_paise        (platform revenue)     │
-Creator 90%  ──▶ purchases.creator_paise     (pending balance)      │
-        ──daily 4:00 PM settlement run──▶                           ▼
-        payout record + RazorpayX transfer ──▶ creator bank account
-```
+You will need accounts on: **GitHub**, **Vercel**, **Neon** (Postgres), **Google Cloud**, and optionally **Razorpay**. Every step below is exact; nothing is assumed.
 
-Duplicate-purchase protection: a partial unique index on `(buyer_id, course_id) WHERE status = 'paid'`, plus transactional re-checks, make double enrollment impossible — a colliding second payment is flagged for refund instead.
+## Step 1 — Create the GitHub repository
 
-## 5. Payout rules (admin-configurable)
-
-Configured in **Admin → Settings** and enforced by the settlement engine:
-
-- **Platform fee %** (default 10) — applied to all future orders.
-- **Minimum payout** (default ₹1) — smaller balances roll over to the next run.
-- **Clearing period hours** (default 0) — a sale becomes eligible N hours after purchase.
-
-A payout is skipped (and retried next run) if the creator has no bank account on file. Failed gateway transfers unlink their purchases so the next run retries them.
-
-## 6. Project structure
-
-```
-src/
-├─ app/
-│  ├─ page.tsx                  # Landing page
-│  ├─ auth/                     # Email + Google sign-in
-│  ├─ c/[slug]/                 # Public shareable course page (the store)
-│  ├─ learn/[courseId]/         # Course player + progress
-│  ├─ my-courses/               # Buyer dashboard
-│  ├─ creator/                  # Studio: courses, sales, payouts, bank
-│  ├─ admin/                    # Admin: users, courses, orders, payouts, settings
-│  └─ api/
-│     ├─ checkout/              # Order creation, verification, test simulator
-│     ├─ webhooks/razorpay/     # Signed payment webhooks (source of truth)
-│     ├─ auth/google/           # Google OAuth start + callback
-│     └─ cron/settle/           # Protected settlement trigger
-├─ db/schema.ts                 # Users, courses, lessons, purchases, payouts…
-├─ lib/
-│  ├─ razorpay.ts               # Orders, signature/webhook verify, RazorpayX payouts
-│  ├─ settlement.ts             # The 4:00 PM settlement engine
-│  ├─ checkout.ts               # Idempotent mark-paid with duplicate guard
-│  └─ server-boot.ts            # Demo seed + node-cron scheduler (16:00 daily)
-└─ instrumentation.ts           # Boots seed + scheduler with the server
-```
-
-## 7. Scripts
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start dev server |
-| `npm run build` / `npm start` | Production build / serve |
-| `npx drizzle-kit push` | Apply `src/db/schema.ts` to PostgreSQL |
-| `npm run typecheck` | TypeScript check |
-
----
-
-## 8. Deploy to production on Vercel (via GitHub) — click-by-click
-
-The repo is deployment-ready: `.env` is git-ignored (only `.env.example` is committed), `vercel.json` already declares the daily settlement cron, and the app auto-detects Vercel.
-
-### 8.1 Push the code to GitHub
+1. Go to <https://github.com> and sign in.
+2. Click the **+** icon (top right) → **New repository**.
+3. **Repository name:** `zybble` → choose **Private** → **Create repository** (leave "Add a README" unchecked).
+4. On your machine, inside this project folder, run the commands GitHub shows:
 
 ```bash
 git init
 git add -A
-git commit -m "Zybble — initial release"
+git commit -m "Zybble — direct course selling platform"
 git branch -M main
-```
-
-Then either use the GitHub CLI:
-
-```bash
-gh repo create zybble --private --source=. --push
-```
-
-…or create the repo manually: <https://github.com/new> → name it `zybble` → **Create repository** → then:
-
-```bash
 git remote add origin https://github.com/<your-username>/zybble.git
 git push -u origin main
 ```
 
-### 8.2 Create a production database
+> The repo's `.gitignore` already excludes `.env`, `node_modules`, and build output. Your secrets can never be committed by accident. `.env.example` documents every variable.
 
-Follow **§3.1 (Neon)** to create a hosted PostgreSQL database and copy its pooled connection string — this becomes your production `DATABASE_URL`. (Vercel Postgres or Supabase work identically.)
+## Step 2 — Create the PostgreSQL database (Neon)
 
-### 8.3 Apply the schema to the production database
+Any hosted Postgres works; these steps are for Neon (free tier is enough):
 
-From your own machine (drizzle.config.ts reads `DATABASE_URL` from `.env`):
+1. Go to <https://neon.tech> → **Sign up** (GitHub login is fastest).
+2. Click **New Project** → name it `zybble` → pick the region closest to your users → **Create Project**.
+3. On the project dashboard, find the **Connection string** box. Select **Pooled connection** (important for serverless) and click **Copy**. It looks like:
+   `postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/DBNAME?sslmode=require`
+4. Save it — this is your `DATABASE_URL`.
+
+### Apply the database schema
+
+From the project folder on your machine:
 
 ```bash
-# temporarily point .env's DATABASE_URL at the production database, then:
-npx drizzle-kit push
-psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS purchases_paid_unique ON purchases (buyer_id, course_id) WHERE status = 'paid';"
+npm install
+DATABASE_URL="paste-your-connection-string-here" npx drizzle-kit push --force
 ```
 
-### 8.4 Import the repo into Vercel
+`drizzle.config.ts` reads `DATABASE_URL` from the environment, so this works from anywhere — no config edits. You should see `Changes applied`. All 9 tables (users, sessions, courses, chapters, lessons, coupons, orders, enrollments, lesson_progress, settlements) now exist.
 
-1. Go to <https://vercel.com> → **Log in** → **Continue with GitHub**.
+## Step 3 — Configure Google OAuth
+
+Zybble uses a server-side OAuth 2.0 flow (`/api/auth/google` → Google → `/api/auth/google/callback`). Configure it once; it covers both Login and Sign Up.
+
+### 3a. Create the Google Cloud project
+
+1. Go to <https://console.cloud.google.com> and sign in with the Google account that will own the app.
+2. Click the **project selector** (top-left, next to the Google Cloud logo) → **New Project**.
+3. Name: `Zybble` → leave organization as-is → **Create**.
+4. Wait for the notification, then select the `Zybble` project from the selector.
+
+### 3b. Configure the OAuth consent screen
+
+1. Left menu → **APIs & Services** → **OAuth consent screen**.
+2. Select **External** → **Create**.
+3. Fill in:
+   - **App name:** `Zybble`
+   - **User support email:** your email
+   - **App logo / domain fields:** optional at this stage
+   - **Developer contact information:** your email
+4. Click **Save and Continue** (App information) → **Save and Continue** (Scopes — leave untouched; Zybble only requests the open `email`/`profile` scopes) → **Save and Continue** (Test users).
+5. **Optional but recommended while the app is in "Testing" status:** on the **Test users** step (or later via **Audience**), click **+ Add users** and add every Gmail address you will test with. In Testing mode, **only listed users can sign in**.
+6. When you're ready for the public: **OAuth consent screen** → **Audience** → **Publish app** → **Confirm**. Publishing makes "Continue with Google" work for anyone.
+
+### 3c. Create the OAuth Client ID and Secret
+
+1. Left menu → **Credentials** → **+ Create Credentials** → **OAuth client ID**.
+2. **Application type:** `Web application`. **Name:** `Zybble web`.
+3. Under **Authorized redirect URIs**, click **+ Add URI** and add **exactly these two** (no trailing slashes — they must match character-for-character):
+
+   ```
+   http://localhost:3000/api/auth/google/callback
+   https://YOUR-APP-NAME.vercel.app/api/auth/google/callback
+   ```
+
+   > You won't know your final Vercel domain until Step 5. Add the localhost URI now, deploy, then come back (Credentials → click "Zybble web") and add the production URI. If you attach a custom domain later, add `https://your-domain.com/api/auth/google/callback` too.
+4. Click **Create**. A modal shows your **Client ID** and **Client Secret** → copy both (you can always re-open this later from **Credentials → Zybble web**).
+
+These become `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+## Step 4 — Get Razorpay keys (optional, for paid courses)
+
+Without these, free enrollment works and paid checkout shows a clear "payments not configured" message — nothing breaks.
+
+1. Go to <https://dashboard.razorpay.com> → **Sign up** (or sign in).
+2. Find the **mode toggle** in the top bar and set it to **Test Mode** (orange).
+3. Left menu → **Settings** → **API Keys** → **Generate Test Key**.
+4. Copy the **Key Id** (`rzp_test_...`) and **Key Secret** — the secret is shown only once, store it immediately.
+5. These become `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`.
+
+**To accept real money later:** complete Razorpay account activation (business details in the dashboard), switch the toggle to **Live Mode**, generate a **Live Key**, and replace the two variables.
+
+**No webhook setup is required** — Zybble verifies payments server-side with the HMAC-SHA256 signature returned by checkout.
+
+**Test-mode payments:** open any paid course → **Enroll now** → in the Razorpay modal pay by card with `5267 3181 8797 5449` (Mastercard, domestic) or `4111 1111 1111 1111` (Visa), any future expiry, any CVV → click **Success** on the mock bank page. No real money moves.
+
+## Step 5 — Deploy on Vercel
+
+1. Go to <https://vercel.com> → **Sign Up** → **Continue with GitHub** → authorize Vercel.
 2. Dashboard → **Add New…** → **Project**.
-3. Under **Import Git Repository** find `zybble` (click **Adjust GitHub App Permissions** and grant access if it isn't listed) → **Import**.
-4. **Framework Preset** shows **Next.js** automatically — leave Build and Output Settings untouched.
-5. Expand **Environment Variables** and add these rows (values from §3):
+3. Under **Import Git Repository**, find `zybble` (click **Adjust GitHub App Permissions** → grant access to the repo if it isn't listed) → **Import**.
+4. Vercel auto-detects Next.js; **do not change** framework/build settings.
+5. Expand **Environment Variables** and add each row below (Name + Value; leave scope as all environments):
 
-   | Key | Value |
-   | --- | --- |
-   | `DATABASE_URL` | Your Neon/production connection string (§3.1) |
-   | `AUTH_SECRET` | `openssl rand -base64 32` (§3.2) |
-   | `NEXT_PUBLIC_APP_URL` | `https://<your-project>.vercel.app` for now — update to `https://zybble.com` after adding the domain |
-   | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | §3.4 (leave empty to stay in test mode) |
-   | `RAZORPAY_WEBHOOK_SECRET` | §3.5 |
-   | `RAZORPAYX_ACCOUNT_NUMBER` | §3.6 (empty = simulated payouts) |
-   | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | §3.7 |
-   | `CRON_SECRET` | `openssl rand -base64 24` — **required** (§3.8) |
-   | `SETTLEMENT_TZ` | `Asia/Kolkata` |
-   | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | Your admin login (created on first boot) |
-   | `SEED_DEMO` | `false` for a clean production start, `true` to include demo courses |
+| Name | Where the value comes from | Example |
+|------|----------------------------|---------|
+| `DATABASE_URL` | Neon dashboard connection string (Step 2) | `postgresql://user:***@host-pooler...?sslmode=require` |
+| `GOOGLE_CLIENT_ID` | Google Cloud → Credentials → Zybble web (Step 3c) | `....apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud → same screen (Step 3c) | `GOCSPX-...` |
+| `NEXT_PUBLIC_APP_URL` | Your Vercel production URL: `https://` + the domain shown after this first deploy, **no trailing slash**. For the very first deploy you may enter your best guess (`https://zybble.vercel.app`); correct it in Step 6 if the actual domain differs. | `https://zybble.vercel.app` |
+| `RAZORPAY_KEY_ID` | Razorpay dashboard → Settings → API Keys (Step 4) | `rzp_test_...` |
+| `RAZORPAY_KEY_SECRET` | Razorpay dashboard → same screen (Step 4) | |
+| `ADMIN_EMAIL` | The email **you** will sign up with — becomes platform admin | `you@example.com` |
+| `APP_SECURE_COOKIES` | Always `true` on Vercel (HTTPS) | `true` |
 
-6. Click **Deploy** and wait ~2 minutes.
+6. Click **Deploy**. Wait ~1–2 minutes for the build; Vercel shows **Congratulations** with your live URL.
+7. **Finished the first deploy?** Confirm the actual production domain (top of the project → **Domains**). If it's different from what you used:
+   - Vercel: **Settings** → **Environment Variables** → pencil on `NEXT_PUBLIC_APP_URL` → set the real domain → **Save** → **Deployments** → ⋯ on latest → **Redeploy**.
+   - Google Cloud: **Credentials** → **Zybble web** → add `https://REAL-DOMAIN/api/auth/google/callback` to **Authorized redirect URIs** → **Save** (propagates within ~5 minutes).
 
-### 8.5 The 4:00 PM settlement on Vercel
+> **Any future env-var change** on Vercel follows the same pattern: **Settings → Environment Variables → edit → Save → Redeploy** (env changes require a redeploy to take effect).
 
-- `vercel.json` declares it: `path: /api/cron/settle`, `schedule: 30 10 * * *` — cron schedules on Vercel are **UTC**, and `10:30 UTC` = **4:00 PM Asia/Kolkata**. After deploying, see it under **Project → Settings → Cron Jobs**.
-- Vercel Cron automatically sends `Authorization: Bearer $CRON_SECRET`, so just make sure `CRON_SECRET` is set. (Hobby plans allow one invocation per day — this schedule fits.)
-- To change the time, edit the `schedule` in `vercel.json` (UTC) and redeploy. On non-Vercel hosts (`next start`, Docker, VPS) the in-process scheduler arms itself at 16:00 in `SETTLEMENT_TZ` instead — both paths run the same settlement engine.
+## Local development setup — click by click
 
-### 8.6 Post-deploy wiring (2 minutes)
+1. Clone: `git clone https://github.com/<you>/zybble.git && cd zybble`
+2. Install: `npm install`
+3. Create env file: `cp .env.example .env`
+4. Open `.env` and fill in:
+   - `DATABASE_URL` — Neon string from Step 2, or local Postgres `postgresql://postgres:postgres@127.0.0.1:5432/app_db`
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — Step 3c values
+   - `NEXT_PUBLIC_APP_URL` — `http://localhost:3000`
+   - `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` — Step 4 test values (optional)
+   - `ADMIN_EMAIL` — your email; `APP_SECURE_COOKIES` — keep `false` locally
+5. Apply schema: `npx drizzle-kit push`
+6. Run: `npm run dev` → open <http://localhost:3000>
 
-1. **Razorpay webhook** (§3.5): set the URL to `https://<your-domain>/api/webhooks/razorpay`.
-2. **Google OAuth** (§3.7): add `https://<your-domain>` as a JavaScript origin and `https://<your-domain>/api/auth/google/callback` as a redirect URI in the Google Cloud console.
-3. **Custom domain**: Vercel → **Settings → Domains** → add `zybble.com` → follow the DNS instructions (A record `76.76.21.21` or CNAME `cname.vercel-dns.com`) → HTTPS is automatic. Then update `NEXT_PUBLIC_APP_URL`, the webhook URL, and the Google URIs to the final domain and **Redeploy**.
-4. On first request the app seeds the admin account (and demo data unless `SEED_DEMO=false`). Log in at `/auth`.
+## OAuth redirect URLs — exact reference
 
-### 8.7 Verify the deployment
+| Environment | Add to Google Credentials → Authorized redirect URIs | `NEXT_PUBLIC_APP_URL` |
+|-------------|-------------------------------------------------------|------------------------|
+| Local dev | `http://localhost:3000/api/auth/google/callback` | `http://localhost:3000` |
+| Vercel production | `https://YOUR-APP.vercel.app/api/auth/google/callback` | `https://YOUR-APP.vercel.app` |
+| Custom domain | `https://your-domain.com/api/auth/google/callback` | `https://your-domain.com` |
 
-```bash
-curl https://<your-domain>/api/health                        # {"ok":true}
-curl -X POST https://<your-domain>/api/cron/settle \
-  -H "Authorization: Bearer <CRON_SECRET>"                   # settlement summary JSON
-```
+Rules: the path is always `/api/auth/google/callback`, **HTTPS only** in production (Google allows plain HTTP for localhost), no trailing slashes, and the value of `NEXT_PUBLIC_APP_URL` must match the origin of the URI you registered. A `redirect_uri_mismatch` error from Google always means these three don't match exactly.
 
-Make a test purchase (test mode shows the simulated gateway if keys are unset), then press **Run settlement now** in **Admin → Payouts** to see the full pipeline end-to-end.
+## Final testing steps
+
+**Local (http://localhost:3000):**
+
+1. Landing loads; **Start selling** → `/signup`.
+2. **Continue with Google** → choose a Google account → you return logged in → sent to the right surface.
+3. Log out; sign up with email + password using your `ADMIN_EMAIL` → you land on `/admin` (you're the admin).
+4. Create a second account as a **creator** → **New course** → add one chapter, one video lesson, one PDF lesson → save → set price ₹499 or 0 → **Publish** → **Copy link**.
+5. Incognito window → open the course link → sign up as a **buyer** → free course: **Enroll for free** → lands in the player; paid course: checkout with the Razorpay test card above → player opens, progress saves with **Complete & continue**.
+6. Creator dashboard shows the order; `/admin/settlements` shows the creator's balance → **Create payout** → **Mark as paid** → creator **Earnings** shows it.
+
+**Production (https://YOUR-APP.vercel.app):**
+
+1. `/api/health` returns `{"ok":true,"db":true,...}`; `/status` shows **All systems operational**.
+2. Google sign-in works on both `/login` and `/signup` (if Google shows `access_blocked`, your consent screen is still in Testing — add the user or publish the app).
+3. Repeat steps 4–6 above; run one Razorpay **test-mode** purchase end-to-end.
+4. Only then switch Razorpay to live keys and run a ₹1 real transaction.
+
+## Troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| Google shows `Error 400: redirect_uri_mismatch` | The callback URI isn't registered or doesn't match `NEXT_PUBLIC_APP_URL`. Compare character-for-character (https vs http, trailing slash) in Google Cloud → Credentials → Zybble web, then retry after ~5 minutes. |
+| `access_blocked: This app hasn't been verified` | Consent screen is in **Testing**. Add the account under **Audience → Test users**, or click **Publish app**. |
+| `/login?error=state` | Stale or blocked cookies (often third-party-cookie blocking in incognito). Reload `/login` and sign in again; ensure `APP_SECURE_COOKIES` matches the scheme (`true` only on HTTPS). |
+| Paid checkout says payments aren't configured | `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` are missing on that environment. Add them (Vercel: Settings → Environment Variables → Redeploy). |
+| `/status` shows Database down | `DATABASE_URL` is wrong or the DB is suspended (Neon free tier auto-suspends — it wakes on first query; refresh `/status` after a few seconds). |
+| After editing env vars on Vercel nothing changed | Env changes need a redeploy: **Deployments → ⋯ → Redeploy**. |
 
 ---
 
-## 9. Troubleshooting sign-in on your deployment
+## Architecture notes
 
-If **email or Google sign-in fails on Vercel**, work through this list — it covers every known cause:
+```
+src/
+  app/
+    api/auth/google/         # OAuth initiation + callback (state cookie CSRF protection,
+                             # code exchange, id_token validation, account linking)
+    api/checkout/            # Razorpay order + server-side signature verification
+    api/coupons/             # coupon price validation
+    api/health               # DB-backed probe (powers /status)
+    c/[slug]/                # public course sales page (+ free-preview route)
+    dashboard/               # creator studio (overview, builder, orders, earnings)
+    learn/                   # student library + course player
+    admin/                   # platform admin + settlements/payouts
+  lib/auth.ts                # sessions, scrypt hashing, role guards
+  lib/actions/*              # server actions — every mutation, Zod-validated
+```
 
-0. **Deploy the latest commit first.** Many auth fixes only help once deployed: `git push` (Vercel auto-deploys), wait for **Deployments → Ready**, then hard-refresh the site.
-1. **Check `/api/health` first.** Open `https://<your-domain>/api/health`. It reports whether the database is reachable, which tables exist, and gives a precise hint when something is missing.
-2. **`"Missing tables …"` in the health response** → the schema was never pushed to the production database. Run **§8.3** (`npx drizzle-kit push` + the guard-index SQL) with your production `DATABASE_URL`, then refresh `/api/health`.
-3. **`"Missing columns: users.google_sub"` in the health response (schema drift)** → the database was pushed *before* the Google-auth update and never re-pushed. Run `npx drizzle-kit push` again with your production `DATABASE_URL` — Drizzle only adds what's missing. Until you do, **login and Google sign-in query a column that doesn't exist and crash**, while public pages keep working.
-4. **`db: "error"` in the health response** → `DATABASE_URL` is wrong or unreachable in **Vercel → Project → Settings → Environment Variables**. The app applies TLS automatically for hosted Postgres (Neon/Supabase/RDS), so plain connection strings work. After editing env vars: **Deployments → ⋯ → Redeploy** (env changes never apply to old builds).
-5. **Google button shows "Google sign-in isn't configured"** → `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are not set in Vercel (§3.7). Values are trimmed automatically, but make sure there is no trailing whitespace or quotes.
-6. **Google redirects back with another error** → open **Vercel → Deployments → Runtime Logs** and look for `[zybble] google oauth failed:` lines — the exact Google error is logged there. The usual causes are in Google Cloud → Credentials: the **redirect URI must exactly match** `https://<your-domain>/api/auth/google/callback` (no trailing slash), the **JavaScript origin** must be `https://<your-domain>`, and if the **OAuth consent screen is in "Testing" mode**, every Google account that signs in must be listed under **Test users** (or publish the app).
-7. **Sign-in succeeds but you're instantly logged out** → `AUTH_SECRET` changed between deploys or is missing on some instances. Set one fixed value (§3.2) and redeploy.
-8. **Email login says "Incorrect email or password"** for the demo accounts → those accounts are only seeded when the schema exists; if you set `SEED_DEMO=false`, create your own account via **Sign up** first. The admin is created from `ADMIN_EMAIL` / `ADMIN_PASSWORD` on first boot.
-9. **Everything 500s, not just auth** → `DATABASE_URL` is missing entirely (the app refuses to start without it). Set it and redeploy.
+- OAuth accounts get `passwordHash = "oauth:google"` (password login disabled for them; Google sign-in links to an existing email account automatically)
+- Every paid order splits into 10% platform commission + creator earning; admins batch unsettled earnings into settlements
+- Security: http-only state cookie + exact-match CSRF check, `aud`/`exp` ID-token validation, server-side pricing, ownership checks in every mutation, unique constraints on slug/email/enrollment/progress
