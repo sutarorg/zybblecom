@@ -28,7 +28,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRoleEnum("role").notNull().default("buyer"),
   createdAt: createdAt(),
-});
+}).enableRLS();
 
 export const sessions = pgTable(
   "sessions",
@@ -42,7 +42,7 @@ export const sessions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
-);
+).enableRLS();
 
 export const courses = pgTable(
   "courses",
@@ -62,7 +62,7 @@ export const courses = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("courses_creator_idx").on(t.creatorId)],
-);
+).enableRLS();
 
 export const chapters = pgTable(
   "chapters",
@@ -76,7 +76,7 @@ export const chapters = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("chapters_course_idx").on(t.courseId)],
-);
+).enableRLS();
 
 export const lessons = pgTable(
   "lessons",
@@ -97,7 +97,7 @@ export const lessons = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("lessons_chapter_idx").on(t.chapterId)],
-);
+).enableRLS();
 
 export const coupons = pgTable(
   "coupons",
@@ -116,7 +116,7 @@ export const coupons = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("coupons_course_code_idx").on(t.courseId, t.code)],
-);
+).enableRLS();
 
 export const settlements = pgTable(
   "settlements",
@@ -132,7 +132,7 @@ export const settlements = pgTable(
     paidAt: timestamp("paid_at", { withTimezone: true }),
   },
   (t) => [index("settlements_creator_idx").on(t.creatorId)],
-);
+).enableRLS();
 
 export const orders = pgTable(
   "orders",
@@ -163,7 +163,7 @@ export const orders = pgTable(
     index("orders_status_idx").on(t.status),
     uniqueIndex("orders_provider_order_idx").on(t.providerOrderId),
   ],
-);
+).enableRLS();
 
 export const enrollments = pgTable(
   "enrollments",
@@ -179,7 +179,7 @@ export const enrollments = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("enroll_unique_idx").on(t.courseId, t.studentId)],
-);
+).enableRLS();
 
 export const lessonProgress = pgTable(
   "lesson_progress",
@@ -201,7 +201,7 @@ export const lessonProgress = pgTable(
     index("progress_course_idx").on(t.courseId),
     index("progress_student_idx").on(t.studentId),
   ],
-);
+).enableRLS();
 
 export type User = typeof users.$inferSelect;
 export type UserRole = User["role"];

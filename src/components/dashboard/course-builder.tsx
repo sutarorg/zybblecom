@@ -43,6 +43,7 @@ import {
   updateCourseDetails,
   updateLessonAction,
 } from "@/lib/actions/course";
+import { InlineUploadButton, UploadField } from "@/components/dashboard/file-upload";
 import { cn, formatDate, formatINR, slugify } from "@/lib/utils";
 
 type Curriculum = (Chapter & { lessons: Lesson[] })[];
@@ -463,14 +464,12 @@ function DetailsCard({
             <p className="mt-1.5 text-[12px] text-mut">Paid courses must be at least ₹49.</p>
           </div>
           <div>
-            <label htmlFor="cb-cover" className="label">Cover image URL (optional)</label>
-            <input
-              id="cb-cover"
-              className="input"
-              type="url"
-              placeholder="https://…"
+            <UploadField
+              label="Cover image (optional)"
+              courseId={course.id}
+              kind="image"
               value={form.coverUrl}
-              onChange={(e) => setForm((f) => ({ ...f, coverUrl: e.target.value }))}
+              onChange={(url) => setForm((f) => ({ ...f, coverUrl: url }))}
             />
             <p className="mt-1.5 text-[12px] text-mut">Landscape images look best. Leave empty for a gradient.</p>
           </div>
@@ -838,18 +837,18 @@ function LessonEditor({
           {lesson.type === "video" && (
             <>
               <div>
-                <label htmlFor="le-video" className="label">Video URL</label>
-                <input
-                  id="le-video"
-                  className="input"
-                  type="url"
-                  placeholder="https://youtube.com/watch?v=… or https://…/lesson.mp4"
+                <UploadField
+                  label="Video"
+                  courseId={courseId}
+                  kind="video"
                   value={form.videoUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, videoUrl: e.target.value }))}
+                  onChange={(url) => setForm((f) => ({ ...f, videoUrl: url }))}
+                  placeholder="https://youtube.com/watch?v=… or upload a file"
                   required
                 />
                 <p className="mt-1.5 text-[12px] text-mut">
-                  YouTube, Vimeo, or a direct .mp4/.webm link — all play right inside the course.
+                  Upload your own file, or paste a YouTube / Vimeo / direct .mp4 link — all play
+                  right inside the course.
                 </p>
               </div>
               <div>
@@ -869,14 +868,13 @@ function LessonEditor({
 
           {lesson.type === "pdf" && (
             <div>
-              <label htmlFor="le-pdf" className="label">PDF URL</label>
-              <input
-                id="le-pdf"
-                className="input"
-                type="url"
-                placeholder="https://…/guide.pdf"
+              <UploadField
+                label="PDF"
+                courseId={courseId}
+                kind="pdf"
                 value={form.fileUrl}
-                onChange={(e) => setForm((f) => ({ ...f, fileUrl: e.target.value }))}
+                onChange={(url) => setForm((f) => ({ ...f, fileUrl: url }))}
+                placeholder="https://…/guide.pdf or upload a file"
                 required
               />
               <p className="mt-1.5 text-[12px] text-mut">Students can read it inline or download it.</p>
@@ -918,7 +916,9 @@ function LessonEditor({
               </button>
             </div>
             {resources.length === 0 ? (
-              <p className="mt-2 text-[12.5px] text-mut">Attach downloads, templates, or links for this lesson.</p>
+              <p className="mt-2 text-[12.5px] text-mut">
+                Attach downloads, templates, or links for this lesson — upload a file or paste a URL.
+              </p>
             ) : (
               <div className="mt-2 space-y-2">
                 {resources.map((r, i) => (
@@ -933,10 +933,22 @@ function LessonEditor({
                     <input
                       aria-label={`Resource ${i + 1} URL`}
                       className="input h-10 flex-1 text-[13px]"
-                      placeholder="https://…"
+                      placeholder="https://… or upload"
                       type="url"
                       value={r.url}
                       onChange={(e) => setResources((rs) => rs.map((x, xi) => (xi === i ? { ...x, url: e.target.value } : x)))}
+                    />
+                    <InlineUploadButton
+                      courseId={courseId}
+                      kind="resource"
+                      label={`Upload resource ${i + 1}`}
+                      onUploaded={(url, filename) =>
+                        setResources((rs) =>
+                          rs.map((x, xi) =>
+                            xi === i ? { label: x.label || filename, url } : x,
+                          ),
+                        )
+                      }
                     />
                     <button
                       type="button"

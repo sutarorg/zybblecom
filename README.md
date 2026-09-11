@@ -5,7 +5,8 @@
 ## Stack
 
 - **Next.js 16** (App Router, React 19) + TypeScript
-- **PostgreSQL** via **Drizzle ORM**
+- **Supabase Postgres** via **Drizzle ORM**
+- **Cloudflare R2** for course video / PDF / resource storage (S3-compatible, presigned direct uploads)
 - **Tailwind CSS v4**
 - **Google OAuth 2.0** + email/password auth (scrypt hashing, http-only cookie sessions)
 - **Razorpay** checkout (REST orders + HMAC-SHA256 signature verification)
@@ -14,14 +15,14 @@
 
 # Deployment guide — click by click
 
-You will need accounts on: **GitHub**, **Vercel**, **Neon** (Postgres), **Google Cloud**, and optionally **Razorpay**. Every step below is exact; nothing is assumed.
+You will need accounts on: **GitHub**, **Vercel**, **Supabase** (database), **Google Cloud** (sign-in), **Cloudflare** (file storage), and optionally **Razorpay** (payments). Every step below is exact; nothing is assumed.
 
 ## Step 1 — Create the GitHub repository
 
 1. Go to <https://github.com> and sign in.
 2. Click the **+** icon (top right) → **New repository**.
 3. **Repository name:** `zybble` → choose **Private** → **Create repository** (leave "Add a README" unchecked).
-4. On your machine, inside this project folder, run the commands GitHub shows:
+4. On your machine, inside this project folder, run:
 
 ```bash
 git init
@@ -32,172 +33,243 @@ git remote add origin https://github.com/<your-username>/zybble.git
 git push -u origin main
 ```
 
-> The repo's `.gitignore` already excludes `.env`, `node_modules`, and build output. Your secrets can never be committed by accident. `.env.example` documents every variable.
+> `.gitignore` already excludes `.env`, `node_modules`, and build output, so secrets can never be committed by accident. `.env.example` documents every variable.
 
-## Step 2 — Create the PostgreSQL database (Neon)
+## Step 2 — Create the Supabase database
 
-Any hosted Postgres works; these steps are for Neon (free tier is enough):
+1. Go to <https://supabase.com> → **Start your project** → sign in with GitHub.
+2. Click **New project**.
+   - **Organization:** pick or create one
+   - **Name:** `zybble`
+   - **Database Password:** click **Generate a password** → **copy it now** and save it somewhere safe (you cannot view it again; you can only reset it)
+   - **Region:** the one closest to your users
+3. Click **Create new project** and wait ~2 minutes for provisioning.
 
-1. Go to <https://neon.tech> → **Sign up** (GitHub login is fastest).
-2. Click **New Project** → name it `zybble` → pick the region closest to your users → **Create Project**.
-3. On the project dashboard, find the **Connection string** box. Select **Pooled connection** (important for serverless) and click **Copy**. It looks like:
-   `postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/DBNAME?sslmode=require`
-4. Save it — this is your `DATABASE_URL`.
+### 2a. Create the tables (Supabase SQL Editor)
 
-### Apply the database schema — this step is mandatory
+1. In the left sidebar click **SQL Editor** → **+ New query**.
+2. Open the file [`supabase/schema.sql`](./supabase/schema.sql) from this repo, **copy the entire contents**, and paste it into the editor.
+3. Click **Run** (or press <kbd>Ctrl/Cmd</kbd> + <kbd>Enter</kbd>).
+4. You should see a result grid listing **10 table names** (`chapters`, `courses`, `coupons`, `enrollments`, `lesson_progress`, `lessons`, `orders`, `sessions`, `settlements`, `users`).
 
-> ⚠️ **Sign-up, log-in, and every course page will 500 until the schema is pushed.** A live database connection (`/api/health` reachable) is not enough — the tables must actually exist.
+The script is **idempotent** — safe to re-run any time to repair the schema. It also enables Row Level Security with no policies on every table, which blocks Supabase's auto-generated public REST API from reading your data while your app (which connects directly as the `postgres` role) keeps full access.
 
-From the project folder on your machine, with the **exact same connection string** you put in Vercel (`DATABASE_URL`):
+> **Alternative to the SQL Editor:** you can push the schema from the repo instead — `DATABASE_URL="<your string from 2b>" npx drizzle-kit push --force`. Use whichever you prefer; both produce the identical schema.
 
-```bash
-npm install
-DATABASE_URL="paste-your-connection-string-here" npx drizzle-kit push --force
-```
+### 2b. Get the connection string
 
-`drizzle.config.ts` reads `DATABASE_URL` from the environment, so this works from anywhere — no config edits. You should see `Changes applied`. All 10 tables (users, sessions, courses, chapters, lessons, coupons, orders, enrollments, lesson_progress, settlements) now exist.
+1. Click **Connect** in the top bar of the Supabase dashboard.
+2. Select the **ORMs** tab (or **Connection string** → **Transaction pooler**).
+3. Copy the **Transaction pooler** URI — it looks like:
 
-**Verify afterwards:** open `https://your-domain/api/health` — it must return `{"ok":true,"db":true,...}`. The health probe now validates that the schema exists (not just the socket), so `ok:false` after a deploy almost always means this step was skipped or pointed at a different database than the one Vercel is using.
+   ```
+   postgresql://postgres.abcdefghijklm:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres
+   ```
+
+4. Replace `[YOUR-PASSWORD]` with the database password from Step 2, then append the connection flags:
+
+   ```
+   ?pgbouncer=true&sslmode=require
+   ```
+
+   Final value (this is your `DATABASE_URL`):
+
+   ```
+   postgresql://postgres.abcdefghijklm:YOURPASSWORD@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require
+   ```
+
+> **Why the transaction pooler (port 6543)?** Vercel runs serverless functions that open many short-lived connections. The pooler multiplexes them so you never exhaust Postgres connections. For long-running servers you can use the direct connection on port 5432 instead. If your password contains special characters (`@ : / ? # &`), URL-encode them.
 
 ## Step 3 — Configure Google OAuth
 
-Zybble uses a server-side OAuth 2.0 flow (`/api/auth/google` → Google → `/api/auth/google/callback`). Configure it once; it covers both Login and Sign Up.
+Zybble uses its own server-side OAuth 2.0 flow (`/api/auth/google` → Google → `/api/auth/google/callback`). Configure it once; it powers both Login and Sign Up. **You do not need Supabase Auth** — sessions are issued by Zybble.
 
 ### 3a. Create the Google Cloud project
 
-1. Go to <https://console.cloud.google.com> and sign in with the Google account that will own the app.
-2. Click the **project selector** (top-left, next to the Google Cloud logo) → **New Project**.
-3. Name: `Zybble` → leave organization as-is → **Create**.
-4. Wait for the notification, then select the `Zybble` project from the selector.
+1. Go to <https://console.cloud.google.com> and sign in.
+2. Click the **project selector** (top-left) → **New Project**.
+3. Name: `Zybble` → **Create**, then select the project.
 
 ### 3b. Configure the OAuth consent screen
 
 1. Left menu → **APIs & Services** → **OAuth consent screen**.
 2. Select **External** → **Create**.
-3. Fill in:
-   - **App name:** `Zybble`
-   - **User support email:** your email
-   - **App logo / domain fields:** optional at this stage
-   - **Developer contact information:** your email
-4. Click **Save and Continue** (App information) → **Save and Continue** (Scopes — leave untouched; Zybble only requests the open `email`/`profile` scopes) → **Save and Continue** (Test users).
-5. **Optional but recommended while the app is in "Testing" status:** on the **Test users** step (or later via **Audience**), click **+ Add users** and add every Gmail address you will test with. In Testing mode, **only listed users can sign in**.
-6. When you're ready for the public: **OAuth consent screen** → **Audience** → **Publish app** → **Confirm**. Publishing makes "Continue with Google" work for anyone.
+3. Fill in **App name** (`Zybble`), **User support email**, and **Developer contact information**.
+4. **Save and Continue** through Scopes (leave untouched — Zybble only requests `openid email profile`) and Test users.
+5. While the app is in **Testing**, only listed accounts can sign in: **Audience** → **+ Add users** → add your Gmail addresses.
+6. To open it to everyone: **OAuth consent screen** → **Audience** → **Publish app** → **Confirm**.
 
 ### 3c. Create the OAuth Client ID and Secret
 
 1. Left menu → **Credentials** → **+ Create Credentials** → **OAuth client ID**.
-2. **Application type:** `Web application`. **Name:** `Zybble web`.
-3. Under **Authorized redirect URIs**, click **+ Add URI** and add **exactly these two** (no trailing slashes — they must match character-for-character):
+2. **Application type:** `Web application`; **Name:** `Zybble web`.
+3. Under **Authorized redirect URIs** → **+ Add URI**, add **exactly** (no trailing slash):
 
    ```
    http://localhost:3000/api/auth/google/callback
-   https://YOUR-APP-NAME.vercel.app/api/auth/google/callback
+   https://YOUR-DOMAIN/api/auth/google/callback
    ```
 
-   > You won't know your final Vercel domain until Step 5. Add the localhost URI now, deploy, then come back (Credentials → click "Zybble web") and add the production URI. If you attach a custom domain later, add `https://your-domain.com/api/auth/google/callback` too.
-4. Click **Create**. A modal shows your **Client ID** and **Client Secret** → copy both (you can always re-open this later from **Credentials → Zybble web**).
+   > You won't know the production domain until Step 6 — add localhost now, deploy, then return here and add the real one.
+4. **Create** → copy the **Client ID** and **Client Secret** → these are `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
-These become `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+## Step 4 — Set up Cloudflare R2 storage
 
-## Step 4 — Get Razorpay keys (optional, for paid courses)
+R2 stores lesson videos, PDFs, cover images, and downloadable resources. Uploads go **directly from the creator's browser to R2** using short-lived presigned URLs, so large video files never pass through Vercel.
 
-Without these, free enrollment works and paid checkout shows a clear "payments not configured" message — nothing breaks.
+> Skip this and Zybble still works — upload buttons explain that storage isn't configured, and creators can paste external URLs (YouTube, Vimeo, Drive) instead.
 
-1. Go to <https://dashboard.razorpay.com> → **Sign up** (or sign in).
-2. Find the **mode toggle** in the top bar and set it to **Test Mode** (orange).
-3. Left menu → **Settings** → **API Keys** → **Generate Test Key**.
-4. Copy the **Key Id** (`rzp_test_...`) and **Key Secret** — the secret is shown only once, store it immediately.
-5. These become `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`.
+### 4a. Create the bucket
 
-**To accept real money later:** complete Razorpay account activation (business details in the dashboard), switch the toggle to **Live Mode**, generate a **Live Key**, and replace the two variables.
+1. Go to <https://dash.cloudflare.com> → sign in → left sidebar → **R2 Object Storage**.
+2. First time only: click **Purchase R2** / **Enable R2** and add a payment method (R2 has a generous always-free tier: 10 GB storage, and **zero egress fees**).
+3. Click **Create bucket** → **Bucket name:** `zybble-courses` → choose a **Location** near your users → **Create bucket**.
 
-**No webhook setup is required** — Zybble verifies payments server-side with the HMAC-SHA256 signature returned by checkout.
+### 4b. Enable public access for the bucket
 
-**Test-mode payments:** open any paid course → **Enroll now** → in the Razorpay modal pay by card with `5267 3181 8797 5449` (Mastercard, domestic) or `4111 1111 1111 1111` (Visa), any future expiry, any CVV → click **Success** on the mock bank page. No real money moves.
+Course files are served to enrolled students in the browser, so the bucket needs a public read URL.
 
-## Step 5 — Deploy on Vercel
+1. Open the bucket → **Settings** tab.
+2. Find **Public Development URL** → **Enable** → confirm.
+3. Copy the URL shown — it looks like `https://pub-1a2b3c4d5e.r2.dev`. That is your `R2_PUBLIC_BASE_URL` (no trailing slash).
 
-1. Go to <https://vercel.com> → **Sign Up** → **Continue with GitHub** → authorize Vercel.
-2. Dashboard → **Add New…** → **Project**.
-3. Under **Import Git Repository**, find `zybble` (click **Adjust GitHub App Permissions** → grant access to the repo if it isn't listed) → **Import**.
-4. Vercel auto-detects Next.js; **do not change** framework/build settings.
-5. Expand **Environment Variables** and add each row below (Name + Value; leave scope as all environments):
+> **Production tip:** for a branded, cache-friendly URL, use **Custom Domains** → **Connect Domain** → e.g. `cdn.your-domain.com` (requires the domain to be on Cloudflare DNS). Then set `R2_PUBLIC_BASE_URL=https://cdn.your-domain.com`.
 
-| Name | Where the value comes from | Example |
-|------|----------------------------|---------|
-| `DATABASE_URL` | Neon dashboard connection string (Step 2) | `postgresql://user:***@host-pooler...?sslmode=require` |
-| `GOOGLE_CLIENT_ID` | Google Cloud → Credentials → Zybble web (Step 3c) | `....apps.googleusercontent.com` |
-| `GOOGLE_CLIENT_SECRET` | Google Cloud → same screen (Step 3c) | `GOCSPX-...` |
-| `NEXT_PUBLIC_APP_URL` | Your Vercel production URL: `https://` + the domain shown after this first deploy, **no trailing slash**. For the very first deploy you may enter your best guess (`https://zybble.vercel.app`); correct it in Step 6 if the actual domain differs. | `https://zybble.vercel.app` |
-| `RAZORPAY_KEY_ID` | Razorpay dashboard → Settings → API Keys (Step 4) | `rzp_test_...` |
-| `RAZORPAY_KEY_SECRET` | Razorpay dashboard → same screen (Step 4) | |
+### 4c. Add the CORS policy (required for browser uploads)
+
+1. In the bucket → **Settings** tab → scroll to **CORS Policy** → **Edit** / **Add CORS policy**.
+2. Paste this, replacing the domain with yours, then **Save**:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "https://YOUR-DOMAIN"
+    ],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["content-type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+> Missing or wrong CORS is the #1 cause of "Network error during upload" — the origin in `AllowedOrigins` must match your site exactly (scheme + host, no trailing slash).
+
+### 4d. Create the API token
+
+1. Go back to **R2 Object Storage** (bucket list) → right sidebar **API** → **Manage API Tokens** → **Create API Token**.
+2. **Token name:** `zybble-uploads`.
+3. **Permissions:** select **Object Read & Write**.
+4. **Specify bucket(s):** choose **Apply to specific buckets only** → `zybble-courses`.
+5. Click **Create API Token**.
+6. Copy the **Access Key ID** → `R2_ACCESS_KEY_ID`, and the **Secret Access Key** → `R2_SECRET_ACCESS_KEY` (**shown only once**).
+7. Your **Account ID** is on the R2 Overview page (right sidebar) → `R2_ACCOUNT_ID`.
+
+## Step 5 — Get Razorpay keys (optional, for paid courses)
+
+Without these, free enrollment works and paid checkout shows a clear "payments not configured" message.
+
+1. <https://dashboard.razorpay.com> → sign in → set the top-bar toggle to **Test Mode**.
+2. **Settings** → **API Keys** → **Generate Test Key**.
+3. Copy **Key Id** (`rzp_test_…`) → `RAZORPAY_KEY_ID`, and **Key Secret** → `RAZORPAY_KEY_SECRET` (shown once).
+
+**Going live:** complete Razorpay account activation, switch to **Live Mode**, generate a **Live Key**, and replace both values. **No webhooks required** — Zybble verifies payments server-side via HMAC-SHA256 signature.
+
+**Test-mode card:** `5267 3181 8797 5449` (Mastercard) or `4111 1111 1111 1111` (Visa), any future expiry, any CVV, then click **Success** on the mock bank page.
+
+## Step 6 — Deploy on Vercel
+
+1. <https://vercel.com> → **Sign Up** → **Continue with GitHub** → authorize.
+2. **Add New…** → **Project** → find `zybble` under *Import Git Repository* (click **Adjust GitHub App Permissions** if it isn't listed) → **Import**.
+3. Vercel auto-detects Next.js — **do not change** build settings.
+4. Expand **Environment Variables** and add every row below:
+
+| Name | Where to get it | Example |
+|------|-----------------|---------|
+| `DATABASE_URL` | Supabase → Connect → Transaction pooler (Step 2b) | `postgresql://postgres.abc:PW@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require` |
+| `GOOGLE_CLIENT_ID` | Google Cloud → Credentials (Step 3c) | `...apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud → Credentials (Step 3c) | `GOCSPX-...` |
+| `NEXT_PUBLIC_APP_URL` | Your production URL, no trailing slash | `https://zybble.com` |
+| `R2_ACCOUNT_ID` | Cloudflare → R2 Overview → Account ID (Step 4d) | `8f2c…` |
+| `R2_ACCESS_KEY_ID` | R2 → Manage API Tokens (Step 4d) | |
+| `R2_SECRET_ACCESS_KEY` | R2 → Manage API Tokens (Step 4d) | |
+| `R2_BUCKET` | Your bucket name (Step 4a) | `zybble-courses` |
+| `R2_PUBLIC_BASE_URL` | R2 bucket public URL (Step 4b) | `https://pub-1a2b3c.r2.dev` |
+| `RAZORPAY_KEY_ID` | Razorpay → API Keys (Step 5) | `rzp_test_…` |
+| `RAZORPAY_KEY_SECRET` | Razorpay → API Keys (Step 5) | |
 | `ADMIN_EMAIL` | The email **you** will sign up with — becomes platform admin | `you@example.com` |
 | `APP_SECURE_COOKIES` | Always `true` on Vercel (HTTPS) | `true` |
 
-6. Click **Deploy**. Wait ~1–2 minutes for the build; Vercel shows **Congratulations** with your live URL.
-
-   > **Reminder:** the schema push (Step 2) must have been run against the same `DATABASE_URL` you just added. If you generated a fresh Neon connection string while configuring Vercel, run `DATABASE_URL="<value>" npx drizzle-kit push --force` now — otherwise sign-up and log-in will 500.
-
-7. **Finished the first deploy?** Confirm the actual production domain (top of the project → **Domains**). If it's different from what you used:
-   - Vercel: **Settings** → **Environment Variables** → pencil on `NEXT_PUBLIC_APP_URL` → set the real domain → **Save** → **Deployments** → ⋯ on latest → **Redeploy**.
-   - Google Cloud: **Credentials** → **Zybble web** → add `https://REAL-DOMAIN/api/auth/google/callback` to **Authorized redirect URIs** → **Save** (propagates within ~5 minutes).
-
-> **Any future env-var change** on Vercel follows the same pattern: **Settings → Environment Variables → edit → Save → Redeploy** (env changes require a redeploy to take effect).
+5. Click **Deploy** and wait ~2 minutes.
+6. **After the first deploy**, note your real domain (**Project → Domains**) and finish the loop:
+   - **Vercel:** Settings → Environment Variables → set `NEXT_PUBLIC_APP_URL` to the real domain → **Save**.
+   - **Google Cloud:** Credentials → `Zybble web` → add `https://REAL-DOMAIN/api/auth/google/callback` → **Save**.
+   - **Cloudflare R2:** bucket → Settings → CORS → add `https://REAL-DOMAIN` to `AllowedOrigins` → **Save**.
+   - **Vercel:** Deployments → ⋯ on the latest → **Redeploy** (env changes only apply after a redeploy).
+7. Open `https://YOUR-DOMAIN/api/health` — it must return `{"ok":true,"db":true,…}`. This probe verifies the **tables exist**, not just connectivity, so a failure here means Step 2a wasn't run against this database.
 
 ## Local development setup — click by click
 
-1. Clone: `git clone https://github.com/<you>/zybble.git && cd zybble`
-2. Install: `npm install`
-3. Create env file: `cp .env.example .env`
-4. Open `.env` and fill in:
-   - `DATABASE_URL` — Neon string from Step 2, or local Postgres `postgresql://postgres:postgres@127.0.0.1:5432/app_db`
-   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — Step 3c values
+1. `git clone https://github.com/<you>/zybble.git && cd zybble`
+2. `npm install`
+3. `cp .env.example .env`
+4. Edit `.env`:
+   - `DATABASE_URL` — the Supabase string from Step 2b (or local Postgres `postgresql://postgres:postgres@127.0.0.1:5432/app_db`)
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — Step 3c
    - `NEXT_PUBLIC_APP_URL` — `http://localhost:3000`
-   - `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` — Step 4 test values (optional)
-   - `ADMIN_EMAIL` — your email; `APP_SECURE_COOKIES` — keep `false` locally
-5. Apply schema: `npx drizzle-kit push`
-6. Run: `npm run dev` → open <http://localhost:3000>
+   - `R2_*` — Step 4 (optional)
+   - `RAZORPAY_*` — Step 5 (optional)
+   - `ADMIN_EMAIL` — your email; `APP_SECURE_COOKIES` — `false` locally
+5. Create the tables: run [`supabase/schema.sql`](./supabase/schema.sql) in the Supabase SQL Editor, **or** `npx drizzle-kit push`
+6. `npm run dev` → <http://localhost:3000>
 
 ## OAuth redirect URLs — exact reference
 
-| Environment | Add to Google Credentials → Authorized redirect URIs | `NEXT_PUBLIC_APP_URL` |
-|-------------|-------------------------------------------------------|------------------------|
+| Environment | Google → Authorized redirect URIs | `NEXT_PUBLIC_APP_URL` |
+|-------------|-----------------------------------|------------------------|
 | Local dev | `http://localhost:3000/api/auth/google/callback` | `http://localhost:3000` |
-| Vercel production | `https://YOUR-APP.vercel.app/api/auth/google/callback` | `https://YOUR-APP.vercel.app` |
+| Vercel | `https://YOUR-APP.vercel.app/api/auth/google/callback` | `https://YOUR-APP.vercel.app` |
 | Custom domain | `https://your-domain.com/api/auth/google/callback` | `https://your-domain.com` |
 
-Rules: the path is always `/api/auth/google/callback`, **HTTPS only** in production (Google allows plain HTTP for localhost), no trailing slashes, and the value of `NEXT_PUBLIC_APP_URL` must match the origin of the URI you registered. A `redirect_uri_mismatch` error from Google always means these three don't match exactly.
+The path is always `/api/auth/google/callback`; HTTPS in production; no trailing slashes; `NEXT_PUBLIC_APP_URL` must match the registered origin exactly. A `redirect_uri_mismatch` error always means these disagree.
 
 ## Final testing steps
 
-**Local (http://localhost:3000):**
+**Local (http://localhost:3000)**
 
-1. Landing loads; **Start selling** → `/signup`.
-2. **Continue with Google** → choose a Google account → you return logged in → sent to the right surface.
-3. Log out; sign up with email + password using your `ADMIN_EMAIL` → you land on `/admin` (you're the admin).
-4. Create a second account as a **creator** → **New course** → add one chapter, one video lesson, one PDF lesson → save → set price ₹499 or 0 → **Publish** → **Copy link**.
-5. Incognito window → open the course link → sign up as a **buyer** → free course: **Enroll for free** → lands in the player; paid course: checkout with the Razorpay test card above → player opens, progress saves with **Complete & continue**.
-6. Creator dashboard shows the order; `/admin/settlements` shows the creator's balance → **Create payout** → **Mark as paid** → creator **Earnings** shows it.
+1. Landing loads → **Start selling** → `/signup`.
+2. **Continue with Google** → pick an account → you return signed in.
+3. Log out → sign up with email/password using your `ADMIN_EMAIL` → you land on `/admin`.
+4. New account as **creator** → **New course** → **upload a cover image** → add a chapter → add a **video lesson and upload an MP4** (watch the progress bar) → add a **PDF lesson and upload a PDF** → attach a **resource file** → Save.
+5. Set price ₹499 (or 0) → **Publish** → **Copy link**.
+6. Incognito → open the link → sign up as **buyer** → enroll (free instantly, or pay with the Razorpay test card) → the player opens and the uploaded video/PDF plays inline → **Complete & continue** saves progress.
+7. Creator **Orders** shows the sale; **Admin → Settlements** → **Create payout** → **Mark as paid** → creator **Earnings** reflects it.
 
-**Production (https://YOUR-APP.vercel.app):**
+**Production (https://YOUR-DOMAIN)**
 
-1. `/api/health` returns `{"ok":true,"db":true,...}`; `/status` shows **All systems operational**.
-2. Google sign-in works on both `/login` and `/signup` (if Google shows `access_blocked`, your consent screen is still in Testing — add the user or publish the app).
-3. Repeat steps 4–6 above; run one Razorpay **test-mode** purchase end-to-end.
-4. Only then switch Razorpay to live keys and run a ₹1 real transaction.
+1. `/api/health` → `{"ok":true,"db":true,…}`; `/status` → **All systems operational**.
+2. Google sign-in works on `/login` and `/signup`.
+3. Upload a real video in the builder — confirm it plays from your `R2_PUBLIC_BASE_URL`.
+4. Run one Razorpay **test-mode** purchase end to end, then switch to live keys.
 
 ## Troubleshooting
 
 | Symptom | Cause & fix |
 |---|---|
-| **Sign-up / log-in / every course page fails with a 500 (`x-action: postprocess` on Vercel), while `/api/health` says the DB is up** | **The schema was never pushed to the production database** (or it was pushed to a *different* database than `DATABASE_URL` on Vercel points to). Fix: run `DATABASE_URL="<the exact Vercel value>" npx drizzle-kit push --force` locally, then re-check `/api/health` — it now verifies the tables exist, not just connectivity. |
-| Sign-in form shows "database hasn't been set up yet" | Same as above — run the schema push against the exact `DATABASE_URL` configured in Vercel. |
-| Google shows `Error 400: redirect_uri_mismatch` | The callback URI isn't registered or doesn't match `NEXT_PUBLIC_APP_URL`. Compare character-for-character (https vs http, trailing slash) in Google Cloud → Credentials → Zybble web, then retry after ~5 minutes. |
-| `access_blocked: This app hasn't been verified` | Consent screen is in **Testing**. Add the account under **Audience → Test users**, or click **Publish app**. |
-| `/login?error=state` | Stale or blocked cookies (often third-party-cookie blocking in incognito). Reload `/login` and sign in again; ensure `APP_SECURE_COOKIES` matches the scheme (`true` only on HTTPS). |
-| Paid checkout says payments aren't configured | `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` are missing on that environment. Add them (Vercel: Settings → Environment Variables → Redeploy). |
-| `/status` shows Database down | `DATABASE_URL` is wrong or the DB is suspended (Neon free tier auto-suspends — it wakes on first query; refresh `/status` after a few seconds). |
-| After editing env vars on Vercel nothing changed | Env changes need a redeploy: **Deployments → ⋯ → Redeploy**. |
+| Sign-up / log-in / course pages 500 while `/api/health` looks fine | The schema was never created in **this** database. Run `supabase/schema.sql` in the Supabase SQL Editor (Step 2a) against the same project as `DATABASE_URL`, then re-check `/api/health` (it verifies tables exist). |
+| Sign-in shows "database hasn't been set up yet" | Same as above — run the SQL script. |
+| `password authentication failed` / `Tenant or user not found` | Wrong password or malformed pooler URI. Re-copy from Supabase → **Connect**, replace `[YOUR-PASSWORD]`, and URL-encode special characters. |
+| `too many connections` | Use the **transaction pooler** host (port **6543**) with `?pgbouncer=true`, not the direct 5432 host. |
+| Google `Error 400: redirect_uri_mismatch` | Registered URI ≠ `NEXT_PUBLIC_APP_URL`. Compare character-for-character in Google Cloud → Credentials, then retry after ~5 min. |
+| Google `access_blocked: app not verified` | Consent screen is in **Testing** — add the account under **Audience → Test users**, or **Publish app**. |
+| Upload fails with "Network error during upload" | R2 **CORS** doesn't include your exact origin. Bucket → Settings → CORS Policy (Step 4c) → add the origin → Save. |
+| Upload fails with 401/403 from storage | R2 API token lacks **Object Read & Write** on this bucket, or `R2_ACCOUNT_ID` / keys are wrong. Recreate the token (Step 4d). |
+| Uploaded file returns 404 when played | `R2_PUBLIC_BASE_URL` is wrong or public access is off. Bucket → Settings → **Public Development URL** → Enable, then copy that exact URL. |
+| Upload button says storage isn't configured | One or more `R2_*` variables are missing on that environment. Add all five, then **Redeploy**. |
+| Paid checkout says payments aren't configured | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` missing → add → **Redeploy**. |
+| Env var edits don't take effect | Vercel requires a redeploy: **Deployments → ⋯ → Redeploy**. |
 
 ---
 
@@ -206,19 +278,22 @@ Rules: the path is always `/api/auth/google/callback`, **HTTPS only** in product
 ```
 src/
   app/
-    api/auth/google/         # OAuth initiation + callback (state cookie CSRF protection,
+    api/auth/google/         # OAuth initiation + callback (state-cookie CSRF,
                              # code exchange, id_token validation, account linking)
+    api/uploads/presign/     # R2 presigned PUT (auth + ownership + MIME/size limits)
     api/checkout/            # Razorpay order + server-side signature verification
     api/coupons/             # coupon price validation
-    api/health               # DB-backed probe (powers /status)
+    api/health               # schema-aware DB probe (powers /status)
     c/[slug]/                # public course sales page (+ free-preview route)
     dashboard/               # creator studio (overview, builder, orders, earnings)
     learn/                   # student library + course player
     admin/                   # platform admin + settlements/payouts
-  lib/auth.ts                # sessions, scrypt hashing, role guards
+  db/                        # Drizzle client (TLS-aware pool) + schema
+  lib/r2.ts                  # R2 client, MIME/size rules, key builder, presigner
   lib/actions/*              # server actions — every mutation, Zod-validated
+supabase/schema.sql          # paste-and-run schema for the Supabase SQL Editor
 ```
 
-- OAuth accounts get `passwordHash = "oauth:google"` (password login disabled for them; Google sign-in links to an existing email account automatically)
-- Every paid order splits into 10% platform commission + creator earning; admins batch unsettled earnings into settlements
-- Security: http-only state cookie + exact-match CSRF check, `aud`/`exp` ID-token validation, server-side pricing, ownership checks in every mutation, unique constraints on slug/email/enrollment/progress
+**Upload flow:** creator picks a file → `POST /api/uploads/presign` verifies session, creator role, course ownership, MIME type and size → returns a 15-minute presigned PUT URL → the browser uploads straight to R2 with a progress bar → the returned public URL is saved on the lesson/course. Object keys are namespaced `courses/{courseId}/{kind}/{uuid}-{filename}`.
+
+**Security:** RLS enabled on all tables (blocks Supabase's public REST API); scrypt password hashing with constant-time compare; http-only sessions; server-side price computation; HMAC-verified payments; ownership checks in every mutation and upload; unique constraints on slug, email, enrollment, and lesson progress.
