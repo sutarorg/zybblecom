@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Builds
+dist/
+server/dist/
+
+# Environment — never commit secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+worker/venv/
+venv/
+
+# Platform
+.vercel/
+
+# OS / logs
+.DS_Store
+npm-debug.log*
+*.log

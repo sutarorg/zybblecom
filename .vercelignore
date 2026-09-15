@@ -1,0 +1,12 @@
+# Only the Vite frontend is deployed to Vercel.
+# Backend services deploy as containers (see README → Step 5).
+node_modules
+dist
+server
+worker
+supabase
+docker-compose.yml
+render.yaml
+.env
+.env.*
+!.env.example
