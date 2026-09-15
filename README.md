@@ -224,14 +224,26 @@ openssl rand -hex 24   # → WORKER_SECRET
 
 ### Step 5 · Option A — Railway (recommended, click-by-click)
 
+> **Builder note (important):** the repo ships `railway.json` config files in
+> the root, `server/` and `worker/` that **force the Dockerfile builder**
+> and pin start commands/health checks. Without them, Railway's Railpack
+> misdetects services as a "Node/Vite project" when the Root Directory is
+> repo root — which builds the frontend instead of the service and fails.
+> If you ever see "valid build plan for your Node/Vite project" for the
+> mailer or scraper, the Root Directory is wrong — set it as below and
+> redeploy. Never let Railway run its Node plan for backend services.
+
 **Service 1 — API:**
 
 1. Go to **https://railway.app** → **Login with GitHub**.
 2. **New Project** → **Deploy from GitHub repo** → select **`zybble`** →
    if asked, confirm "Railway can access the repository".
 3. Railway creates a service. Click it → **Settings** tab.
-4. Scroll to **Source** → set **Root Directory** to `server`
-   (Railway auto-detects `server/Dockerfile`).
+4. Scroll to **Source** → set **Root Directory** to `server`.
+   The bundled `server/railway.json` takes over: **Dockerfile builder** at
+   `server/Dockerfile`, start command `node dist/server.js`, health check on
+   `/api/health`. (If Railway still shows a Nixpacks/Railpack plan under
+   **Settings → Build**, switch **Builder** to **Dockerfile** manually.)
 5. Open the **Variables** tab → click **+ New Variable** and add **all** of:
 
 | Variable | Value from |
@@ -257,18 +269,30 @@ openssl rand -hex 24   # → WORKER_SECRET
 
 1. In the same project, click **+ New** (top-right) → **GitHub Repo** →
    `zybble` again.
-2. **Settings → Source → Root Directory:** `server`.
-3. **Settings → Deploy → Custom Start Command:** `node dist/worker.js`.
+2. **Settings → Source → Root Directory:** `server` (same image as the API).
+3. **Settings → Deploy → Custom Start Command:** `node dist/worker.js` —
+   this one setting is what distinguishes the mailer from the API.
+   Do **not** route public traffic to it and leave its health check empty:
+   it's a background worker, not a web service.
 4. **Variables tab:** click **"Add Variable Reference"** or re-add the **same
    full set** as the API service (Railway doesn't auto-share — fastest is the
    **"Raw Editor"** toggle: paste the whole block).
 5. Deploy; logs should show `"mailer worker started"`.
 
+> ⚠️ If the mailer builds but immediately **crashes** with a syntax or
+> module error, its service almost certainly got built from the repo root
+> (frontend) instead of `server/` — check the build log: it must run the
+> `server/Dockerfile` stages (`npm run build` → `COPY --from=build`), not a
+> Vite build. Fix the Root Directory + builder and redeploy.
+
 **Service 3 — Scraper worker (Google Maps / Selenium):**
 
 1. **+ New → GitHub Repo → `zybble`** once more.
-2. **Settings → Source → Root Directory:** `worker`
-   (auto-detects `worker/Dockerfile` with Chromium).
+2. **Settings → Source → Root Directory:** `worker`.
+   The bundled `worker/railway.json` forces the **Dockerfile builder** on
+   `worker/Dockerfile` (Python + Chromium + Chromedriver) with start command
+   `python worker.py`. The build installs Chromium from Debian packages, so
+   the first image build takes a few minutes — that's normal.
 3. **Variables:** only two are needed —
    `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
    (optional: `WORKER_POLL_SECONDS=5`).
@@ -426,6 +450,10 @@ in a `.env` for the frontend.
 | Magic link lands on an error page | **Supabase → Authentication → URL Configuration**: Site URL and Redirect URLs must include your Vercel domain with `/**`. |
 | `402` on search | Monthly quota consumed — expected behavior; upgrade or wait for the next month. |
 | Job stays `Queued` | Scraper worker isn't running (check its logs) or `SUPABASE_SERVICE_ROLE_KEY` is wrong on the worker. |
+| Railway: "valid build plan for your Node/Vite project" on mailer/scraper | Wrong builder/root — the service is building the **frontend**. Set **Settings → Source → Root Directory** (`server` or `worker`) and **Settings → Build → Builder → Dockerfile**. The bundled `railway.json` files enforce this automatically on a fresh redeploy. |
+| Railway: mailer builds then instantly crashes | Same cause — it was built from repo root so `node dist/worker.js` ran against the frontend's `dist/index.html`. Fix root directory + Dockerfile builder, redeploy. |
+| Railway: scraper build stalls/silent during Node build | It was running the frontend's `vite build` (wrong plan). Force the Dockerfile builder; the Python image installs Chromium via apt and shows progress logs throughout. |
+| Railway: health check never passes on the API | Confirm the service binds `0.0.0.0` (it does) and that **Networking → Generate Domain** targets port `8787`; health path is `/api/health`. |
 | AI buttons throw 403 | Account is on Free — AI is Growth+. If you just upgraded, wait ~10s for the webhook sync. |
 | SMTP connect fails | Handshake happens live on save — wrong host/port or provider requires an *app password*. 5xx rejects during sending auto-suppress the address. |
 | Emails scheduled but not sending | `zybble-mailer` worker must be running; it ticks every 15 s. |

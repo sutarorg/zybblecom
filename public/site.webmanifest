@@ -1,0 +1,12 @@
+{
+  "name": "Zybble — AI lead generation",
+  "short_name": "Zybble",
+  "description": "Find, enrich and reach your next customers with one simple AI-powered platform.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f4f1",
+  "theme_color": "#14120f",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

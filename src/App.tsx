@@ -6,6 +6,13 @@ import Pricing from "./components/Pricing";
 import Showcase from "./components/showcase/Showcase";
 import Workflow from "./components/Workflow";
 import ZybbleApp, { useHashRoute } from "./app/index";
+import AboutPage from "./marketing/AboutPage";
+import { ArticleDetail, BlogIndex } from "./marketing/BlogPages";
+import { FeatureDetail, FeaturesIndex } from "./marketing/FeaturesPages";
+import { PrivacyPage, TermsPage } from "./marketing/LegalPages";
+import NotFound from "./marketing/NotFound";
+import PricingPage from "./marketing/PricingPage";
+import { Seo, usePathname } from "./seo/Seo";
 
 const SHEET =
   "relative rounded-[24px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(20,18,15,0.03),0_40px_90px_-40px_rgba(23,20,15,0.14)] sm:rounded-[28px]";
@@ -21,19 +28,21 @@ function isAppRoute(route: string): boolean {
   );
 }
 
-export default function App() {
-  const route = useHashRoute();
+const HOME_SEO = {
+  title: "Zybble — Find the businesses that need you",
+  description:
+    "Zybble is the AI-powered lead generation platform that finds, enriches and researches your next customers — then helps you reach them. Free plan included.",
+  path: "/",
+};
 
-  // The product lives behind the landing page.
-  if (isAppRoute(route)) {
-    return <ZybbleApp route={route} />;
-  }
-
+function Landing() {
   return (
     <div
       id="top"
       className="flex min-h-screen flex-col gap-3 p-3 sm:gap-5 sm:p-5"
     >
+      <Seo {...HOME_SEO} />
+
       {/* Subtle film grain over the whole experience */}
       <div
         aria-hidden
@@ -52,7 +61,9 @@ export default function App() {
 
       {/* ——— Content sheet ——— */}
       <div className={`${SHEET} overflow-hidden`}>
-        <Workflow />
+        <div id="workflow">
+          <Workflow />
+        </div>
         <Showcase />
         <Pricing />
         <FinalCTA />
@@ -61,4 +72,31 @@ export default function App() {
       <Footer />
     </div>
   );
+}
+
+function MarketingRouter({ path }: { path: string }) {
+  if (path === "/") return <Landing />;
+  if (path === "/pricing") return <PricingPage />;
+  if (path === "/features") return <FeaturesIndex />;
+  if (path.startsWith("/features/")) return <FeatureDetail path={path} />;
+  if (path === "/blog") return <BlogIndex />;
+  if (path.startsWith("/blog/")) return <ArticleDetail path={path} />;
+  if (path === "/about") return <AboutPage />;
+  if (path === "/privacy") return <PrivacyPage />;
+  if (path === "/terms") return <TermsPage />;
+  return <NotFound />;
+}
+
+export default function App() {
+  const hashRoute = useHashRoute();
+  const pathname = usePathname();
+
+  // The authenticated product continues to live behind hash routes.
+  if (isAppRoute(hashRoute)) {
+    return <ZybbleApp route={hashRoute} />;
+  }
+
+  // Everything else: real, crawlable, indexable marketing URLs.
+  const clean = pathname.replace(/\/+$/, "") || "/";
+  return <MarketingRouter path={clean} />;
 }

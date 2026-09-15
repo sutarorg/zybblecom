@@ -1,21 +1,43 @@
 import Logo from "./Logo";
 
-const COLUMNS: { title: string; links: string[] }[] = [
+import { MLink } from "../seo/Seo";
+
+const COLUMNS: { title: string; links: { label: string; to: string }[] }[] = [
   {
     title: "Product",
-    links: ["Lead finder", "AI research", "AI scoring", "Email writer", "Sequences"],
+    links: [
+      { label: "Lead finder", to: "/features/lead-finder" },
+      { label: "Lead enrichment", to: "/features/lead-enrichment" },
+      { label: "AI scoring", to: "/features/ai-lead-scoring" },
+      { label: "AI email writer", to: "/features/ai-email-writer" },
+      { label: "Sequences", to: "/features/email-sequences" },
+    ],
   },
   {
     title: "Resources",
-    links: ["Blog", "Guides", "Help center", "API docs", "Changelog"],
+    links: [
+      { label: "Blog", to: "/blog" },
+      { label: "Build a local lead list", to: "/blog/build-a-local-lead-list" },
+      { label: "Deliverability checklist", to: "/blog/cold-email-deliverability-checklist" },
+      { label: "How AI scoring works", to: "/blog/how-ai-lead-scoring-works" },
+      { label: "Pricing", to: "/pricing" },
+    ],
   },
   {
     title: "Company",
-    links: ["About", "Careers", "Contact", "Press"],
+    links: [
+      { label: "About", to: "/about" },
+      { label: "Contact", to: "/about#contact" },
+    ],
   },
   {
     title: "Legal",
-    links: ["Privacy", "Terms", "Security", "DPA"],
+    links: [
+      { label: "Privacy", to: "/privacy" },
+      { label: "Terms", to: "/terms" },
+      { label: "Security", to: "/privacy#security" },
+      { label: "DPA", to: "/privacy#dpa" },
+    ],
   },
 ];
 
@@ -72,13 +94,13 @@ export default function Footer() {
               </p>
               <ul className="mt-4 space-y-2.5">
                 {col.links.map((l) => (
-                  <li key={l}>
-                    <a
-                      href="#"
+                  <li key={l.to}>
+                    <MLink
+                      to={l.to}
                       className="text-[13.5px] text-neutral-600 transition-colors hover:text-neutral-950"
                     >
-                      {l}
-                    </a>
+                      {l.label}
+                    </MLink>
                   </li>
                 ))}
               </ul>

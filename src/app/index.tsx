@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { currentSession, currentUserId } from "./lib/auth";
 import { isRemote, supabase } from "./lib/remote";
+import { noindexApp } from "../seo/Seo";
 import AuthPage from "./pages/auth";
 import BillingPage from "./pages/billing";
 import CampaignsPage from "./pages/campaigns";
@@ -33,6 +34,11 @@ const PAGE_META: Record<string, { title: string }> = {
 };
 
 export default function ZybbleApp({ route }: { route: string }) {
+  // The authenticated app is never indexable.
+  useEffect(() => {
+    noindexApp();
+  }, []);
+
   // Remote auth: Supabase completes magic-link / recovery redirects by
   // writing its session — react by entering the app once signed in.
   useEffect(() => {

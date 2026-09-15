@@ -1,0 +1,9 @@
+# Zybble — robots.txt
+# The marketing site is fully crawlable. The authenticated app is
+# client-side and holds no indexable content.
+
+User-agent: *
+Allow: /
+Disallow: /app
+
+Sitemap: https://zybble.com/sitemap.xml
