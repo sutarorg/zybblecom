@@ -11,7 +11,6 @@ import json
 import os
 import signal
 import socket
-import sys
 import threading
 import time
 import traceback
@@ -165,7 +164,6 @@ class WorkerApi:
 def process_job(job: dict) -> None:
     api = WorkerApi.create()
     job_id = job["id"]
-    stored: list[dict] = []
     pending_batch: list[Place] = []
     collected = int(job.get("collected", 0))
     log("info", "job started", job=job_id, query=job["query"], location=job["location"])
@@ -175,7 +173,6 @@ def process_job(job: dict) -> None:
         if not pending_batch:
             return
         result = api.leads(job, pending_batch)
-        stored.extend(result.get("leads", []))
         collected = int(result.get("collected", collected))
         pending_batch = []
 

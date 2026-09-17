@@ -3,21 +3,21 @@
 **Find the businesses that need you.**
 AI-powered lead generation and outreach — find, enrich, research, score, write, send.
 
-Zybble has one frontend/API application on Vercel and a **pluggable lead
-provider**. With `LEAD_PROVIDER=worker`, Lead Finder uses the open-source
-Python/Selenium scraper (no Google Maps API key). With
-`LEAD_PROVIDER=places`, the same queue can use the serverless Places API
-fallback. The frontend, auth, AI, billing, SMTP delivery and campaign job
-engine stay inside the Vercel app in both modes.
+Zybble has one frontend/API application on Vercel and one **Railway worker**
+that powers Lead Finder with the open-source
+[SoCloseSociety/GoogleMapScraper](https://github.com/SoCloseSociety/GoogleMapScraper)
+(MIT) — real Google Maps data via Selenium, **no Google Maps API key**. The
+frontend, auth, AI, billing, SMTP delivery and campaign job engine stay inside
+the Vercel app.
 
 | Layer | Implementation |
 | --- | --- |
 | Frontend | React 19 · Vite · Tailwind v4 (landing + app in one bundle) |
-| API | Vercel Serverless Function (`api/index.ts`), Node runtime, Zod-validated |
-| Background jobs | Vercel Cron + in-app ticks, database-leased, chunked |
+| API | Vercel Serverless Function (`api/router.ts`), Node runtime, Zod-validated |
+| Lead discovery | Python/Selenium worker on **Railway** — GoogleMapScraper adaptation, no API key |
+| Background jobs | Database-leased queue; Vercel Cron + in-app ticks for email, Railway worker for scraping |
 | Database & Auth | Supabase (PostgreSQL + RLS + Auth) |
 | AI | OpenAI `o4-mini` (server-side only) |
-| Lead discovery | `worker`: SoCloseSociety GoogleMapScraper adaptation (Selenium, no API key); `places`: API fallback |
 | Email finder | Source-backed public website scan + DNS MX verification (SSRF-guarded) |
 | Email sending | User's own SMTP via nodemailer, AES-256-GCM encrypted credentials |
 | Payments | Razorpay USD subscriptions + signed, idempotent webhooks |
@@ -27,10 +27,11 @@ zybble/
 ├─ src/                 → frontend (Vite build → dist/)
 ├─ api/
 │  ├─ router.ts         → the entire backend, one function
-│  └─ _lib/             → core, jobs, places, email-finder, smtp, openai, razorpay
-├─ worker/              → optional no-key Selenium provider (Docker)
+│  └─ _lib/             → core, jobs, worker control plane, email-finder, smtp, openai, razorpay
+├─ worker/              → Selenium scraper (Railway worker; also runs locally)
 ├─ supabase/migrations/ → run once in the Supabase SQL editor
-└─ vercel.json          → function config + cron schedule + rewrites
+├─ railway.json         → Railway build config for the scraper worker
+└─ vercel.json          → Vercel function config + cron schedule + rewrites
 ```
 
 ---
@@ -41,7 +42,7 @@ zybble/
 2. [Step 1 — Push to GitHub](#step-1--push-to-github)
 3. [Step 2 — Supabase](#step-2--supabase)
 4. [Step 3 — OpenAI](#step-3--openai)
-5. [Step 4 — Choose the lead provider](#step-4--choose-the-lead-provider)
+5. [Step 4 — Lead Finder scraper (test locally, deploy to Railway)](#step-4--lead-finder-scraper)
 6. [Step 5 — Razorpay](#step-5--razorpay)
 7. [Step 6 — Generate local secrets](#step-6--generate-local-secrets)
 8. [Step 7 — Deploy to Vercel](#step-7--deploy-to-vercel)
@@ -129,54 +130,86 @@ Left sidebar → **gear icon** → **API**:
 
 ---
 
-# Step 4 · Choose the lead provider
+# Step 4 · Lead Finder scraper
 
-## Mode A — Selenium worker, no Google Maps API key (requested mode)
+Lead Finder runs on an adaptation of
+[SoCloseSociety/GoogleMapScraper](https://github.com/SoCloseSociety/GoogleMapScraper)
+(MIT — see `worker/THIRD_PARTY_LICENSES.md`). It drives a real Chromium browser
+through Google Maps, extracts public business details, verifies publicly listed
+emails, and streams everything into your Supabase leads database. **No Google
+Maps API key is used or required.**
 
-Set `LEAD_PROVIDER=worker`. Generate a shared secret:
+Generate the shared secret now — Vercel and the worker must hold the same value:
 
 ```bash
 openssl rand -hex 32   # → SCRAPER_WORKER_SECRET
 ```
 
-Put the same secret in Vercel and the worker. The worker needs only:
+## 4.1 Test the scraper locally with a real search (before deploying)
 
-```env
-ZYBBLE_APP_URL=https://your-zybble-domain.com
-SCRAPER_WORKER_SECRET=<same value as Vercel>
-SCRAPER_CONCURRENCY=2
+On your own machine (needs Python 3.11+ and Chrome installed):
+
+```bash
+pip install -r worker/requirements.txt
+python worker/smoke_test.py "dentists" "Austin, Texas" 5
 ```
 
-Build and run its container from the repository root:
+Expected output: phase-1 link collection progress, then one line per real
+business (name, city, rating, review count, website), then a JSON dump and
+`SMOKE TEST PASSED`. This runs the exact production code path — the same
+`run_scrape()` the Railway worker calls — against live Google Maps.
+
+If you prefer Docker (matches Railway exactly):
 
 ```bash
 docker build -f worker/Dockerfile -t zybble-scraper .
-docker run -d --name zybble-scraper --restart unless-stopped \
-  --shm-size=2g \
-  -e ZYBBLE_APP_URL=https://your-zybble-domain.com \
-  -e SCRAPER_WORKER_SECRET=<secret> \
-  -e SCRAPER_CONCURRENCY=2 \
-  zybble-scraper
+docker run --rm --shm-size=2g \
+  -e ZYBBLE_APP_URL=http://localhost:3000 \
+  -e SCRAPER_WORKER_SECRET=dummy \
+  zybble-scraper python -c "from smoke_test import main; exit(main())"
 ```
 
-The worker never receives `SUPABASE_SERVICE_ROLE_KEY`. It authenticates to
-`/api/worker/*` with the shared secret; every claimed job also gets a unique,
-expiring lease token. Two workers can run concurrently without claiming the
-same job. Each job gets its own Chromium session, always closed in `finally`.
+Do not deploy to Railway until the smoke test passes locally.
 
-Optional tuning:
+## 4.2 Deploy the worker to Railway
 
-```env
-SCRAPER_POLL_SECONDS=5
-SCRAPER_JOB_TIMEOUT_SECONDS=1200
-SCRAPER_CONCURRENCY=2       # 1–4; allow ~600 MB RAM per browser
-```
+1. Go to **https://railway.com** → **Login with GitHub**.
+2. **New Project** → **Deploy from GitHub repo** → select **`zybble`**
+   (grant Railway access to the repository if asked).
+3. Railway creates a service. Click it → **Settings** tab.
+4. **Leave Root Directory empty** (repo root). The root `railway.json` takes
+   over: it forces the **Dockerfile builder** on `worker/Dockerfile`, so
+   Railway builds the Python/Selenium image and never mistakes the repo for a
+   Node/Vite project. If you ever see `react-vite-tailwind` or `vite build` in
+   the build log, the Root Directory is wrong — clear it and redeploy.
+5. Open the **Variables** tab → **+ New Variable** and add:
 
-## Mode B — serverless fallback
+   | Variable | Value |
+   | --- | --- |
+   | `ZYBBLE_APP_URL` | `https://<project>.vercel.app` (your Vercel domain from Step 7) |
+   | `SCRAPER_WORKER_SECRET` | the exact value you set in Vercel |
+   | `SCRAPER_CONCURRENCY` | `2` (optional; 1–4) |
+   | `SCRAPER_POLL_SECONDS` | `5` (optional) |
+   | `SCRAPER_JOB_TIMEOUT_SECONDS` | `1200` (optional) |
 
-Set `LEAD_PROVIDER=places` and provide `GOOGLE_MAPS_API_KEY` with **Places API
-(New)** and **Geocoding API** enabled. No worker is needed. This mode is kept
-for operational fallback; worker mode does not read or require this key.
+6. **Settings → Resources / Memory**: allocate at least **2 GB RAM** — each
+   Chromium session uses ~500–700 MB. The Dockerfile sets
+   `--disable-dev-shm-usage` so `/dev/shm` size is not a constraint.
+7. **No public domain is needed** — the worker only makes outbound HTTPS calls
+   to your app's `/api/worker/*` endpoints.
+8. Deploy. The log should show `worker online` and, every ~20s, a heartbeat.
+   Verify from your app: `https://<project>.vercel.app/api/ready` →
+   `lead_provider.ready: true`.
+
+**How it stays safe and concurrent:** the worker never receives
+`SUPABASE_SERVICE_ROLE_KEY`. It authenticates to `/api/worker/*` with the
+shared secret (constant-time compared); every claimed job also gets a unique,
+expiring lease token that authorizes all writes for that job. Multiple worker
+replicas can run concurrently without claiming the same job — provider-scoped
+`FOR UPDATE SKIP LOCKED` leasing in Postgres guarantees it. Each job runs in
+its own Chromium session, always closed in `finally`. Jobs that die mid-run
+are reclaimed after the lease expires, retried up to 3 times total, then
+failed with **unused quota automatically refunded**.
 
 ---
 
@@ -230,9 +263,8 @@ openssl rand -hex 32   # → SCRAPER_WORKER_SECRET (worker mode only)
 | `SUPABASE_SERVICE_ROLE_KEY` | Step 2.3 service_role key |
 | `OPENAI_API_KEY` | Step 3 |
 | `OPENAI_MODEL` | `o4-mini` |
-| `LEAD_PROVIDER` | `worker` for Selenium/no key; `places` for fallback |
-| `SCRAPER_WORKER_SECRET` | Step 4 (required in worker mode) |
-| `GOOGLE_MAPS_API_KEY` | only when `LEAD_PROVIDER=places`; omit in worker mode |
+| `LEAD_PROVIDER` | `worker` (default; the Railway Selenium scraper) |
+| `SCRAPER_WORKER_SECRET` | Step 4 — must match the Railway worker's value |
 | `RAZORPAY_KEY_ID` | Step 5.1 |
 | `RAZORPAY_KEY_SECRET` | Step 5.1 |
 | `RAZORPAY_WEBHOOK_SECRET` | Step 5.2 |
@@ -270,16 +302,21 @@ Run these against your live URL:
 
 ```bash
 curl https://<project>.vercel.app/api/health      # {"ok":true,...}
-curl https://<project>.vercel.app/api/ready       # {"ok":true,"database":"healthy",...}
+curl https://<project>.vercel.app/api/ready       # "lead_provider":{"ready":true,...} ✅
 curl -X POST https://<project>.vercel.app/api/cron/tick   # 401 (secret required) ✅
 ```
+
+`/api/ready` must show `"lead_provider": {"provider": "worker", "ready": true}`
+before Lead Finder will accept searches — that confirms the Railway worker is
+online and heart-beating.
 
 Then in the browser:
 
 1. **Sign up** → lands in the app on the Free plan.
 2. **Find Leads** → `Dentists` / `Austin, Texas` / 25 km / 10 leads →
-   the job moves `Queued → Searching → Collecting → Enriching → Finding emails → Complete`
-   and real businesses appear in **Leads** with email statuses.
+   the Railway worker claims the job and it moves
+   `Queued → Searching → Collecting → Enriching → Finding emails → Complete`;
+   real scraped businesses appear in **Leads** with email statuses.
 3. **Billing → Growth** → Razorpay hosted checkout (Test card `4111 1111 1111 1111`,
    any future expiry/CVV) → plan flips to Growth after the webhook lands.
 4. **Open a lead** → **Research with AI**, **Score lead**, **Write email**.
@@ -330,7 +367,16 @@ npm run dev           # = vercel dev → http://localhost:3000
 `npm run dev:web` starts Vite alone (UI only, no API) if you are just doing
 visual work.
 
-To run the no-key scraper locally (second terminal, Docker required):
+**Scraping locally** — first verify the engine with a real search
+(see [Step 4.1](#41-test-the-scraper-locally-with-a-real-search-before-deploying)):
+
+```bash
+pip install -r worker/requirements.txt
+python worker/smoke_test.py "dentists" "Austin, Texas" 5
+```
+
+Then run the full worker against your local app (second terminal, Docker
+required; `host.docker.internal` reaches `vercel dev` on the host):
 
 ```bash
 docker build -f worker/Dockerfile -t zybble-scraper .
@@ -341,7 +387,7 @@ docker run --rm --shm-size=2g \
   zybble-scraper
 ```
 
-Trigger background processing locally:
+Trigger background email processing locally:
 
 ```bash
 curl -X POST localhost:3000/api/cron/tick -H "x-cron-secret: $CRON_SECRET"
@@ -393,20 +439,18 @@ email_jobs:   scheduled → processing → sent
 
 # Environment variables
 
-Application variables live in Vercel. Worker-only variables live only in its
-container runtime.
+**Vercel** (application — Settings → Environment Variables):
 
 | Variable | Scope | Source |
 | --- | --- | --- |
 | `VITE_SUPABASE_URL` | browser | Step 2.3 |
 | `VITE_SUPABASE_ANON_KEY` | browser | Step 2.3 |
 | `SUPABASE_URL` | server | Step 2.3 |
-| `SUPABASE_SERVICE_ROLE_KEY` | server | Step 2.3 |
+| `SUPABASE_SERVICE_ROLE_KEY` | server | Step 2.3 — never in Railway |
 | `OPENAI_API_KEY` | server | Step 3 |
 | `OPENAI_MODEL` | server | `o4-mini` |
-| `LEAD_PROVIDER` | server | `worker` (no API key) or `places` |
-| `SCRAPER_WORKER_SECRET` | server + worker | same generated value, worker mode only |
-| `GOOGLE_MAPS_API_KEY` | server, optional | Places fallback only |
+| `LEAD_PROVIDER` | server | `worker` (default) |
+| `SCRAPER_WORKER_SECRET` | server | Step 4 — must match Railway |
 | `RAZORPAY_KEY_ID` | server | Step 5.1 |
 | `RAZORPAY_KEY_SECRET` | server | Step 5.1 |
 | `RAZORPAY_WEBHOOK_SECRET` | server | Step 5.2 |
@@ -415,12 +459,20 @@ container runtime.
 | `APP_URL` | server, optional | custom domain only |
 | `CORS_ORIGINS` | server, optional | extra allowed browser origins |
 
-**Removed** with the old architecture: `VITE_API_URL`, the Supabase key on the
-worker, `PORT`, and `NEXT_PUBLIC_*`. The API is same-origin, so
-there is no API URL to configure.
+**Railway** (scraper worker — Variables tab):
 
-Worker-only: `ZYBBLE_APP_URL`, `SCRAPER_WORKER_SECRET`, and optional
-`SCRAPER_CONCURRENCY`, `SCRAPER_POLL_SECONDS`, `SCRAPER_JOB_TIMEOUT_SECONDS`.
+| Variable | Required | Value |
+| --- | --- | --- |
+| `ZYBBLE_APP_URL` | yes | your Vercel app URL |
+| `SCRAPER_WORKER_SECRET` | yes | same value as Vercel |
+| `SCRAPER_CONCURRENCY` | no | `2` (1–4; ~600 MB RAM per browser) |
+| `SCRAPER_POLL_SECONDS` | no | `5` |
+| `SCRAPER_JOB_TIMEOUT_SECONDS` | no | `1200` |
+
+No Google Maps API key exists anywhere in this deployment — Lead Finder is
+powered entirely by the Selenium worker. (A `places` serverless mode remains
+in the codebase as an emergency fallback but is **not used**; it is only
+active if you explicitly set `LEAD_PROVIDER=places` and a Google key.)
 
 ---
 
@@ -432,10 +484,13 @@ Worker-only: `ZYBBLE_APP_URL`, `SCRAPER_WORKER_SECRET`, and optional
 | `/ready` says "not configured" | A required env var is unset in Vercel → Settings → Environment Variables. In worker mode, `GOOGLE_MAPS_API_KEY` is not required. Redeploy after changes. |
 | `/api/*` returns the HTML page | The `/api/:path*` → `/api/router?path=:path*` rewrite must come **first** in `vercel.json`. Redeploy. |
 | API 500 on every route | A required env var is missing — the function throws on boot. Check **Vercel → Deployments → Functions logs**; the message names the variable. |
-| Worker-mode search stays queued | Start the scraper container and verify `ZYBBLE_APP_URL` plus `SCRAPER_WORKER_SECRET`. `/api/ready` reports its heartbeat and age. |
-| Worker gets 401 | `SCRAPER_WORKER_SECRET` differs between Vercel and the container. Set the same 64-hex value and redeploy/restart. |
-| Worker gets 409 | Its job lease expired or was reclaimed — expected safe behavior; the worker drops the stale browser result and claims another job. |
-| Places-mode search is rejected | Only relevant with `LEAD_PROVIDER=places`: enable Places API (New), Geocoding, billing and set `GOOGLE_MAPS_API_KEY`. |
+| Search fails with "Selenium lead worker is offline" | The Railway worker is not running or not heart-beating. Check Railway → service → **Deployments/Logs** for `worker online`; verify `ZYBBLE_APP_URL` and `SCRAPER_WORKER_SECRET`. `/api/ready` shows the heartbeat age. |
+| Railway build log shows `vite build` / `react-vite-tailwind` | Railway tried to build the Node/Vite app instead of the worker. Clear any **Root Directory** setting (leave it repo root) so the root `railway.json` Dockerfile builder applies. Redeploy. |
+| Railway worker crashes or is OOM-killed | Raise the service memory to ≥ 2 GB (Settings → Resources) or lower `SCRAPER_CONCURRENCY`. Each Chromium session needs ~500–700 MB. |
+| Worker gets 401 | `SCRAPER_WORKER_SECRET` differs between Vercel and Railway. Set the same 64-hex value in both, redeploy Vercel and restart the worker. |
+| Worker gets 409 | Its job lease expired or was reclaimed — expected safe behavior; the worker drops the stale browser result and claims another job. After 3 total claims the job fails and quota is refunded. |
+| Smoke test fails locally with a traffic challenge | Google presented a CAPTCHA for your IP. Wait, retry from a different network, or lower the limit. The worker reports this as a retryable failure — it never bypasses challenges. |
+| Smoke test fails with `SelectorChangedError` | Google changed Maps markup. Update the fallback selectors in `worker/scraper.py` (`collect_links` / `extract_place`). |
 | Search completes with 0 leads | No businesses matched. Widen the radius or use a broader location. Quota is refunded automatically. |
 | Job stuck in `collecting` | Wait one cron cycle — the lease expires after 2 minutes and the job resumes from its cursor. Check `/api/internal/metrics` with the cron secret. |
 | Emails scheduled but not sending | Confirm **Settings → Cron Jobs** shows `/api/cron/tick`, and that the campaign has a connected SMTP sender. Opening the app also drives a tick. |
@@ -453,9 +508,9 @@ These are real constraints, stated plainly rather than hidden:
 1. **Selenium layout changes are an operational risk.** The worker uses several
    selector fallbacks and reports a precise `SelectorChangedError`, but Google
    can change Maps markup. Monitor worker logs and `/api/ready`.
-2. **Worker mode needs a container runtime.** That is inherent to Chromium;
-   Vercel cannot run Selenium reliably. Provider C keeps the rest of Zybble as
-   one app and lets you switch to `places` without changing the frontend or DB.
+2. **The scraper runs on Railway.** Chromium cannot run reliably in Vercel's
+   serverless functions, so the worker is a separate Railway service — the only
+   second deployment in this architecture, dedicated entirely to Lead Finder.
 3. **Worker radius is viewport-based.** The worker geocodes the location with
    Nominatim and sets Google Maps' center/zoom to the requested radius. Maps may
    still return edge results; it is not a contractual geo-fence.
@@ -497,5 +552,8 @@ These are real constraints, stated plainly rather than hidden:
 - Rate limiting is database-backed, so it holds across all serverless instances.
 - The scraper carries only `SCRAPER_WORKER_SECRET`; every write also needs the
   current per-job lease token. It never receives the Supabase service-role key.
+
+MIT © Zybble
+per-job lease token. It never receives the Supabase service-role key.
 
 MIT © Zybble

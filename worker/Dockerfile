@@ -15,7 +15,7 @@ WORKDIR /worker
 COPY worker/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY worker/scraper.py worker/email_finder.py worker/worker.py ./
+COPY worker/scraper.py worker/email_finder.py worker/worker.py worker/smoke_test.py ./
 
 # Only a health check for process liveness; job health is reported through
 # /api/worker/heartbeat and visible in /api/ready.

@@ -15,6 +15,7 @@ guaranteed browser cleanup.
 from __future__ import annotations
 
 import math
+import os
 import random
 import re
 import time
@@ -78,7 +79,18 @@ def _driver() -> webdriver.Chrome:
         "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     )
-    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
+    # Docker image: system chromedriver. Local machine: CHROMEDRIVER_PATH or
+    # Selenium Manager auto-resolution. Never hard-fail on one location.
+    service = None
+    if os.path.exists("/usr/bin/chromedriver"):
+        service = Service("/usr/bin/chromedriver")
+    elif os.environ.get("CHROMEDRIVER_PATH"):
+        service = Service(os.environ["CHROMEDRIVER_PATH"])
+    driver = (
+        webdriver.Chrome(service=service, options=options)
+        if service
+        else webdriver.Chrome(options=options)
+    )
     driver.set_page_load_timeout(PAGE_TIMEOUT + 10)
     return driver
 
@@ -109,9 +121,20 @@ def _geocode(location: str) -> Optional[tuple[float, float]]:
     return None
 
 
+VIEWPORT_WIDTH_PX = 1440
+EARTH_EQUATOR_M = 40_075_016
+
+
 def _zoom(radius_meters: int) -> float:
-    # At 1440px, this frames roughly 2× the requested radius.
-    return max(8.0, min(17.0, math.log2(40_075_000 / max(2_000, radius_meters * 2))))
+    """Web Mercator zoom that frames ~2x the requested radius at 1440px.
+
+    Meters per pixel at zoom 0 (equator) = EARTH_EQUATOR_M / 256. Ignoring
+    cos(latitude) only makes the true viewport narrower than the target,
+    never wider — Google Maps still ranks results around the map center.
+    """
+    target_width_m = max(2_000, radius_meters * 2)
+    zoom = math.log2((EARTH_EQUATOR_M / 256) * VIEWPORT_WIDTH_PX / target_width_m)
+    return max(8.0, min(17.0, zoom))
 
 
 def _dismiss_consent(driver: webdriver.Chrome) -> None:

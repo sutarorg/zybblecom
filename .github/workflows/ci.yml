@@ -36,6 +36,12 @@ jobs:
               throw new Error('missing api rewrite');
             console.log('vercel.json OK');
           "
+          node -e "
+            const r = JSON.parse(require('fs').readFileSync('railway.json'));
+            if (r.build?.builder !== 'DOCKERFILE' || r.build?.dockerfilePath !== 'worker/Dockerfile')
+              throw new Error('railway.json must build worker/Dockerfile with the Dockerfile builder');
+            console.log('railway.json OK');
+          "
 
       - uses: actions/setup-python@v5
         with:
@@ -46,7 +52,9 @@ jobs:
 
       - name: Assert no separate-service infrastructure remains
         run: |
-          for path in server railway.json render.yaml docker-compose.yml; do
+          # railway.json is the scraper worker's deployment config (allowed).
+          # The app itself must never grow a separate API/mailer service.
+          for path in server render.yaml docker-compose.yml; do
             if [ -e "$path" ]; then
               echo "::error::$path should not exist in the single-app architecture"
               exit 1
