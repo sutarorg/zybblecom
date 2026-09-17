@@ -33,9 +33,25 @@ router.get("/api/health", async () => ({
 }));
 
 router.get("/api/ready", async () => {
+  const configured = {
+    supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+    openai: Boolean(process.env.OPENAI_API_KEY),
+    googleMaps: Boolean(process.env.GOOGLE_MAPS_API_KEY),
+    razorpay: Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.RAZORPAY_WEBHOOK_SECRET),
+    smtpEncryption: Boolean(process.env.SMTP_ENCRYPTION_KEY),
+    cronSecret: Boolean(process.env.CRON_SECRET),
+  };
+  const missing = Object.entries(configured).filter(([, ok]) => !ok).map(([name]) => name);
+
+  if (!configured.supabase) {
+    return new Response(
+      JSON.stringify({ ok: false, database: "not configured", configured, hint: "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel → Settings → Environment Variables, then redeploy." }),
+      { status: 503, headers: { "content-type": "application/json" } }
+    );
+  }
   const { error } = await sb.from("profiles").select("id", { head: true, count: "exact" }).limit(1);
   if (error) {
-    return new Response(JSON.stringify({ ok: false, database: "unavailable" }), {
+    return new Response(JSON.stringify({ ok: false, database: "unavailable", error: error.message.slice(0, 200) }), {
       status: 503,
       headers: { "content-type": "application/json" },
     });
@@ -48,9 +64,13 @@ router.get("/api/ready", async () => {
   const ageSeconds = beat
     ? Math.round((Date.now() - new Date(beat.last_seen_at).getTime()) / 1000)
     : null;
-  // Background work is serverless: a stale cron beat is reported but does
-  // not fail readiness, because the app also drives ticks while in use.
-  return { ok: true, database: "healthy", background: { last_cron_seconds_ago: ageSeconds } };
+  return {
+    ok: missing.length === 0,
+    database: "healthy",
+    configured,
+    ...(missing.length ? { hint: `Missing: ${missing.join(", ")}` } : {}),
+    background: { last_cron_seconds_ago: ageSeconds },
+  };
 });
 
 // ————— Background processing —————

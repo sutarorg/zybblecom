@@ -25,21 +25,17 @@ export interface SeoProps {
   jsonld?: Record<string, unknown> | Record<string, unknown>[];
 }
 
-function upsertMeta(selector: string, attrs: Record<string, string>) {
+function upsertMeta(attr: "name" | "property", key: string, content: string) {
+  // Attribute VALUES containing ":" (og:title, twitter:title) must be quoted
+  // or querySelector throws SyntaxError — the value is always quoted here.
+  const selector = `meta[${attr}="${CSS.escape(key)}"]`;
   let el = document.head.querySelector(selector) as HTMLMetaElement | null;
   if (!el) {
     el = document.createElement("meta");
-    const key = selector.includes("property")
-      ? selector.match(/\[(?:property|name)="(.+?)"\]/)?.[1]
-      : selector.match(/\[(?:name|property)="(.+?)"\]/)?.[1];
-    if (!key) return;
-    if (selector.startsWith("meta[name=")) el.setAttribute("name", key);
-    else el.setAttribute("property", key);
+    el.setAttribute(attr, key);
     document.head.appendChild(el);
   }
-  Object.entries(attrs).forEach(([k, v]) => {
-    if (k === "content") el.setAttribute("content", v);
-  });
+  el.setAttribute("content", content);
 }
 
 function upsertLink(rel: string, href: string) {
@@ -59,20 +55,18 @@ export function applySeo(props: SeoProps) {
   const ogImage = props.ogImage ?? `${SITE_URL}/og.png`;
 
   document.title = props.title;
-  upsertMeta("meta[name=description]", { content: props.description });
-  upsertMeta("meta[name=robots]", {
-    content: props.robots ?? "index, follow, max-image-preview:large, max-snippet:-1",
-  });
+  upsertMeta("name", "description", props.description);
+  upsertMeta("name", "robots", props.robots ?? "index, follow, max-image-preview:large, max-snippet:-1");
   upsertLink("canonical", canonical);
 
-  upsertMeta("meta[property=og:title]", { content: ogTitle });
-  upsertMeta("meta[property=og:description]", { content: ogDescription });
-  upsertMeta("meta[property=og:url]", { content: canonical });
-  upsertMeta("meta[property=og:type]", { content: props.ogType ?? "website" });
-  upsertMeta("meta[property=og:image]", { content: ogImage });
-  upsertMeta("meta[name=twitter:title]", { content: ogTitle });
-  upsertMeta("meta[name=twitter:description]", { content: ogDescription });
-  upsertMeta("meta[name=twitter:image]", { content: ogImage });
+  upsertMeta("property", "og:title", ogTitle);
+  upsertMeta("property", "og:description", ogDescription);
+  upsertMeta("property", "og:url", canonical);
+  upsertMeta("property", "og:type", props.ogType ?? "website");
+  upsertMeta("property", "og:image", ogImage);
+  upsertMeta("name", "twitter:title", ogTitle);
+  upsertMeta("name", "twitter:description", ogDescription);
+  upsertMeta("name", "twitter:image", ogImage);
 
   // Page-level JSON-LD (previous injection removed first).
   document
@@ -99,7 +93,7 @@ export function Seo(props: SeoProps) {
 }
 
 export function noindexApp() {
-  upsertMeta("meta[name=robots]", { content: "noindex, nofollow" });
+  upsertMeta("name", "robots", "noindex, nofollow");
 }
 
 // ————————————————— Pathname routing —————————————————

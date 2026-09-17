@@ -366,6 +366,8 @@ there is no API URL to configure.
 
 | Symptom | Fix |
 | --- | --- |
+| Entirely white page | Hard-refresh first (Ctrl/Cmd+Shift+R). If it persists, the boot overlay will now show the underlying error; check `/api/ready` — it names every missing environment variable. |
+| `/ready` says "not configured" | One or more required env vars are unset in Vercel → Settings → Environment Variables. Set ALL twelve, then redeploy (env changes require a new deployment to take effect). |
 | `/api/*` returns the HTML page | The `/api/(.*)` rewrite must come **first** in `vercel.json`. Redeploy. |
 | API 500 on every route | A required env var is missing — the function throws on boot. Check **Vercel → Deployments → Functions logs**; the message names the variable. |
 | Search fails with "Google Maps rejected the request" | Enable **Places API (New)** *and* **Geocoding API**, and turn on **billing** for the Google Cloud project. |

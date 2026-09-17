@@ -8,10 +8,22 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // Secrets live only in this process — never sent to the browser.
 // ————————————————————————————————————————————————————————————
 
-function required(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing required environment variable: ${name}`);
-  return v;
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export class MissingEnvError extends HttpError {
+  constructor(name: string) {
+    super(
+      503,
+      `${name} is not configured. Set it in Vercel → Project → Settings → Environment Variables, then redeploy.`
+    );
+    this.name = "MissingEnvError";
+  }
 }
 
 function optional(name: string): string | undefined {
@@ -19,33 +31,37 @@ function optional(name: string): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
-/** Public origin of this deployment (used for unsubscribe links). */
+export function checkConfig(name: string): string {
+  if (!optional(name)) throw new MissingEnvError(name);
+  return process.env[name]!;
+}
+
 function resolveAppUrl(): string {
   const explicit = optional("APP_URL");
   if (explicit) return explicit.replace(/\/+$/, "");
   const vercel = optional("VERCEL_PROJECT_PRODUCTION_URL") ?? optional("VERCEL_URL");
   if (vercel) return `https://${vercel.replace(/\/+$/, "")}`;
-  return "http://localhost:5173";
+  return "http://localhost:3000";
 }
 
 export const env = {
   appUrl: resolveAppUrl(),
-  supabaseUrl: required("SUPABASE_URL").replace(/\/+$/, ""),
-  supabaseServiceKey: required("SUPABASE_SERVICE_ROLE_KEY"),
-  openaiKey: required("OPENAI_API_KEY"),
+  supabaseUrl: optional("SUPABASE_URL")?.replace(/\/+$/, "") ?? "https://missing.example",
+  supabaseServiceKey: optional("SUPABASE_SERVICE_ROLE_KEY") ?? "missing",
+  openaiKey: optional("OPENAI_API_KEY") ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "o4-mini",
-  googleMapsKey: required("GOOGLE_MAPS_API_KEY"),
-  razorpayKeyId: required("RAZORPAY_KEY_ID"),
-  razorpayKeySecret: required("RAZORPAY_KEY_SECRET"),
-  razorpayWebhookSecret: required("RAZORPAY_WEBHOOK_SECRET"),
-  smtpEncryptionKey: required("SMTP_ENCRYPTION_KEY"),
-  cronSecret: required("CRON_SECRET"),
+  googleMapsKey: optional("GOOGLE_MAPS_API_KEY") ?? "",
+  razorpayKeyId: optional("RAZORPAY_KEY_ID") ?? "",
+  razorpayKeySecret: optional("RAZORPAY_KEY_SECRET") ?? "",
+  razorpayWebhookSecret: optional("RAZORPAY_WEBHOOK_SECRET") ?? "",
+  smtpEncryptionKey: optional("SMTP_ENCRYPTION_KEY") ?? "",
+  cronSecret: optional("CRON_SECRET") ?? "",
   isProduction: process.env.VERCEL_ENV === "production",
   commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 12),
 };
 
 if (env.openaiModel !== "o4-mini") {
-  throw new Error("OPENAI_MODEL must be o4-mini for this deployment.");
+  throw new MissingEnvError("OPENAI_MODEL must be o4-mini for this deployment.");
 }
 
 // ————— Structured logging (never logs secrets) —————
@@ -62,16 +78,8 @@ export const log = {
   error: (msg: string, fields?: Fields) => emit("error", msg, fields),
 };
 
-export class HttpError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-// ————— Supabase service role. RLS is defense in depth; every
-//        query below is still explicitly scoped to the caller. —————
+// ————— Supabase (service role — bypasses RLS; every query is
+//          still explicitly scoped to the authenticated user) —————
 
 export const sb: SupabaseClient = createClient(env.supabaseUrl, env.supabaseServiceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -83,6 +91,8 @@ export interface AuthedUser {
 }
 
 export async function requireUser(req: Request): Promise<AuthedUser> {
+  checkConfig("SUPABASE_URL");
+  checkConfig("SUPABASE_SERVICE_ROLE_KEY");
   const header = req.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) throw new HttpError(401, "Missing access token.");
@@ -93,6 +103,7 @@ export async function requireUser(req: Request): Promise<AuthedUser> {
 
 /** Cron + internal endpoints. Vercel Cron sends the configured secret. */
 export function requireCronAuth(req: Request) {
+  checkConfig("CRON_SECRET");
   const header = req.headers.get("authorization") ?? "";
   const bearer = header.startsWith("Bearer ") ? header.slice(7) : null;
   const provided = bearer ?? req.headers.get("x-cron-secret");
@@ -103,20 +114,30 @@ export function requireCronAuth(req: Request) {
     throw new HttpError(401, "Unauthorized.");
 }
 
-// ————— AES-256-GCM (SMTP credentials) —————
+// ————— AES-256-GCM for SMTP passwords —————
 
-const KEY = Buffer.from(env.smtpEncryptionKey, "hex");
-if (KEY.length !== 32) throw new Error("SMTP_ENCRYPTION_KEY must be 64 hex chars (32 bytes).");
+const KEY = optional("SMTP_ENCRYPTION_KEY")
+  ? Buffer.from(optional("SMTP_ENCRYPTION_KEY")!, "hex")
+  : null;
+if (KEY && KEY.length !== 32)
+  throw new MissingEnvError("SMTP_ENCRYPTION_KEY must be 64 hex chars (32 bytes).");
+
+function encryptionKey(): Buffer {
+  if (!KEY) throw new MissingEnvError("SMTP_ENCRYPTION_KEY");
+  return KEY;
+}
 
 /** PostgreSQL bytea hex transport form accepted by PostgREST. */
 export function encryptSecret(plain: string): string {
+  const key = encryptionKey();
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", KEY, iv);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
   const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   return `\\x${Buffer.concat([iv, cipher.getAuthTag(), enc]).toString("hex")}`;
 }
 
 export function decryptSecret(packed: string | Buffer): string {
+  const key = encryptionKey();
   const buf = Buffer.isBuffer(packed)
     ? packed
     : packed.startsWith("\\x")
@@ -125,7 +146,7 @@ export function decryptSecret(packed: string | Buffer): string {
   const iv = buf.subarray(0, 12);
   const tag = buf.subarray(12, 28);
   const enc = buf.subarray(28);
-  const decipher = crypto.createDecipheriv("aes-256-gcm", KEY, iv);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
 }

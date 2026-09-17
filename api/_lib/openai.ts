@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { env, log } from "./core";
+import { env, log, MissingEnvError } from "./core";
 
 // ————————————————————————————————————————————————————————————
 // OpenAI o4-mini — research, scoring, email writing.
@@ -24,6 +24,7 @@ export interface LeadPayload {
 }
 
 async function chat(system: string, user: string, maxTokens = 900): Promise<string> {
+  if (!env.openaiKey) throw new MissingEnvError("OPENAI_API_KEY");
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {

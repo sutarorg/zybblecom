@@ -1,4 +1,4 @@
-import { env, HttpError, log } from "./core";
+import { env, HttpError, log, MissingEnvError } from "./core";
 
 // ————————————————————————————————————————————————————————————
 // Google Maps business discovery.
@@ -157,6 +157,7 @@ export async function searchPlaces(params: {
   radiusMeters: number;
   limit: number;
 }): Promise<{ places: PlaceRecord[]; exhausted: boolean }> {
+  if (!env.googleMapsKey) throw new MissingEnvError("GOOGLE_MAPS_API_KEY");
   const center = await geocodeLocation(params.location);
   const collected: PlaceRecord[] = [];
   const seen = new Set<string>();
