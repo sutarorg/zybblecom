@@ -44,9 +44,21 @@ function resolveAppUrl(): string {
   return "http://localhost:3000";
 }
 
+/** Defend against the #1 paste error: the REST endpoint instead of the
+ *  project URL. Strips a trailing /rest/v1 path so supabase-js doesn't
+ *  build /rest/v1/rest/v1/... URLs that fail opaquely. */
+function normalizeSupabaseUrl(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/rest\/v1$/i, "");
+}
+
 export const env = {
   appUrl: resolveAppUrl(),
-  supabaseUrl: optional("SUPABASE_URL")?.replace(/\/+$/, "") ?? "https://missing.example",
+  supabaseUrl: optional("SUPABASE_URL")
+    ? normalizeSupabaseUrl(optional("SUPABASE_URL")!)
+    : "https://missing.example",
   supabaseServiceKey: optional("SUPABASE_SERVICE_ROLE_KEY") ?? "missing",
   openaiKey: optional("OPENAI_API_KEY") ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "o4-mini",
@@ -90,10 +102,17 @@ let _sb: SupabaseClient | null = null;
 
 function getSb(): SupabaseClient {
   if (_sb) return _sb;
-  const url = optional("SUPABASE_URL");
-  if (!url) throw new MissingEnvError("SUPABASE_URL");
+  const raw = optional("SUPABASE_URL");
+  if (!raw) throw new MissingEnvError("SUPABASE_URL");
+  const url = normalizeSupabaseUrl(raw);
+  // Must be a bare host: https://xyz.supabase.co (no path, no /rest/v1).
+  if (!/^https?:\/\/[^\/]+$/i.test(url)) {
+    throw new MissingEnvError(
+      `SUPABASE_URL must be the project URL like https://xyz.supabase.co — not the /rest/v1/ endpoint and not a path-bearing URL (received: ${url.slice(0, 60)})`
+    );
+  }
   try {
-    _sb = createClient(url.replace(/\/+$/, ""), env.supabaseServiceKey, {
+    _sb = createClient(url, env.supabaseServiceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
   } catch (err) {

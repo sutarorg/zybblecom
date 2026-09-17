@@ -74,6 +74,38 @@ router.get("/api/ready", async () => {
     billingSchema.error ? `billing schema: ${billingSchema.error.message}` : null,
     rateSchema.error ? `rate-limit schema: ${rateSchema.error.message}` : null,
   ].filter((value): value is string => Boolean(value));
+
+  // Live RPC callability probe: call create_search_job with p_qty = 0, which
+  // the function always rejects with 'invalid quantity' BEFORE any write.
+  // Receiving that error proves the 6-argument signature resolves. Anything
+  // else (42883 / PGRST202 / 'does not exist') is the exact signature
+  // mismatch that breaks POST /api/search.
+  let rpcProbe: Record<string, unknown> = { ok: true };
+  if (schemaErrors.length === 0) {
+    const { error: probeError } = await sb.rpc("create_search_job", {
+      p_user: "00000000-0000-0000-0000-000000000000",
+      p_query: "probe",
+      p_location: "probe",
+      p_qty: 0,
+      p_radius: 25000,
+      p_provider: "worker",
+    });
+    if (probeError) {
+      const msg = probeError.message ?? "";
+      const code = (probeError as { code?: string }).code ?? null;
+      if (/invalid quantity/i.test(msg)) {
+        rpcProbe = { ok: true, detail: "6-argument create_search_job resolves" };
+      } else {
+        rpcProbe = {
+          ok: false,
+          code,
+          error: msg.slice(0, 200),
+          hint: "Run supabase/migrations/007_search_job_signature_fix.sql in the Supabase SQL Editor (it also reloads the PostgREST schema cache), then retry.",
+        };
+        schemaErrors.push(`create_search_job RPC: ${code ?? ""} ${msg.slice(0, 160)}`);
+      }
+    }
+  }
   const { data: beat } = await sb
     .from("worker_heartbeats")
     .select("last_seen_at")
@@ -113,9 +145,10 @@ router.get("/api/ready", async () => {
     schema: {
       ok: schemaErrors.length === 0,
       errors: schemaErrors,
+      create_search_job: rpcProbe,
       hint:
         schemaErrors.length > 0
-          ? "Run Supabase migrations 001 through 005 in order, then reload the PostgREST schema cache."
+          ? "Run supabase/migrations/007_search_job_signature_fix.sql in the Supabase SQL Editor (idempotent — it converges columns, function signatures, grants and reloads the PostgREST schema cache), then retry."
           : undefined,
     },
     background: { last_cron_seconds_ago: ageSeconds },
@@ -195,7 +228,7 @@ router.get("/api/search/:id", async ({ req, params }) => {
     throw new HttpError(400, "Invalid job id.");
   const { data } = await sb
     .from("search_jobs")
-    .select("id,query,location,quantity,radius_meters,status,progress,collected,error,created_at,updated_at")
+    .select("id,query,location,quantity,radius_meters,provider,status,progress,collected,error,created_at,updated_at")
     .eq("id", params.id)
     .eq("user_id", user.id)
     .maybeSingle();

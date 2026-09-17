@@ -75,6 +75,8 @@ export interface SearchJob {
   query: string;
   location: string;
   quantity: number;
+  radius_meters?: number;
+  provider?: "worker" | "places";
   status: JobStatus;
   progress: number; // 0-100
   collected: number;

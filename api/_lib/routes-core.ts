@@ -43,7 +43,7 @@ export function registerCore(r: Router) {
       sb.from("profiles").select("*").eq("id", user.id).maybeSingle(),
       sb.from("subscriptions").select("*").eq("user_id", user.id).maybeSingle(),
       sb.from("usage").select("*").eq("user_id", user.id).eq("month", month).maybeSingle(),
-      sb.from("search_jobs").select("id,user_id,query,location,quantity,radius_meters,status,progress,collected,error,created_at,updated_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(25),
+      sb.from("search_jobs").select("id,user_id,query,location,quantity,radius_meters,provider,status,progress,collected,error,created_at,updated_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(25),
       sb.from("leads").select("*", { count: "exact" }).eq("user_id", user.id).order("created_at", { ascending: false }).limit(1000),
       sb.from("ai_research").select("*").eq("user_id", user.id),
       sb.from("ai_scores").select("*").eq("user_id", user.id),
@@ -144,11 +144,36 @@ export function registerCore(r: Router) {
       p_provider: env.leadProvider,
     });
     if (error) {
-      log.error("search job transaction failed", { error: error.message });
-      const hint = /does not exist|Could not find the function/i.test(error.message)
-        ? " Database function create_search_job is missing — run supabase/migrations/005_pluggable_lead_provider.sql in the SQL Editor."
-        : ` (${error.message.slice(0, 160)})`;
-      throw new HttpError(500, `Could not create the search job.${hint}`);
+      // PostgREST surfaces { message, code, details, hint }. Log everything
+      // server-side (never to the browser) and map to actionable messages.
+      const rpc = error as {
+        code?: string;
+        details?: string | null;
+        hint?: string | null;
+      };
+      log.error("create_search_job RPC failed", {
+        code: rpc.code ?? null,
+        message: error.message,
+        details: rpc.details ?? null,
+        hint: rpc.hint ?? null,
+        provider: env.leadProvider,
+      });
+      const signatureMismatch =
+        rpc.code === "42883" ||
+        rpc.code === "PGRST202" ||
+        /does not exist|Could not find the function/i.test(error.message);
+      const missingColumn =
+        rpc.code === "42703" || /column ".*" (of relation|does not exist)/i.test(error.message);
+      if (signatureMismatch || missingColumn) {
+        throw new HttpError(
+          500,
+          "The search-job function in your database does not match the application's 6-argument call. Run supabase/migrations/007_search_job_signature_fix.sql in the Supabase SQL Editor, then retry."
+        );
+      }
+      throw new HttpError(
+        500,
+        `Could not create the search job. (${[rpc.code, error.message].filter(Boolean).join(": ").slice(0, 200)})`
+      );
     }
     const job = jobs?.[0];
     if (!job) {

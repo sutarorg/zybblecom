@@ -96,7 +96,7 @@ git push -u origin main
 1. **https://supabase.com** → **New project** → name `zybble`, generate a database
    password, pick the region closest to your users → **Create new project** (~2 min).
 
-### 2.2 Run the migrations — **all five, in order**
+### 2.2 Run the migrations — **all seven, in order**
 1. Left sidebar → **SQL Editor** → **+ New query**.
 2. Paste the entire contents of each file and click **Run**, one at a time:
    - `supabase/migrations/001_init.sql`
@@ -104,9 +104,13 @@ git push -u origin main
    - `supabase/migrations/003_production_hardening.sql`
    - `supabase/migrations/004_single_app.sql` ← required for the single-app job engine
    - `supabase/migrations/005_pluggable_lead_provider.sql` ← provider-scoped leases + secure worker claims
+   - `supabase/migrations/006_worker_retry_bounds.sql` ← bounded retries for lease-reclaimed jobs
+   - `supabase/migrations/007_search_job_signature_fix.sql` ← converges the 6-arg `create_search_job` signature + reloads the PostgREST schema cache
 
-Migrations 004–005 add the search radius, durable job cursor, provider-scoped
-leases, stale recovery and secure worker ownership tokens.
+**Already have a database?** If Lead Finder ever returned `Request failed (500)`,
+run `007_search_job_signature_fix.sql` alone — it is fully idempotent and
+converges any prior state (missing columns, stale 4-/5-argument overloads,
+stale PostgREST schema cache) to the exact schema the application expects.
 
 ### 2.3 Copy the keys
 Left sidebar → **gear icon** → **API**:
@@ -482,6 +486,8 @@ active if you explicitly set `LEAD_PROVIDER=places` and a Google key.)
 | --- | --- |
 | Entirely white page | Hard-refresh first (Ctrl/Cmd+Shift+R). If it persists, the boot overlay will now show the underlying error; check `/api/ready` — it names every missing environment variable. |
 | `/ready` says "not configured" | A required env var is unset in Vercel → Settings → Environment Variables. In worker mode, `GOOGLE_MAPS_API_KEY` is not required. Redeploy after changes. |
+| `/ready` reports a `create_search_job` RPC error, or Lead Finder returns 500 "does not match the application's 6-argument call" | Run `supabase/migrations/007_search_job_signature_fix.sql` in the SQL Editor — it drops stale 4-/5-argument overloads, converges the columns and reloads the PostgREST schema cache. Then retry the search. |
+| `SUPABASE_URL` was pasted with `/rest/v1/` | The API now strips it defensively and rejects other path-bearing URLs with a clear 503 naming the variable. Use the bare Project URL: `https://xyz.supabase.co`. |
 | `/api/*` returns the HTML page | The `/api/:path*` → `/api/router?path=:path*` rewrite must come **first** in `vercel.json`. Redeploy. |
 | API 500 on every route | A required env var is missing — the function throws on boot. Check **Vercel → Deployments → Functions logs**; the message names the variable. |
 | Search fails with "Selenium lead worker is offline" | The Railway worker is not running or not heart-beating. Check Railway → service → **Deployments/Logs** for `worker online`; verify `ZYBBLE_APP_URL` and `SCRAPER_WORKER_SECRET`. `/api/ready` shows the heartbeat age. |
