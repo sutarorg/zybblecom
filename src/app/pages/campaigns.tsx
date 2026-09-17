@@ -135,10 +135,10 @@ function CampaignBuilder({
     setSaving(true);
     try {
       if (edit) {
-        await updateCampaign(userId, edit.id, { name, account_id: accountId || null, steps });
+        await updateCampaign(edit.id, { name, account_id: accountId || null, steps });
         toast("Campaign updated");
       } else {
-        const c = await createCampaign(userId, { name, account_id: accountId || null, steps });
+        const c = await createCampaign({ name, account_id: accountId || null, steps });
         toast(`Campaign “${c.name}” created — add leads to get started`);
       }
       onClose();
@@ -343,7 +343,7 @@ function LeadPicker({
           disabled={picked.size === 0}
           onClick={async () => {
             try {
-              const n = await addLeadsToCampaign(userId, campaign.id, Array.from(picked));
+              const n = await addLeadsToCampaign(campaign.id, Array.from(picked));
               toast(`Added ${n} lead${n !== 1 ? "s" : ""} to “${campaign.name}”`);
               setPicked(new Set());
               onClose();
@@ -425,7 +425,7 @@ function CampaignDetail({ userId, campaignId }: { userId: string; campaignId: st
               size="sm"
               onClick={async () => {
                 try {
-                  await launchCampaign(userId, c.id);
+                  await launchCampaign(c.id);
                   toast(`“${c.name}” launched — first emails go out within seconds`);
                 } catch (e) {
                   toast(e instanceof Error ? e.message : "Cannot launch.", "error");
@@ -436,7 +436,7 @@ function CampaignDetail({ userId, campaignId }: { userId: string; campaignId: st
             </Button>
           )}
           {c.status === "active" && (
-            <Button variant="secondary" size="sm" onClick={async () => { await pauseCampaign(userId, c.id); toast("Campaign paused", "info"); }}>
+            <Button variant="secondary" size="sm" onClick={async () => { await pauseCampaign(c.id); toast("Campaign paused", "info"); }}>
               <Pause className="h-3.5 w-3.5" /> Pause
             </Button>
           )}
@@ -445,7 +445,7 @@ function CampaignDetail({ userId, campaignId }: { userId: string; campaignId: st
               size="sm"
               onClick={async () => {
                 try {
-                  await resumeCampaign(userId, c.id);
+                  await resumeCampaign(c.id);
                   toast("Campaign resumed");
                 } catch (e) {
                   toast(e instanceof Error ? e.message : "Cannot resume.", "error");
@@ -647,7 +647,7 @@ function CampaignDetail({ userId, campaignId }: { userId: string; campaignId: st
           <Button
             variant="danger"
             onClick={async () => {
-              await deleteCampaign(userId, c.id);
+              await deleteCampaign(c.id);
               toast("Campaign deleted", "info");
               window.location.hash = "#/app/campaigns";
             }}

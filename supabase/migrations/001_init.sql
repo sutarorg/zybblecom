@@ -2,6 +2,7 @@
 -- PostgreSQL (Supabase). UUIDs, FKs, indexes, constraints, RLS everywhere.
 
 create extension if not exists "pgcrypto";
+create extension if not exists "citext";
 
 -- ———————————————— profiles ————————————————
 create table public.profiles (

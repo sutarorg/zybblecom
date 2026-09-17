@@ -1,73 +1,15 @@
-import { db } from "./db";
-import { api, apiText, isRemote, syncFromServer } from "./remote";
-import type { CampaignLead, Lead } from "./types";
+import { api, apiText, syncFromServer } from "./remote";
+import type { Lead } from "./types";
 
-// ————— Bulk lead operations —————
+// ————— Bulk lead operations (server-authoritative) —————
 
-export async function deleteLeads(userId: string, ids: string[]) {
-  if (isRemote()) {
-    await api("/api/leads/delete", { body: { ids } });
-    void syncFromServer(true);
-    return;
-  }
-  const set = new Set(ids);
-  db.removeWhere<Lead>("leads", (l) => l.user_id === userId && set.has(l.id));
-  db.removeWhere<CampaignLead>(
-    "campaign_leads",
-    (cl) => set.has(cl.lead_id)
-  );
+export async function deleteLeads(ids: string[]) {
+  await api("/api/leads/delete", { body: { ids } });
+  await syncFromServer(true);
 }
 
-function csvEscape(v: string | number | null | undefined): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-export function leadsToCsv(leads: Lead[]): string {
-  const header = [
-    "company",
-    "category",
-    "address",
-    "city",
-    "state",
-    "country",
-    "phone",
-    "website",
-    "google_maps_url",
-    "rating",
-    "reviews",
-    "hours",
-    "description",
-    "email",
-    "email_status",
-    "ai_score",
-    "created_at",
-  ];
-  const lines = leads.map((l) =>
-    [
-      l.company,
-      l.category,
-      l.address,
-      l.city,
-      l.state,
-      l.country,
-      l.phone,
-      l.website,
-      l.maps_url,
-      l.rating,
-      l.reviews,
-      l.hours,
-      l.description,
-      l.email,
-      l.email_status,
-      l.ai_score,
-      l.created_at,
-    ]
-      .map(csvEscape)
-      .join(",")
-  );
-  return "﻿" + header.join(",") + "\n" + lines.join("\n");
+export async function saveLeadNotes(leadId: string, notes: string): Promise<Lead> {
+  return api<Lead>(`/api/leads/${leadId}`, { method: "PATCH", body: { notes } });
 }
 
 export function downloadCsv(filename: string, csv: string) {
@@ -82,7 +24,7 @@ export function downloadCsv(filename: string, csv: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Server-authoritative export — full dataset, RLS-scoped. */
+/** Server-side export — the full dataset, scoped by the caller's token. */
 export async function exportLeadsCsv(ids: string[] | null): Promise<void> {
   const csv = await apiText("/api/leads/export", ids?.length ? { ids } : {});
   downloadCsv(`zybble-leads-${new Date().toISOString().slice(0, 10)}.csv`, csv);

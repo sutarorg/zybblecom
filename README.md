@@ -3,442 +3,359 @@
 **Find the businesses that need you.**
 AI-powered lead generation and outreach — find, enrich, research, score, write, send.
 
-| Layer | Stack |
+Zybble is **one application**. One repository, one Vercel project, one deploy.
+There is no separate API service, no mailer daemon and no scraper container.
+
+| Layer | Implementation |
 | --- | --- |
-| Frontend | React 19 · Vite · Tailwind CSS v4 · hash-routed SPA (landing + app in one bundle) |
-| API | Fastify 4 · TypeScript · Zod · ran as a Docker container |
-| Database & Auth | Supabase (PostgreSQL + Row Level Security + Auth) |
+| Frontend | React 19 · Vite · Tailwind v4 (landing + app in one bundle) |
+| API | Vercel Serverless Function (`api/index.ts`), Node runtime, Zod-validated |
+| Background jobs | Vercel Cron + in-app ticks, database-leased, chunked |
+| Database & Auth | Supabase (PostgreSQL + RLS + Auth) |
 | AI | OpenAI `o4-mini` (server-side only) |
-| Payments | Razorpay USD subscriptions + signed webhooks |
-| Email | User SMTP (nodemailer) · AES-256-GCM credential encryption |
-| Scraper | Python + Selenium worker (adapted from [GoogleMapScraper](https://github.com/SoCloseSociety/GoogleMapScraper)) |
+| Lead discovery | Google Places API (New) + Geocoding — real Google Maps data |
+| Email finder | Node `fetch` + DNS MX verification (SSRF-guarded) |
+| Email sending | User's own SMTP via nodemailer, AES-256-GCM encrypted credentials |
+| Payments | Razorpay USD subscriptions + signed, idempotent webhooks |
 
 ```
- GitHub repo
- ├─ /               → Vercel  (frontend: landing page + dashboard app)
- ├─ /server         → Container host (zybble-api + zybble-mailer worker)
- ├─ /worker         → Container host (zybble-scraper: Python/Selenium)
- └─ /supabase       → SQL migrations (run once in Supabase SQL Editor)
+zybble/
+├─ src/                 → frontend (Vite build → dist/)
+├─ api/
+│  ├─ index.ts          → the entire backend, one function
+│  └─ _lib/             → core, jobs, places, email-finder, smtp, openai, razorpay
+├─ supabase/migrations/ → run once in the Supabase SQL editor
+└─ vercel.json          → function config + cron schedule + rewrites
 ```
-
-The frontend talks to **Supabase Auth** directly (anon key, safe for browsers) and to the
-**`zybble-api`** for everything else. Selenium and the mail loop run as **separate
-long-lived processes — never inside serverless functions**.
 
 ---
 
 # Table of contents
 
 1. [Prerequisites](#0--prerequisites)
-2. [Step 1 — Push the code to GitHub](#step-1--push-the-code-to-github)
-3. [Step 2 — Supabase: project, migrations, keys, auth URLs](#step-2--supabase)
-4. [Step 3 — OpenAI API key](#step-3--openai-api-key)
-5. [Step 4 — Razorpay: keys + webhook secret](#step-4--razorpay)
-6. [Step 5 — Deploy the backend services (API + workers)](#step-5--deploy-the-backend-services)
-7. [Step 6 — Deploy the frontend on Vercel](#step-6--deploy-the-frontend-on-vercel)
-8. [Step 7 — Connect everything (final URLs)](#step-7--connect-everything)
-9. [Smoke test your production app](#step-8--smoke-test)
-10. [Local development](#local-development)
-11. [Environment variable master table](#environment-variable-master-table)
-12. [Troubleshooting](#troubleshooting)
+2. [Step 1 — Push to GitHub](#step-1--push-to-github)
+3. [Step 2 — Supabase](#step-2--supabase)
+4. [Step 3 — OpenAI](#step-3--openai)
+5. [Step 4 — Google Maps](#step-4--google-maps-places-api)
+6. [Step 5 — Razorpay](#step-5--razorpay)
+7. [Step 6 — Generate local secrets](#step-6--generate-local-secrets)
+8. [Step 7 — Deploy to Vercel](#step-7--deploy-to-vercel)
+9. [Step 8 — Connect everything](#step-8--connect-everything)
+10. [Step 9 — Verify](#step-9--verify)
+11. [Local development](#local-development)
+12. [How background jobs work](#how-background-jobs-work)
+13. [Environment variables](#environment-variables)
+14. [Troubleshooting](#troubleshooting)
+15. [Known limitations](#known-limitations)
 
 ---
 
 # 0 · Prerequisites
 
-Create free accounts on each of these before starting:
-
 | Service | URL | Used for |
 | --- | --- | --- |
 | GitHub | https://github.com | code hosting, auto-deploys |
-| Vercel | https://vercel.com | frontend hosting (sign up **with GitHub**) |
+| Vercel | https://vercel.com | **the only host** (sign up with GitHub) |
 | Supabase | https://supabase.com | database + auth |
 | OpenAI | https://platform.openai.com | AI research / scoring / writer |
+| Google Cloud | https://console.cloud.google.com | Places API (lead discovery) |
 | Razorpay | https://dashboard.razorpay.com | subscriptions |
-| Railway *or* Render | https://railway.app · https://render.com | API + worker containers |
 
-You also need **Git** and (for two generated secrets) a terminal
-(macOS/Linux, or Git Bash / WSL on Windows).
+You also need Git and a terminal for two `openssl` commands.
 
 ---
 
-# Step 1 · Push the code to GitHub
+# Step 1 · Push to GitHub
 
-1. Go to **https://github.com/new**.
-2. **Repository name:** `zybble` → leave **Private** selected (recommended) →
-   **do not** tick "Add a README" → click **Create repository**.
-3. On the next page GitHub shows "Push an existing repository from the command
-   line". Open a terminal inside this project folder and run exactly:
+1. Go to **https://github.com/new** → name it `zybble` → keep it **Private** →
+   do **not** add a README → **Create repository**.
+2. In a terminal inside this project folder:
 
 ```bash
 git init
 git add .
-git commit -m "Zybble — production SaaS (frontend, API, workers)"
+git commit -m "Zybble — single-application SaaS"
 git branch -M main
 git remote add origin https://github.com/<your-username>/zybble.git
 git push -u origin main
 ```
 
-4. Reload the repository page — you should see the code.
-   (`.gitignore` already keeps `node_modules`, builds and every `.env` file out
-   of the repo, so secrets can never be pushed by accident.)
+`.gitignore` keeps `node_modules`, builds and every `.env` out of the repo.
 
 ---
 
 # Step 2 · Supabase
 
-This gives you **4 values**: `SUPABASE_URL`, the **anon key**, the **service-role key**,
-plus a fully migrated database.
-
 ### 2.1 Create the project
+1. **https://supabase.com** → **New project** → name `zybble`, generate a database
+   password, pick the region closest to your users → **Create new project** (~2 min).
 
-1. Go to **https://supabase.com** → sign in → click **New project**.
-2. Choose your organization, set:
-   - **Name:** `zybble`
-   - **Database password:** click **Generate** and save it somewhere safe
-     (you won't need it for this deployment, but keep it).
-   - **Region:** closest to your users.
-3. Click **Create new project** and wait ~2 minutes while it provisions.
+### 2.2 Run the migrations — **all four, in order**
+1. Left sidebar → **SQL Editor** → **+ New query**.
+2. Paste the entire contents of each file and click **Run**, one at a time:
+   - `supabase/migrations/001_init.sql`
+   - `supabase/migrations/002_backend.sql`
+   - `supabase/migrations/003_production_hardening.sql`
+   - `supabase/migrations/004_single_app.sql` ← required for the single-app job engine
 
-### 2.2 Run the database migrations
+Migration 004 adds the search radius, the durable job cursor, lease-based
+claiming (stale-job recovery) and the cron heartbeat.
 
-1. In the left sidebar, click the terminal icon **"SQL Editor"**.
-2. Click **+ New query**.
-3. Open `supabase/migrations/001_init.sql` from this repo, copy its **entire**
-   contents, paste it into the editor, click **Run** (bottom-right).
-   You should see _"Success. No rows returned"_.
-4. Click **+ New query** again and repeat with `supabase/migrations/002_backend.sql`, **Run**.
+### 2.3 Copy the keys
+Left sidebar → **gear icon** → **API**:
+- **Project URL** → `SUPABASE_URL` **and** `VITE_SUPABASE_URL`
+- **anon public** → `VITE_SUPABASE_ANON_KEY`
+- **service_role** (click Reveal) → `SUPABASE_SERVICE_ROLE_KEY`
+  ⚠️ Server-only. It bypasses RLS; never put it in a `VITE_*` variable.
 
-That creates all 15+ tables, indexes, Row Level Security policies, the
-post-signup provisioning trigger, the atomic `try_consume_leads` quota RPC,
-webhook idempotency and billing tables.
-
-### 2.3 Get the API keys
-
-1. In the left sidebar, click the **gear icon** (Project Settings).
-2. Click **API** (on newer UIs it's called **"Data API"** → "API keys").
-3. Copy these three values into a scratch note:
-   - **Project URL** → this is your `SUPABASE_URL` (and the frontend's `VITE_SUPABASE_URL`)
-     — looks like `https://abcdefghiklm.supabase.co`.
-   - Under **Project API keys** → **`anon` `public`** → **Reveal/Copy** →
-     this is `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `VITE_SUPABASE_ANON_KEY`.
-   - **`service_role`** → click **Reveal**, then **Copy** → this is
-     `SUPABASE_SERVICE_ROLE_KEY`. ⚠️ Treat it like a password — it bypasses
-     RLS and must only ever live in backend env vars, never in the frontend.
-
-### 2.4 Auth URL configuration (do now, finalize in Step 7)
-
-1. Left sidebar → **Authentication**.
-2. Click **URL Configuration** (under "Configuration").
-3. **Site URL:** for now put `https://localhost` — we'll replace it with your
-   live Vercel domain in Step 7 (Supabase validates magic-link/password-reset
-   redirects against this list).
-4. Under **Redirect URLs** click **Add URL** and add:
-   - `http://localhost:5173/**` (local dev) — add your production URL in Step 7.
-5. Optional but recommended for production: left sidebar **Authentication →
-   Providers → Email** → keep **Confirm email** ON, so signups verify their inbox.
+### 2.4 Auth URLs (finish in Step 8)
+**Authentication → URL Configuration** → you will set **Site URL** and add a
+**Redirect URL** once Vercel gives you a domain.
 
 ---
 
-# Step 3 · OpenAI API key
+# Step 3 · OpenAI
 
-1. Go to **https://platform.openai.com** and sign in.
-2. In the **left sidebar**, click **API keys** (or visit
-   https://platform.openai.com/api-keys directly).
-3. Click **+ Create new secret key**.
-   - **Name:** `zybble` → **Project:** Default → permissions **All**.
-4. Click **Create secret key** and **copy it immediately** (shown only once) —
-   this is `OPENAI_API_KEY` (`sk-...`).
-5. `OPENAI_MODEL` needs no dashboard visit — the value is just the text `o4-mini`
-   (already in `.env.example`). Billing/quota lives under **Settings → Billing**
-   if you need to top up.
+1. **https://platform.openai.com/api-keys** → **+ Create new secret key**.
+2. Name it `zybble`, create, and **copy immediately** → `OPENAI_API_KEY`.
+3. `OPENAI_MODEL` is the literal text `o4-mini`. The API refuses to boot with
+   any other value.
 
 ---
 
-# Step 4 · Razorpay
+# Step 4 · Google Maps (Places API)
 
-This gives you **3 values**: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
+This replaces the old Selenium container. Browser automation cannot run in a
+serverless function, so Zybble uses Google's official API for the same data.
 
-### 4.1 API keys
+1. Go to **https://console.cloud.google.com** → create/select a project.
+2. **APIs & Services → Library** → enable **both**:
+   - **Places API (New)**
+   - **Geocoding API**
+3. **APIs & Services → Credentials** → **+ Create credentials → API key**.
+4. Copy it → `GOOGLE_MAPS_API_KEY`.
+5. Click the key → **Restrict key → API restrictions** → select the two APIs
+   above. Leave **Application restrictions** as *None* (the key is used
+   server-side, never in the browser).
+6. **Billing must be enabled** on the Google Cloud project; Places API returns
+   `403` without it. Google's monthly free tier covers typical early usage.
 
-1. Go to **https://dashboard.razorpay.com** and sign in.
-2. Use the toggle in the **top bar** to choose **Test Mode** while developing
-   (switch to Live Mode when ready to charge real customers — Live requires KYC).
-3. Left sidebar → **Settings** → **API Keys** (under "Account and Settings").
-4. Click **Generate Test Key** (or **Generate Live Key** in Live Mode).
-5. Copy:
-   - **Key Id** (`rzp_test_...`) → `RAZORPAY_KEY_ID`
-   - **Key Secret** → shown **once** → `RAZORPAY_KEY_SECRET` (click to
-     download/copy before closing the dialog).
-6. If you ever lose the secret, return to the same page and click **Regenerate**.
+---
 
-> Plans are **auto-provisioned by the API on first checkout**
-> (USD $49/month and $129/month, monthly period, cached in the
-> `billing_plans` table). You do not need to create plans manually.
+# Step 5 · Razorpay
 
-### 4.2 Webhook + webhook secret
+### 5.1 API keys
+1. **https://dashboard.razorpay.com** → toggle **Test Mode** while developing.
+2. **Settings → API Keys → Generate Test Key**.
+3. Copy **Key Id** → `RAZORPAY_KEY_ID`, **Key Secret** (shown once) →
+   `RAZORPAY_KEY_SECRET`.
 
-1. Left sidebar → **Settings** → **Webhooks** → click **+ Add New Webhook**.
-2. **Webhook URL:** `https://<your-api-domain>/api/webhooks/razorpay`
-   — you get `<your-api-domain>` in Step 5, so either come back after Step 5
-   or fill it in now and edit later (the URL is editable).
-3. **Secret:** generate one in your terminal —
+Plans are created automatically on first checkout ($49 and $129/month USD) and
+cached in `billing_plans` — nothing to configure manually.
+
+### 5.2 Webhook
+1. **Settings → Webhooks → + Add New Webhook**.
+2. **URL:** `https://<your-vercel-domain>/api/webhooks/razorpay`
+   (you get the domain in Step 7 — the URL is editable afterwards).
+3. **Secret:** run `openssl rand -hex 16`, paste it into Razorpay **and** save
+   the same value as `RAZORPAY_WEBHOOK_SECRET`.
+4. **Active events** — tick exactly these six:
+   `subscription.activated`, `subscription.charged`, `subscription.cancelled`,
+   `subscription.completed`, `subscription.halted`, `payment.failed`.
+5. **Create Webhook**.
+
+---
+
+# Step 6 · Generate local secrets
 
 ```bash
-openssl rand -hex 16
+openssl rand -hex 32   # → SMTP_ENCRYPTION_KEY  (must be exactly 64 hex chars)
+openssl rand -hex 32   # → CRON_SECRET
 ```
-
-   Paste the output into the Razorpay **Secret** field **and** save the same
-   value as `RAZORPAY_WEBHOOK_SECRET` in your backend env vars.
-4. **Active events** — tick exactly these:
-   - `subscription.activated`
-   - `subscription.charged`
-   - `subscription.cancelled`
-   - `subscription.completed`
-   - `subscription.halted`
-   - `payment.failed`
-5. Click **Create Webhook**.
-
-The API verifies `X-Razorpay-Signature` against this secret on every call,
-processes each event idempotently, and treats the webhook — never the browser —
-as the source of truth.
 
 ---
 
-# Step 5 · Deploy the backend services
+# Step 7 · Deploy to Vercel
 
-Three services run as containers from this monorepo:
+1. **https://vercel.com** → **Add New… → Project**.
+2. **Import Git Repository** → `zybble` → **Import** (grant GitHub access if asked).
+3. Vercel reads `vercel.json`: Framework **Vite**, build `npm run build`, output
+   `dist`. Leave **Root Directory** as `./`.
+4. Expand **Environment Variables** and add all of these:
 
-| Service | Source | Command |
-| --- | --- | --- |
-| `zybble-api` | `server/` (Dockerfile) | `node dist/server.js` (default) |
-| `zybble-mailer` | `server/` (same image) | `node dist/worker.js` |
-| `zybble-scraper` | `worker/` (Dockerfile) | `python worker.py` |
-
-First, generate the two local secrets in your terminal:
-
-```bash
-openssl rand -hex 32   # → SMTP_ENCRYPTION_KEY
-openssl rand -hex 24   # → WORKER_SECRET
-```
-
-### Step 5 · Option A — Railway (recommended, click-by-click)
-
-> **Builder note (important):** the repo ships `railway.json` config files in
-> the root, `server/` and `worker/` that **force the Dockerfile builder**
-> and pin start commands/health checks. Without them, Railway's Railpack
-> misdetects services as a "Node/Vite project" when the Root Directory is
-> repo root — which builds the frontend instead of the service and fails.
-> If you ever see "valid build plan for your Node/Vite project" for the
-> mailer or scraper, the Root Directory is wrong — set it as below and
-> redeploy. Never let Railway run its Node plan for backend services.
-
-**Service 1 — API:**
-
-1. Go to **https://railway.app** → **Login with GitHub**.
-2. **New Project** → **Deploy from GitHub repo** → select **`zybble`** →
-   if asked, confirm "Railway can access the repository".
-3. Railway creates a service. Click it → **Settings** tab.
-4. Scroll to **Source** → set **Root Directory** to `server`.
-   The bundled `server/railway.json` takes over: **Dockerfile builder** at
-   `server/Dockerfile`, start command `node dist/server.js`, health check on
-   `/api/health`. (If Railway still shows a Nixpacks/Railpack plan under
-   **Settings → Build**, switch **Builder** to **Dockerfile** manually.)
-5. Open the **Variables** tab → click **+ New Variable** and add **all** of:
-
-| Variable | Value from |
+| Variable | Value |
 | --- | --- |
-| `SUPABASE_URL` | Step 2.3 — Project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Step 2.3 — service_role key |
+| `VITE_SUPABASE_URL` | Step 2.3 Project URL |
+| `VITE_SUPABASE_ANON_KEY` | Step 2.3 anon key |
+| `SUPABASE_URL` | Step 2.3 Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Step 2.3 service_role key |
 | `OPENAI_API_KEY` | Step 3 |
 | `OPENAI_MODEL` | `o4-mini` |
-| `RAZORPAY_KEY_ID` | Step 4.1 |
-| `RAZORPAY_KEY_SECRET` | Step 4.1 |
-| `RAZORPAY_WEBHOOK_SECRET` | Step 4.2 |
-| `SMTP_ENCRYPTION_KEY` | `openssl rand -hex 32` (above) |
-| `WORKER_SECRET` | `openssl rand -hex 24` (above) |
-| `APP_URL` | temporary `https://localhost` — **replace in Step 7** |
+| `GOOGLE_MAPS_API_KEY` | Step 4 |
+| `RAZORPAY_KEY_ID` | Step 5.1 |
+| `RAZORPAY_KEY_SECRET` | Step 5.1 |
+| `RAZORPAY_WEBHOOK_SECRET` | Step 5.2 |
+| `SMTP_ENCRYPTION_KEY` | Step 6 |
+| `CRON_SECRET` | Step 6 |
 
-6. Still in **Settings** → **Networking** section → click **Generate Domain**.
-   Railway assigns `https://<something>.up.railway.app` — **copy this: it is your
-   API domain** (`VITE_API_URL` for the frontend and the Razorpay webhook URL).
-7. The service auto-deploys; wait for **Deploy → Success**, then click the
-   **Deployments → View logs** and look for `"zybble api listening"`.
+5. Click **Deploy**. You get `https://<project>.vercel.app` — the frontend **and**
+   the API (`/api/...`) **and** the cron job, all from this one deployment.
 
-**Service 2 — Mailer worker (sends scheduled emails):**
-
-1. In the same project, click **+ New** (top-right) → **GitHub Repo** →
-   `zybble` again.
-2. **Settings → Source → Root Directory:** `server` (same image as the API).
-3. **Settings → Deploy → Custom Start Command:** `node dist/worker.js` —
-   this one setting is what distinguishes the mailer from the API.
-   Do **not** route public traffic to it and leave its health check empty:
-   it's a background worker, not a web service.
-4. **Variables tab:** click **"Add Variable Reference"** or re-add the **same
-   full set** as the API service (Railway doesn't auto-share — fastest is the
-   **"Raw Editor"** toggle: paste the whole block).
-5. Deploy; logs should show `"mailer worker started"`.
-
-> ⚠️ If the mailer builds but immediately **crashes** with a syntax or
-> module error, its service almost certainly got built from the repo root
-> (frontend) instead of `server/` — check the build log: it must run the
-> `server/Dockerfile` stages (`npm run build` → `COPY --from=build`), not a
-> Vite build. Fix the Root Directory + builder and redeploy.
-
-**Service 3 — Scraper worker (Google Maps / Selenium):**
-
-1. **+ New → GitHub Repo → `zybble`** once more.
-2. **Settings → Source → Root Directory:** `worker`.
-   The bundled `worker/railway.json` forces the **Dockerfile builder** on
-   `worker/Dockerfile` (Python + Chromium + Chromedriver) with start command
-   `python worker.py`. The build installs Chromium from Debian packages, so
-   the first image build takes a few minutes — that's normal.
-3. **Variables:** only two are needed —
-   `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-   (optional: `WORKER_POLL_SECONDS=5`).
-4. Deploy; logs should show `"[worker] scraper worker online"`.
-
-### Step 5 · Option B — Render (one-click blueprint)
-
-1. Go to **https://render.com** → sign in → **New → Blueprint**.
-2. Connect GitHub, select the `zybble` repo → Render reads `render.yaml` and
-   creates all three services (`zybble-api`, `zybble-mailer`, `zybble-scraper`).
-3. It prompts for each `sync: false` env var — paste the same values from the
-   Option A table.
-4. Click **Apply / Create resources**. When `zybble-api` is live, its URL
-   (`https://zybble-api.onrender.com`) is your API domain.
-
-> Any Docker host works (Fly.io, DigitalOcean App Platform, ECS): build
-> `server/Dockerfile` twice (default CMD + `worker` CMD) and
-> `worker/Dockerfile` once, with the same env vars.
+Every push to `main` redeploys everything together.
 
 ---
 
-# Step 6 · Deploy the frontend on Vercel
+# Step 8 · Connect everything
 
-1. Go to **https://vercel.com** → log in (with GitHub).
-2. Click **Add New… → Project** (top-right of the dashboard).
-3. Under **Import Git Repository**, find `zybble` → click **Import**
-   (first time: click **"Install Vercel for GitHub"** and grant access to the repo).
-4. Vercel auto-detects everything from `vercel.json` — verify:
-   - **Framework Preset:** `Vite` ✅ (auto)
-   - **Root Directory:** `./` (leave as-is)
-   - **Build Command:** `npm run build` · **Output Directory:** `dist` (auto)
-5. Expand **Environment Variables** and add exactly **3**:
-
-| Name | Value |
-| --- | --- |
-| `VITE_SUPABASE_URL` | Step 2.3 — Project URL (`https://….supabase.co`) |
-| `VITE_SUPABASE_ANON_KEY` | Step 2.3 — anon public key |
-| `VITE_API_URL` | Step 5 — your API domain, e.g. `https://zybble-production.up.railway.app` (no trailing slash) |
-
-   *(Leave the scope on **Production, Preview, Development** — all three.)*
-
-6. Click **Deploy**. ~1 minute later you get
-   `https://<project-name>.vercel.app` — **this is your live product**.
-7. Optional custom domain: **Project → Settings → Domains → Add** and follow
-   the DNS instructions Vercel shows.
-
-Every `git push` to `main` now auto-redeploys the site.
+1. **Supabase → Authentication → URL Configuration**
+   - **Site URL:** `https://<project>.vercel.app`
+   - **Add Redirect URL:** `https://<project>.vercel.app/**` → **Save**.
+2. **Razorpay → Settings → Webhooks** — set the URL to
+   `https://<project>.vercel.app/api/webhooks/razorpay`.
+3. **Custom domain (optional):** Vercel → **Settings → Domains → Add**. If you
+   use one, also set `APP_URL=https://yourdomain.com` so unsubscribe links point
+   at the right host, then redeploy.
+4. **Verify cron is registered:** Vercel → your project → **Settings → Cron Jobs**.
+   You should see `/api/cron/tick` every 5 minutes.
 
 ---
 
-# Step 7 · Connect everything
+# Step 9 · Verify
 
-Last loop-closers (2–3 minutes):
+Run these against your live URL:
 
-1. **Supabase → Authentication → URL Configuration:**
-   - **Site URL:** `https://<project-name>.vercel.app`
-   - **Add Redirect URL:** `https://<project-name>.vercel.app/**`
-   → **Save**. (Magic links and password resets now land back in the app.)
+```bash
+curl https://<project>.vercel.app/api/health      # {"ok":true,...}
+curl https://<project>.vercel.app/api/ready       # {"ok":true,"database":"healthy",...}
+curl -X POST https://<project>.vercel.app/api/cron/tick   # 401 (secret required) ✅
+```
 
-2. **API service → backend env var `APP_URL`** — set it to the same Vercel domain
-   (used to build unsubscribe links inside sent emails). Redeploy the API
-   (Railway: **Deployments → Redeploy**).
+Then in the browser:
 
-3. **Razorpay → Settings → Webhooks** — edit your webhook and confirm the URL is
-   `https://<your-api-domain>/api/webhooks/razorpay`. Save.
+1. **Sign up** → lands in the app on the Free plan.
+2. **Find Leads** → `Dentists` / `Austin, Texas` / 25 km / 10 leads →
+   the job moves `Queued → Searching → Collecting → Enriching → Finding emails → Complete`
+   and real businesses appear in **Leads** with email statuses.
+3. **Billing → Growth** → Razorpay hosted checkout (Test card `4111 1111 1111 1111`,
+   any future expiry/CVV) → plan flips to Growth after the webhook lands.
+4. **Open a lead** → **Research with AI**, **Score lead**, **Write email**.
+5. **Settings → SMTP senders → Connect** (Gmail needs an App Password) → **Test**.
+6. **Campaigns → New campaign** → **Add leads** → **Launch** → the first email
+   sends within a minute; the Activity feed streams live.
+7. Open the email's **unsubscribe** link → the address joins the suppression list.
 
-4. **Vercel ← API domain** — if you deployed the API before getting its final
-   domain, update `VITE_API_URL`: **Vercel → your project → Settings →
-   Environment Variables → ⋯ → Edit** → then **Deployments → ⋯ → Redeploy**.
+### Automated real-integration suite
 
-You're live.
+`scripts/e2e-production.mjs` runs the whole journey against the live deployment
+with real Supabase, Google, OpenAI, SMTP and Razorpay — creating a disposable
+user and deleting it afterwards. It also asserts negative paths: anonymous
+access is rejected, cron requires its secret, RLS blocks plan escalation, AI is
+gated on Free, forged webhooks are refused, duplicate webhooks dedupe, invalid
+SMTP is never stored, and an email job is never sent twice.
 
----
+```bash
+APP_URL=https://<project>.vercel.app \
+CRON_SECRET=... SUPABASE_URL=... SUPABASE_ANON_KEY=... \
+SUPABASE_SERVICE_ROLE_KEY=... RAZORPAY_WEBHOOK_SECRET=... \
+E2E_RUN_SCRAPER=true npm run e2e
+```
 
-# Step 8 · Smoke test
-
-Run this in order on your production URL; every item maps to a real subsystem:
-
-1. **Sign up** (`/signup`) → lands in the app, Free plan visible in the sidebar.
-2. **Find Leads** → `Dentists` / `Texas` / 10 leads → watch the job go
-   `Queued → Searching → Collecting → Enriching → Finding emails → Complete`
-   (scraper worker at work; leads appear in **Leads** live).
-3. **Billing → Growth** → Razorpay checkout opens → in **Test Mode** use card
-   `4111 1111 1111 1111`, any future expiry, any CVV → on success the plan
-   flips to Growth (webhook confirms; Billing activity shows `upgraded`).
-4. **Leads → open a lead** → **Research with AI**, **Score lead**, **Write email**
-   (real `o4-mini` calls; results cached).
-5. **Settings → SMTP senders → Connect** a real SMTP account
-   (Gmail: Google Account → Security → 2-Step Verification → App passwords)
-   → **Test** (live handshake).
-6. **Campaigns → New campaign** (Day 0 / 3 / 7 prefilled) → **Add leads** →
-   **Launch** → first emails send within seconds via the mailer worker;
-   follow-ups schedule for +3/+7 days; Activity feed streams live.
-7. Open an email **Preview** → click its **unsubscribe** link → the address
-   joins the suppression list and is never emailed again.
-8. **Export CSV** from Leads → downloads instantly (server-side export).
+Or **GitHub → Actions → Production E2E → Run workflow** after adding the
+`E2E_*` secrets listed in that workflow file.
 
 ---
 
 # Local development
 
-No env vars are required to explore the product — the frontend ships with an
-embedded local engine (local auth, lead pipeline, AI heuristics, campaign
-simulation) so `npm run dev` alone gives you the full UI end-to-end.
-
 ```bash
 npm install
-npm run dev          # → http://localhost:5173
+npm run typecheck     # frontend + API in one pass
+npm run build
 ```
 
-To run against the real backend locally:
+To run the **full app** (frontend + serverless API + cron routes) locally you
+need the Vercel CLI, because the API is made of Vercel Functions:
 
 ```bash
-cp .env.example .env          # fill in the server-side values
-cd server && npm install && npm run dev        # API on :8787
-cd server && npm run dev:worker                # mailer (second terminal)
-cd worker && pip install -r requirements.txt && python worker.py   # scraper (third)
+npm i -g vercel
+vercel link           # once
+vercel env pull .env  # pulls the variables you set in Step 7
+npm run dev           # = vercel dev → http://localhost:3000
 ```
 
-…and set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL=http://localhost:8787`
-in a `.env` for the frontend.
+`npm run dev:web` starts Vite alone (UI only, no API) if you are just doing
+visual work.
+
+Trigger background processing locally:
+
+```bash
+curl -X POST localhost:3000/api/cron/tick -H "x-cron-secret: $CRON_SECRET"
+```
 
 ---
 
-# Environment variable master table
+# How background jobs work
 
-| Variable | Set where | Source (click-by-click step) |
+There is no always-on process. Work is stored in Supabase and executed in
+bounded slices by ordinary function invocations.
+
+**Lifecycle**
+
+```
+search_jobs:  queued → searching → collecting → enriching → finding_emails → complete
+                    ↘ (3 failed attempts, quota refunded) ────────────────→ failed
+email_jobs:   scheduled → processing → sent
+                        ↘ retry ×3 (5 min apart) → failed
+```
+
+**Two triggers, same code path**
+
+| Trigger | When | Purpose |
 | --- | --- | --- |
-| `VITE_SUPABASE_URL` | Vercel | Step 2.3 — Project URL |
-| `VITE_SUPABASE_ANON_KEY` | Vercel | Step 2.3 — anon public key |
-| `VITE_API_URL` | Vercel | Step 5 — generated API domain |
-| `SUPABASE_URL` | API, mailer, scraper | Step 2.3 — Project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | API, mailer, scraper | Step 2.3 — service_role (secret) |
-| `NEXT_PUBLIC_SUPABASE_URL` | same as `SUPABASE_URL` | kept for Next-style tooling parity |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | same as `VITE_SUPABASE_ANON_KEY` | " |
-| `OPENAI_API_KEY` | API, mailer | Step 3 — platform.openai.com → API keys |
-| `OPENAI_MODEL` | API, mailer | literal `o4-mini` |
-| `RAZORPAY_KEY_ID` | API, mailer | Step 4.1 — Settings → API Keys |
-| `RAZORPAY_KEY_SECRET` | API, mailer | Step 4.1 — shown once at generation |
-| `RAZORPAY_WEBHOOK_SECRET` | API, mailer | Step 4.2 — you generate it (`openssl rand -hex 16`) and put the same value into Razorpay |
-| `SMTP_ENCRYPTION_KEY` | API, mailer | `openssl rand -hex 32` |
-| `APP_URL` / `NEXT_PUBLIC_APP_URL` | API, mailer | your Vercel domain (Step 7) |
-| `WORKER_SECRET` | API, mailer | `openssl rand -hex 24` |
-| `WORKER_POLL_SECONDS` | scraper (optional) | default `5` |
+| Vercel Cron → `/api/cron/tick` | every 5 minutes | follow-ups, retries, stale recovery, rollovers |
+| App → `/api/jobs/tick` | while a signed-in user has pending work | instant start, no waiting for cron |
 
-> The scraper only needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
+**Safety properties**
+
+- **Duplicate-job protection** — `claim_search_job` and `claim_due_email_jobs`
+  use `FOR UPDATE SKIP LOCKED`, so one invocation exclusively owns a job.
+- **Idempotent sends** — a unique index on `(campaign_lead_id, step_id)` means a
+  step can only ever be queued once, and each send carries a stable `Message-ID`.
+- **Timeout protection** — every slice checks a time budget and stops early,
+  persisting its cursor first.
+- **Stale-job recovery** — leases expire after 2 minutes; an interrupted job is
+  automatically reclaimed and resumed from its cursor.
+- **Retries** — searches retry 3 times, then fail and **refund unused quota**;
+  emails retry 3 times, 5 minutes apart.
+- **Progress** — every chunk writes `status` + `progress` + `collected`, which
+  the UI polls via `/api/bootstrap` and `/api/search/:id`.
+
+---
+
+# Environment variables
+
+All twelve live in **one place**: Vercel → Settings → Environment Variables.
+
+| Variable | Scope | Source |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | browser | Step 2.3 |
+| `VITE_SUPABASE_ANON_KEY` | browser | Step 2.3 |
+| `SUPABASE_URL` | server | Step 2.3 |
+| `SUPABASE_SERVICE_ROLE_KEY` | server | Step 2.3 |
+| `OPENAI_API_KEY` | server | Step 3 |
+| `OPENAI_MODEL` | server | `o4-mini` |
+| `GOOGLE_MAPS_API_KEY` | server | Step 4 |
+| `RAZORPAY_KEY_ID` | server | Step 5.1 |
+| `RAZORPAY_KEY_SECRET` | server | Step 5.1 |
+| `RAZORPAY_WEBHOOK_SECRET` | server | Step 5.2 |
+| `SMTP_ENCRYPTION_KEY` | server | `openssl rand -hex 32` |
+| `CRON_SECRET` | server | `openssl rand -hex 32` |
+| `APP_URL` | server, optional | custom domain only |
+| `CORS_ORIGINS` | server, optional | extra allowed browser origins |
+
+**Removed** with the old architecture: `VITE_API_URL`, `WORKER_SECRET`,
+`WORKER_POLL_SECONDS`, `PORT`, `NEXT_PUBLIC_*`. The API is same-origin, so
+there is no API URL to configure.
 
 ---
 
@@ -446,37 +363,59 @@ in a `.env` for the frontend.
 
 | Symptom | Fix |
 | --- | --- |
-| Sign-in says "Invalid access token" in the app | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` wrong or missing in Vercel → edit, redeploy. |
-| Magic link lands on an error page | **Supabase → Authentication → URL Configuration**: Site URL and Redirect URLs must include your Vercel domain with `/**`. |
-| `402` on search | Monthly quota consumed — expected behavior; upgrade or wait for the next month. |
-| Job stays `Queued` | Scraper worker isn't running (check its logs) or `SUPABASE_SERVICE_ROLE_KEY` is wrong on the worker. |
-| Railway: "valid build plan for your Node/Vite project" on mailer/scraper | Wrong builder/root — the service is building the **frontend**. Set **Settings → Source → Root Directory** (`server` or `worker`) and **Settings → Build → Builder → Dockerfile**. The bundled `railway.json` files enforce this automatically on a fresh redeploy. |
-| Railway: mailer builds then instantly crashes | Same cause — it was built from repo root so `node dist/worker.js` ran against the frontend's `dist/index.html`. Fix root directory + Dockerfile builder, redeploy. |
-| Railway: scraper build stalls/silent during Node build | It was running the frontend's `vite build` (wrong plan). Force the Dockerfile builder; the Python image installs Chromium via apt and shows progress logs throughout. |
-| Railway: health check never passes on the API | Confirm the service binds `0.0.0.0` (it does) and that **Networking → Generate Domain** targets port `8787`; health path is `/api/health`. |
-| AI buttons throw 403 | Account is on Free — AI is Growth+. If you just upgraded, wait ~10s for the webhook sync. |
-| SMTP connect fails | Handshake happens live on save — wrong host/port or provider requires an *app password*. 5xx rejects during sending auto-suppress the address. |
-| Emails scheduled but not sending | `zybble-mailer` worker must be running; it ticks every 15 s. |
-| Payment succeeded, plan didn't change | Check **Razorpay → Webhooks →** your webhook (it shows delivery attempts + the API needs `RAZORPAY_WEBHOOK_SECRET` to match the webhook secret). The `/api/billing/verify` endpoint syncs instantly on success regardless. |
-| Razorpay webhook 401 | `RAZORPAY_WEBHOOK_SECRET` ≠ webhook secret in the dashboard — make them identical and redeploy the API. |
+| `/api/*` returns the HTML page | The `/api/(.*)` rewrite must come **first** in `vercel.json`. Redeploy. |
+| API 500 on every route | A required env var is missing — the function throws on boot. Check **Vercel → Deployments → Functions logs**; the message names the variable. |
+| Search fails with "Google Maps rejected the request" | Enable **Places API (New)** *and* **Geocoding API**, and turn on **billing** for the Google Cloud project. |
+| Search completes with 0 leads | No businesses matched. Widen the radius or use a broader location. Quota is refunded automatically. |
+| Job stuck in `collecting` | Wait one cron cycle — the lease expires after 2 minutes and the job resumes from its cursor. Check `/api/internal/metrics` with the cron secret. |
+| Emails scheduled but not sending | Confirm **Settings → Cron Jobs** shows `/api/cron/tick`, and that the campaign has a connected SMTP sender. Opening the app also drives a tick. |
+| Cron never runs | Vercel Cron requires a **production** deployment; preview deployments do not schedule jobs. |
+| Magic link errors | Supabase → Authentication → URL Configuration must list your Vercel domain with `/**`. |
+| Payment succeeded, plan unchanged | Check Razorpay → Webhooks delivery log; `RAZORPAY_WEBHOOK_SECRET` must match exactly. |
+| AI returns 403 | The account is on Free. AI is Growth+ — upgrade, then retry. |
 
 ---
 
-# Security notes
+# Known limitations
 
-- The **service-role key** is used only in backend processes; every query is
-  still explicitly scoped to the authenticated user, and RLS stays enabled as
-  defense in depth.
-- `OPENAI_API_KEY`, Razorpay secrets and `SMTP_ENCRYPTION_KEY` never reach the
-  browser (`.env.example` marks exactly which variables are browser-safe).
-- SMTP passwords are encrypted with AES-256-GCM before they touch the database
-  and are **never selected back** by any endpoint.
-- Webhooks are HMAC-verified and idempotent; browser payment redirects are
-  never trusted for plan activation.
-- The scraper collects **public business data only** (name, address, phone,
-  website, hours, ratings, publicly listed emails) and never circumvents
-  CAPTCHAs or access controls. Respect Google's Terms of Service and local
-  outreach regulations (CAN-SPAM / GDPR) — built-in one-click unsubscribe and
-  suppression lists help you comply.
+These are real constraints, stated plainly rather than hidden:
+
+1. **Google caps text search at ~60 results per query.** Requesting 200 leads
+   returns every business Google will serve for that query (typically 20–60);
+   the unused quota is refunded automatically. For more volume, run several
+   narrower searches (different suburbs or sub-categories).
+2. **Places API is billed by Google.** It replaces Selenium because browser
+   automation cannot run in serverless. This is also more reliable and does not
+   break when Google changes its HTML — but it is a metered cost with a free
+   monthly tier.
+3. **Cron granularity is 5 minutes** and requires a Vercel **Pro** plan for
+   sub-daily schedules; on **Hobby**, cron runs once per day. The in-app tick
+   compensates while a user has the dashboard open, so interactive work (search,
+   sending a launched campaign) still starts immediately. Unattended follow-ups
+   on Hobby will process on the daily run.
+4. **Function timeout is 60s**, so work is chunked. A 60-lead search with email
+   discovery typically spans several invocations over 1–3 minutes.
+5. **Email verification is DNS-level** (MX + published-address provenance). It
+   does not perform SMTP recipient probing, which providers widely block and
+   which harms sender reputation.
+6. **No SMTP inbound parsing.** Bounces are detected from live SMTP 5xx
+   responses at send time; open/click tracking is intentionally not implemented.
+
+---
+
+# Security
+
+- The service-role key, OpenAI key, Razorpay secrets, Google key and
+  `SMTP_ENCRYPTION_KEY` exist only in server-side function environment; only
+  `VITE_*` variables reach the browser.
+- RLS is enabled on every table and grants read-only access to a user's own
+  rows; all mutations go through the API, which authorizes each request.
+- SMTP passwords are AES-256-GCM encrypted before storage and are never
+  selected by any endpoint.
+- Webhooks are HMAC-verified and processed exactly once; the browser is never
+  trusted for plan activation.
+- The email finder enforces an SSRF guard, validating every redirect hop and
+  refusing private, loopback and link-local addresses.
+- Rate limiting is database-backed, so it holds across all serverless instances.
 
 MIT © Zybble

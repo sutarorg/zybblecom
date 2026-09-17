@@ -10,10 +10,11 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { logout } from "../lib/auth";
 import { useDb, db, resetStorage } from "../lib/db";
-import { downloadCsv, leadsToCsv } from "../lib/leadops";
+import { exportLeadsCsv } from "../lib/leadops";
+import { deleteRemoteAccount, saveRemoteProfile } from "../lib/remote";
 import {
   addEmailAccount,
   deleteEmailAccount,
@@ -59,12 +60,10 @@ function Section({
 function SmtpModal({
   open,
   onClose,
-  userId,
   onAdded,
 }: {
   open: boolean;
   onClose: () => void;
-  userId: string;
   onAdded: () => void;
 }) {
   const [form, setForm] = useState<SmtpForm>({
@@ -87,7 +86,7 @@ function SmtpModal({
     setError(null);
     setBusy(true);
     try {
-      const a = await addEmailAccount(userId, form);
+      const a = await addEmailAccount(form);
       toast(`Sender “${a.label}” connected — credentials encrypted at rest`);
       onAdded();
       onClose();
@@ -154,6 +153,13 @@ export default function SettingsPage({ userId }: { userId: string }) {
   const [suppInput, setSuppInput] = useState("");
   const [confirmWipe, setConfirmWipe] = useState(false);
 
+  useEffect(() => {
+    if (!profile) return;
+    setName(profile.name);
+    setCompany(profile.company);
+    setFromName(profile.from_name);
+  }, [profile?.id, profile?.name, profile?.company, profile?.from_name]);
+
   const accounts = db.where<EmailAccount>("email_accounts", (a) => a.user_id === userId);
   const suppression = db
     .where<SuppressionEntry>("suppression_list", (s) => s.user_id === userId)
@@ -168,14 +174,22 @@ export default function SettingsPage({ userId }: { userId: string }) {
         sub="Used in AI emails and campaign variables ({{sender}})."
       >
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            db.update<Profile>("profiles", userId, {
+            const input = {
               name: name.trim(),
               company: company.trim(),
               from_name: fromName.trim() || name.trim(),
-            });
-            toast("Profile saved");
+            };
+            try {
+              await saveRemoteProfile(input);
+              toast("Profile saved");
+            } catch (err) {
+              toast(
+                err instanceof Error ? err.message : "Could not save profile.",
+                "error"
+              );
+            }
           }}
           className="grid gap-3 sm:grid-cols-3"
         >
@@ -230,8 +244,13 @@ export default function SettingsPage({ userId }: { userId: string }) {
                   onClick={async () => {
                     setTesting(a.id);
                     try {
-                      await testConnection(userId, a.id);
+                      await testConnection(a.id);
                       toast("Connection verified — handshake OK");
+                    } catch (err) {
+                      toast(
+                        err instanceof Error ? err.message : "Connection failed.",
+                        "error"
+                      );
                     } finally {
                       setTesting(null);
                     }
@@ -241,7 +260,7 @@ export default function SettingsPage({ userId }: { userId: string }) {
                 </Button>
                 <button
                   onClick={() => {
-                    void deleteEmailAccount(userId, a.id).then(() =>
+                    void deleteEmailAccount(a.id).then(() =>
                       toast("Sender removed", "info")
                     );
                   }}
@@ -266,7 +285,7 @@ export default function SettingsPage({ userId }: { userId: string }) {
           onSubmit={async (e) => {
             e.preventDefault();
             try {
-              await suppressEmail(userId, suppInput.trim().toLowerCase());
+              await suppressEmail(suppInput.trim().toLowerCase());
               setSuppInput("");
               toast("Added to suppression list");
             } catch (err) {
@@ -288,7 +307,7 @@ export default function SettingsPage({ userId }: { userId: string }) {
                 <Badge tone="neutral">{s.reason}</Badge>
                 <button
                   onClick={() => {
-                    void unsuppressEmail(userId, s.email).then(() =>
+                    void unsuppressEmail(s.email).then(() =>
                       toast("Removed from suppression list", "info")
                     );
                   }}
@@ -334,11 +353,18 @@ export default function SettingsPage({ userId }: { userId: string }) {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
+            onClick={async () => {
               const leads = db.where<Lead>("leads", (l) => l.user_id === userId);
               if (leads.length === 0) return toast("No leads to export.", "error");
-              downloadCsv(`zybble-export-${new Date().toISOString().slice(0, 10)}.csv`, leadsToCsv(leads));
-              toast(`Exported ${leads.length} leads`);
+              try {
+                await exportLeadsCsv(null);
+                toast(`Exported ${leads.length} leads`);
+              } catch (err) {
+                toast(
+                  err instanceof Error ? err.message : "Export failed.",
+                  "error"
+                );
+              }
             }}
           >
             <Download className="h-3.5 w-3.5" /> Export all leads (CSV)
@@ -349,7 +375,7 @@ export default function SettingsPage({ userId }: { userId: string }) {
         </div>
       </Section>
 
-      <SmtpModal open={smtpModal} onClose={() => setSmtpModal(false)} userId={userId} onAdded={() => {}} />
+      <SmtpModal open={smtpModal} onClose={() => setSmtpModal(false)} onAdded={() => {}} />
 
       <Modal open={confirmWipe} onClose={() => setConfirmWipe(false)} title="Delete account">
         <p className="text-[13.5px] leading-relaxed text-neutral-600">
@@ -360,11 +386,19 @@ export default function SettingsPage({ userId }: { userId: string }) {
           <Button variant="secondary" onClick={() => setConfirmWipe(false)}>Cancel</Button>
           <Button
             variant="danger"
-            onClick={() => {
-              resetStorage();
-              logout();
-              window.location.hash = "#/";
-              toast("Account deleted", "info");
+            onClick={async () => {
+              try {
+                await deleteRemoteAccount();
+                resetStorage();
+                logout();
+                window.location.hash = "#/";
+                toast("Account deleted", "info");
+              } catch (err) {
+                toast(
+                  err instanceof Error ? err.message : "Account deletion failed.",
+                  "error"
+                );
+              }
             }}
           >
             <Trash2 className="h-3.5 w-3.5" /> Delete everything

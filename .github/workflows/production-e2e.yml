@@ -1,0 +1,48 @@
+name: Production E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_scraper:
+        description: Run a real Google Maps lead search
+        required: true
+        default: true
+        type: boolean
+      run_razorpay:
+        description: Create and cancel a real Razorpay Test Mode subscription
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run real production journey
+        env:
+          E2E_FULL: "true"
+          E2E_RUN_SCRAPER: ${{ inputs.run_scraper }}
+          E2E_RUN_RAZORPAY: ${{ inputs.run_razorpay }}
+          APP_URL: ${{ secrets.E2E_APP_URL }}
+          CRON_SECRET: ${{ secrets.E2E_CRON_SECRET }}
+          SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+          RAZORPAY_KEY_ID: ${{ secrets.E2E_RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET: ${{ secrets.E2E_RAZORPAY_KEY_SECRET }}
+          RAZORPAY_WEBHOOK_SECRET: ${{ secrets.E2E_RAZORPAY_WEBHOOK_SECRET }}
+          E2E_SMTP_HOST: ${{ secrets.E2E_SMTP_HOST }}
+          E2E_SMTP_PORT: ${{ secrets.E2E_SMTP_PORT }}
+          E2E_SMTP_USERNAME: ${{ secrets.E2E_SMTP_USERNAME }}
+          E2E_SMTP_PASSWORD: ${{ secrets.E2E_SMTP_PASSWORD }}
+          E2E_SMTP_FROM_EMAIL: ${{ secrets.E2E_SMTP_FROM_EMAIL }}
+          E2E_RECIPIENT_EMAIL: ${{ secrets.E2E_RECIPIENT_EMAIL }}
+        run: npm run e2e

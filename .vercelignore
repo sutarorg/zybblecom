@@ -1,12 +1,10 @@
-# Only the Vite frontend is deployed to Vercel.
-# Backend services deploy as containers (see README → Step 5).
+# Zybble deploys as ONE Vercel project: the Vite frontend plus the
+# serverless API in api/. Nothing below is needed at build time.
 node_modules
 dist
-server
-worker
 supabase
-docker-compose.yml
-render.yaml
+scripts
+.github
 .env
 .env.*
 !.env.example

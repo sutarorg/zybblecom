@@ -13,10 +13,8 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import Logo from "../../components/Logo";
 import { logout } from "../lib/auth";
-import { resumeJobs } from "../lib/engine";
-import { processRollovers, startMailer } from "../lib/mailer";
 import { useDb } from "../lib/db";
-import { isRemote, syncFromServer } from "../lib/remote";
+import { syncFromServer, tickJobs } from "../lib/remote";
 import { getPlan, getSubscription, getUsage } from "../lib/plans";
 import type { Profile } from "../lib/types";
 import { db } from "../lib/db";
@@ -55,19 +53,19 @@ export default function Shell({
   const sub = getSubscription(userId);
   const usage = getUsage(userId);
 
-  // Boot engines once per session.
-  // Remote mode: the API + workers own job lifecycle and delivery;
-  // the shell keeps the local cache in sync with Supabase.
+  // Keep the local cache in sync with Supabase, and nudge background
+  // processing while the app is open so queued work starts immediately
+  // instead of waiting for the next scheduled run. The server no-ops
+  // when this account has nothing pending.
   useEffect(() => {
-    if (isRemote()) {
-      void syncFromServer(true);
-      const t = setInterval(() => void syncFromServer(), 6000);
-      return () => clearInterval(t);
-    }
-    resumeJobs(userId);
-    processRollovers(userId);
-    const stop = startMailer(userId);
-    return stop;
+    void syncFromServer(true);
+    const sync = setInterval(() => void syncFromServer(), 6000);
+    void tickJobs();
+    const tick = setInterval(() => void tickJobs(), 20_000);
+    return () => {
+      clearInterval(sync);
+      clearInterval(tick);
+    };
   }, [userId]);
 
   useEffect(() => {

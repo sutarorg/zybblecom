@@ -13,6 +13,7 @@ import { PrivacyPage, TermsPage } from "./marketing/LegalPages";
 import NotFound from "./marketing/NotFound";
 import PricingPage from "./marketing/PricingPage";
 import { Seo, usePathname } from "./seo/Seo";
+import { isConfigured } from "./app/lib/remote";
 
 const SHEET =
   "relative rounded-[24px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(20,18,15,0.03),0_40px_90px_-40px_rgba(23,20,15,0.14)] sm:rounded-[28px]";
@@ -93,6 +94,27 @@ export default function App() {
 
   // The authenticated product continues to live behind hash routes.
   if (isAppRoute(hashRoute)) {
+    if (!isConfigured()) {
+      return (
+        <div className="grid min-h-screen place-items-center bg-canvas px-6 text-center">
+          <div className="max-w-md">
+            <h1 className="font-display text-2xl font-semibold text-neutral-950">
+              Zybble is temporarily unavailable
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-neutral-500">
+              The production backend is not configured. No local or simulated
+              data has been used. Please contact support or try again shortly.
+            </p>
+            <a
+              href="mailto:hello@zybble.com"
+              className="mt-6 inline-flex h-10 items-center rounded-xl bg-neutral-950 px-4 text-sm font-medium text-white"
+            >
+              Contact support
+            </a>
+          </div>
+        </div>
+      );
+    }
     return <ZybbleApp route={hashRoute} />;
   }
 

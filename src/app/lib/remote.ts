@@ -3,27 +3,30 @@ import { db } from "./db";
 import type { Table } from "./types";
 
 // ————————————————————————————————————————————————————————————
-// Production backend integration.
-// When VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / VITE_API_URL
-// are present, every feature talks to the real backend:
-//   · Supabase Auth           — email/password, magic link, OAuth
-//   · Zybble API (server/)    — jobs, AI, campaigns, billing
-//   · The local engine remains the offline development fallback.
-// The UI never changes — this layer is a drop-in data source.
+// Backend integration.
+//
+// Zybble is a single application: the API lives at /api on the
+// same origin as this frontend, so there is no API base URL to
+// configure. Only Supabase Auth runs in the browser (anon key);
+// every privileged operation goes through the server.
 // ————————————————————————————————————————————————————————————
 
-const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
+const viteEnv = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
 
-const SUPABASE_URL = env?.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY;
-export const API_URL = env?.VITE_API_URL?.replace(/\/+$/, "");
+const SUPABASE_URL = viteEnv?.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = viteEnv?.VITE_SUPABASE_ANON_KEY;
 
-export function isRemote(): boolean {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && API_URL);
+/** Same-origin by default; override only for split local dev. */
+export const API_URL = (viteEnv?.VITE_API_URL ?? "").replace(/\/+$/, "");
+
+export function isConfigured(): boolean {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 }
 
 let _sb: SupabaseClient | null = null;
 export function supabase(): SupabaseClient {
+  if (!isConfigured())
+    throw new Error("Supabase is not configured for this deployment.");
   if (!_sb)
     _sb = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
       auth: {
@@ -35,40 +38,6 @@ export function supabase(): SupabaseClient {
   return _sb;
 }
 
-function sessionStorageKey(): string {
-  const ref = new URL(SUPABASE_URL!).host.split(".")[0];
-  return `sb-${ref}-auth-token`;
-}
-
-export function accessToken(): string | null {
-  if (!isRemote()) return null;
-  try {
-    const raw = localStorage.getItem(sessionStorageKey());
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { access_token?: string };
-    return parsed.access_token ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function remoteUserFromToken(): { id: string; email: string } | null {
-  const token = accessToken();
-  if (!token) return null;
-  try {
-    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(b64)) as {
-      sub: string;
-      email?: string;
-      exp?: number;
-    };
-    if (!payload.sub || (payload.exp && payload.exp * 1000 < Date.now())) return null;
-    return { id: payload.sub, email: payload.email ?? "" };
-  } catch {
-    return null;
-  }
-}
-
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -77,20 +46,39 @@ export class ApiError extends Error {
   }
 }
 
+async function authHeader(): Promise<Record<string, string>> {
+  if (!isConfigured()) return {};
+  // getSession refreshes an expired token transparently.
+  const { data } = await supabase().auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function api<T>(
   path: string,
-  opts: { method?: string; body?: unknown; auth?: boolean } = {}
+  opts: { method?: string; body?: unknown; auth?: boolean; timeoutMs?: number } = {}
 ): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.auth !== false) {
-    const token = accessToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
+  if (opts.auth !== false) Object.assign(headers, await authHeader());
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), opts.timeoutMs ?? 60_000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: opts.method ?? (opts.body !== undefined ? "POST" : "GET"),
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError")
+      throw new ApiError(408, "The request timed out. Please try again.");
+    throw new ApiError(503, "Could not reach Zybble. Check your connection and try again.");
+  } finally {
+    window.clearTimeout(timeout);
   }
-  const res = await fetch(`${API_URL}${path}`, {
-    method: opts.method ?? (opts.body !== undefined ? "POST" : "GET"),
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -107,13 +95,9 @@ export async function api<T>(
 
 /** Raw-text request (CSV exports). */
 export async function apiText(path: string, body?: unknown): Promise<string> {
-  const token = accessToken();
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
     body: JSON.stringify(body ?? {}),
   });
   if (!res.ok) {
@@ -149,20 +133,52 @@ const SYNC_TABLES: Table[] = [
   "billing_events",
 ];
 
-type Bootstrap = Record<string, Record<string, unknown>[]>;
+type Bootstrap = Record<string, unknown> & {
+  lead_count?: number;
+  leads?: Record<string, unknown>[];
+};
 
 let syncing = false;
 let lastSync = 0;
+let lastLeadCount = -1;
 
 export async function syncFromServer(force = false): Promise<void> {
-  if (!isRemote()) return;
-  if (syncing) return;
+  if (!isConfigured() || syncing) return;
   if (!force && Date.now() - lastSync < 1500) return;
   syncing = true;
   try {
     const data = await api<Bootstrap>("/api/bootstrap");
+    const expected = data.lead_count ?? data.leads?.length ?? 0;
+    let allLeads = data.leads ?? [];
+    const cachedLeads = db.all<Record<string, unknown>>("leads");
+
+    if (expected === lastLeadCount && cachedLeads.length === expected && !force) {
+      allLeads = cachedLeads;
+    } else {
+      // New rows arrive at the front; merge the fresh page with the cached
+      // tail before asking the server for any remaining pages.
+      const seen = new Set(allLeads.map((row) => String(row.id)));
+      for (const row of cachedLeads) {
+        const id = String(row.id);
+        if (!seen.has(id)) {
+          allLeads.push(row);
+          seen.add(id);
+        }
+      }
+      for (let offset = allLeads.length; offset < expected; offset += 1000) {
+        const page = await api<{ leads: Record<string, unknown>[]; count: number }>(
+          `/api/leads?offset=${offset}&limit=1000`
+        );
+        if (page.leads.length === 0) break;
+        allLeads.push(...page.leads);
+      }
+    }
+    data.leads = allLeads;
+    lastLeadCount = expected;
+
     for (const t of SYNC_TABLES) {
-      if (Array.isArray(data[t])) db.replace(t, data[t] as never);
+      const rows = data[t];
+      if (Array.isArray(rows)) db.replace(t, rows as never);
     }
     lastSync = Date.now();
   } finally {
@@ -174,4 +190,41 @@ export async function syncFromServer(force = false): Promise<void> {
 export function cacheRow<T extends { id: string }>(table: Table, row: T): T {
   db.upsert(table, row);
   return row;
+}
+
+export async function saveRemoteProfile(input: {
+  name: string;
+  company: string;
+  from_name: string;
+}) {
+  const row = await api<{ id: string } & typeof input>("/api/profile", {
+    method: "PATCH",
+    body: input,
+  });
+  cacheRow("profiles", row);
+  return row;
+}
+
+export async function deleteRemoteAccount() {
+  await api<void>("/api/account", { method: "DELETE" });
+}
+
+/**
+ * Nudge background processing while the app is open. The server only does
+ * work when this user actually has something pending, and every unit of
+ * work is lease-protected, so this is safe to call on a timer.
+ */
+let ticking = false;
+export async function tickJobs(): Promise<void> {
+  // One nudge in flight at a time — a tick can run for up to 45s, and
+  // overlapping calls would just contend for the same job leases.
+  if (ticking) return;
+  ticking = true;
+  try {
+    await api<{ idle: boolean }>("/api/jobs/tick", { body: {}, timeoutMs: 55_000 });
+  } catch {
+    // Cron is the safety net; a failed nudge is not user-facing.
+  } finally {
+    ticking = false;
+  }
 }

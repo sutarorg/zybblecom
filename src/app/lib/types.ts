@@ -93,6 +93,7 @@ export interface Lead extends LeadCandidate {
   email_source_url: string | null;
   ai_score: number | null;
   ai_summary: string | null;
+  notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -173,7 +174,7 @@ export interface EmailJob {
   subject: string;
   body: string;
   send_at: string;
-  status: "scheduled" | "sent" | "failed" | "skipped";
+  status: "scheduled" | "processing" | "sent" | "failed" | "skipped";
   attempts: number;
   last_error: string | null;
   sent_at: string | null;

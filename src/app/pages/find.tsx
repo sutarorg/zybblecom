@@ -81,6 +81,7 @@ export default function FindLeads({ userId }: { userId: string }) {
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
   const [quantity, setQuantity] = useState("25");
+  const [radius, setRadius] = useState("25000");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -97,7 +98,12 @@ export default function FindLeads({ userId }: { userId: string }) {
     setError(null);
     setBusy(true);
     try {
-      const job = await startSearch(userId, { query, location, quantity: Number(quantity) });
+      const job = await startSearch({
+        query,
+        location,
+        quantity: Number(quantity),
+        radiusMeters: Number(radius),
+      });
       toast(`Searching for "${job.query}" in ${job.location}`);
       setQuery("");
       setLocation("");
@@ -127,7 +133,7 @@ export default function FindLeads({ userId }: { userId: string }) {
           </div>
         </div>
 
-        <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-[1.4fr_1fr_130px_auto]">
+        <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-[1.3fr_1fr_130px_130px_auto]">
           <Field label="Business type">
             <Input
               value={query}
@@ -141,6 +147,20 @@ export default function FindLeads({ userId }: { userId: string }) {
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Texas, Dallas, London…"
             />
+          </Field>
+          <Field label="Radius">
+            <Select value={radius} onChange={(e) => setRadius(e.target.value)}>
+              {[
+                { v: 5000, l: "5 km" },
+                { v: 10000, l: "10 km" },
+                { v: 25000, l: "25 km" },
+                { v: 50000, l: "50 km" },
+              ].map((r) => (
+                <option key={r.v} value={r.v}>
+                  {r.l}
+                </option>
+              ))}
+            </Select>
           </Field>
           <Field label="Quantity">
             <Select value={quantity} onChange={(e) => setQuantity(e.target.value)}>

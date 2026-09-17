@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { currentSession, currentUserId } from "./lib/auth";
-import { isRemote, supabase } from "./lib/remote";
+import { isConfigured, supabase } from "./lib/remote";
 import { noindexApp } from "../seo/Seo";
 import AuthPage from "./pages/auth";
 import BillingPage from "./pages/billing";
@@ -34,26 +33,33 @@ const PAGE_META: Record<string, { title: string }> = {
 };
 
 export default function ZybbleApp({ route }: { route: string }) {
+  const [auth, setAuth] = useState<{ checked: boolean; userId: string | null }>({
+    checked: false,
+    userId: null,
+  });
+
   // The authenticated app is never indexable.
   useEffect(() => {
     noindexApp();
   }, []);
 
-  // Remote auth: Supabase completes magic-link / recovery redirects by
-  // writing its session — react by entering the app once signed in.
   useEffect(() => {
-    if (!isRemote()) return;
-    const { data } = supabase().auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY") {
+    if (!isConfigured()) {
+      setAuth({ checked: true, userId: null });
+      return;
+    }
+    void supabase()
+      .auth.getSession()
+      .then(({ data }) => setAuth({ checked: true, userId: data.session?.user.id ?? null }));
+
+    const { data } = supabase().auth.onAuthStateChange((event, session) => {
+      setAuth({ checked: true, userId: session?.user.id ?? null });
+      if (event === "SIGNED_IN") {
         const hash = window.location.hash;
-        if (hash.includes("access_token") || event === "SIGNED_IN") {
-          const target =
-            event === "PASSWORD_RECOVERY" ? "#/reset" : "#/app/dashboard";
-          if (!hash.startsWith("#/app") && event !== "PASSWORD_RECOVERY") {
-            window.location.hash = target;
-          }
-        }
+        // Magic-link and OAuth redirects land on the public routes.
+        if (!hash.startsWith("#/app")) window.location.hash = "#/app/dashboard";
       }
+      if (event === "PASSWORD_RECOVERY") window.location.hash = "#/reset";
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -76,11 +82,16 @@ export default function ZybbleApp({ route }: { route: string }) {
     return <UnsubscribePage route={route} />;
   }
 
-  const session = currentSession();
-  const userId = currentUserId();
+  if (!auth.checked) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-canvas">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900" />
+      </div>
+    );
+  }
 
-  if (!session || !userId) {
-    // Protected-route guard: bounce to login.
+  if (!auth.userId) {
+    // Protected-route guard.
     if (typeof window !== "undefined") {
       setTimeout(() => {
         window.location.hash = "#/login";
@@ -89,6 +100,7 @@ export default function ZybbleApp({ route }: { route: string }) {
     return null;
   }
 
+  const userId = auth.userId;
   const path = route.split("?")[0];
   const clean = path.endsWith("/") && path.length > 1 ? path.slice(0, -1) : path;
 

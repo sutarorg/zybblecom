@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # Type-checks the frontend AND the serverless API in one pass.
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate deployment config
+        run: |
+          node -e "
+            const c = JSON.parse(require('fs').readFileSync('vercel.json'));
+            if (!c.crons?.some(j => j.path === '/api/cron/tick'))
+              throw new Error('missing background cron');
+            if (!c.rewrites?.some(r => r.source === '/api/(.*)'))
+              throw new Error('missing api rewrite');
+            console.log('vercel.json OK');
+          "
+
+      - name: Assert no separate-service infrastructure remains
+        run: |
+          for path in server worker railway.json render.yaml docker-compose.yml; do
+            if [ -e "$path" ]; then
+              echo "::error::$path should not exist in the single-app architecture"
+              exit 1
+            fi
+          done
+          echo "single-app layout OK"

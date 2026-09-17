@@ -1,43 +1,14 @@
 import { motion } from "framer-motion";
-import { Check, CreditCard, Lock, ShieldCheck, X } from "lucide-react";
+import { Check, Lock, ShieldCheck, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { cn } from "../../utils/cn";
-import { useDb, db, now, uid } from "../lib/db";
-import { logBilling } from "../lib/mailer";
-import { api, isRemote, syncFromServer } from "../lib/remote";
+import { useDb, db } from "../lib/db";
+import { api, syncFromServer } from "../lib/remote";
 import { getPlan, getSubscription, getUsage, PLANS, type Plan } from "../lib/plans";
-import type { BillingEvent, Subscription } from "../lib/types";
+import type { BillingEvent } from "../lib/types";
 import { Badge, Button, Card, Field, Input, Modal, toast, UsageMeter } from "../ui/kit";
 
-// ————— Card validation (client-side, same checks a PSP runs) —————
-
-function luhnValid(num: string): boolean {
-  const digits = num.replace(/\D/g, "");
-  if (digits.length < 13 || digits.length > 19) return false;
-  let sum = 0;
-  let dbl = false;
-  for (let i = digits.length - 1; i >= 0; i--) {
-    let d = Number(digits[i]);
-    if (dbl) {
-      d *= 2;
-      if (d > 9) d -= 9;
-    }
-    sum += d;
-    dbl = !dbl;
-  }
-  return sum % 10 === 0;
-}
-
-function expiryValid(v: string): boolean {
-  const m = v.match(/^(\d{2})\s*\/\s*(\d{2})$/);
-  if (!m) return false;
-  const mm = Number(m[1]);
-  const yy = 2000 + Number(m[2]);
-  if (mm < 1 || mm > 12) return false;
-  const end = new Date(yy, mm, 0, 23, 59, 59);
-  return end.getTime() > Date.now();
-}
-
+// Card details are collected by Razorpay's hosted checkout — never by this app.
 function loadRazorpayScript(): Promise<void> {
   return new Promise((resolve, reject) => {
     if ((window as unknown as { Razorpay?: unknown }).Razorpay) return resolve();
@@ -59,28 +30,20 @@ interface RazorpaySuccessResponse {
 function CheckoutModal({
   open,
   onClose,
-  userId,
   plan,
   onDone,
 }: {
   open: boolean;
   onClose: () => void;
-  userId: string;
   plan: Plan | null;
   onDone: () => void;
 }) {
   const [name, setName] = useState("");
-  const [card, setCard] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvc, setCvc] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"form" | "processing" | "success">("form");
 
   const reset = () => {
     setName("");
-    setCard("");
-    setExpiry("");
-    setCvc("");
     setError(null);
     setPhase("form");
   };
@@ -90,10 +53,10 @@ function CheckoutModal({
     if (!plan) return;
     setError(null);
 
-    // Production: Razorpay hosted checkout — the server creates the
-    // subscription, Razorpay collects card data (never our app), and
-    // the signed webhook is the source of truth for activation.
-    if (isRemote()) {
+    // Razorpay hosted checkout: the server creates the subscription,
+    // Razorpay collects the card details, and the signed webhook is the
+    // source of truth for activation.
+    {
       setPhase("processing");
       try {
         const order = await api<{
@@ -143,38 +106,6 @@ function CheckoutModal({
       }
       return;
     }
-
-    if (!name.trim()) return setError("Enter the name on the card.");
-    if (!luhnValid(card)) return setError("Enter a valid card number.");
-    if (!expiryValid(expiry)) return setError("Enter a valid expiry (MM/YY).");
-    if (!/^\d{3,4}$/.test(cvc)) return setError("Enter a valid CVC.");
-
-    setPhase("processing");
-    await new Promise((r) => setTimeout(r, 1600));
-
-    // Production: Razorpay confirms via signed webhook (source of truth);
-    // the subscription state machine mirrors that server-side flow.
-    const sub = getSubscription(userId);
-    const periodEnd = new Date(Date.now() + 30 * 86_400_000).toISOString();
-    logBilling(userId, "checkout", `Checkout authorized for ${plan.name} ($${plan.price}/mo)`);
-    db.update<Subscription>("subscriptions", sub.id, {
-      plan: plan.id,
-      status: "active",
-      current_period_end: periodEnd,
-      razorpay_subscription_id: `sub_${uid().replace(/-/g, "").slice(0, 14)}`,
-      updated_at: now(),
-    });
-    logBilling(
-      userId,
-      "upgraded",
-      `Plan upgraded to ${plan.name} — renews ${periodEnd.slice(0, 10)}`
-    );
-    setPhase("success");
-    setTimeout(() => {
-      toast(`Welcome to ${plan.name} — ${plan.features[0]} unlocked`);
-      onDone();
-      reset();
-    }, 1400);
   };
 
   return (
@@ -226,55 +157,10 @@ function CheckoutModal({
           <Field label="Name on card">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Rivera" autoComplete="cc-name" />
           </Field>
-          {!isRemote() && (<>
-          <Field label="Card number">
-            <div className="relative">
-              <Input
-                value={card}
-                onChange={(e) =>
-                  setCard(
-                    e.target.value.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim()
-                  )
-                }
-                placeholder="4242 4242 4242 4242"
-                inputMode="numeric"
-                autoComplete="cc-number"
-              />
-              <CreditCard className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-300" />
-            </div>
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Expiry">
-              <Input
-                value={expiry}
-                onChange={(e) => {
-                  const d = e.target.value.replace(/\D/g, "").slice(0, 4);
-                  setExpiry(d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d);
-                }}
-                placeholder="MM/YY"
-                inputMode="numeric"
-                autoComplete="cc-exp"
-              />
-            </Field>
-            <Field label="CVC">
-              <Input
-                value={cvc}
-                onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                placeholder="123"
-                inputMode="numeric"
-                autoComplete="cc-csc"
-              />
-            </Field>
-          </div>
-          </>)}
 
           <Button type="submit" loading={phase === "processing"} className="w-full">
             <Lock className="h-3.5 w-3.5" />
-            {phase === "processing"
-              ? "Authorizing…"
-              : isRemote()
-                ? "Continue to secure payment"
-                : `Pay $${plan?.price}/month`}
+            {phase === "processing" ? "Opening secure checkout…" : "Continue to secure payment"}
           </Button>
           <p className="flex items-center justify-center gap-1.5 text-[11px] text-neutral-400">
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
@@ -343,9 +229,9 @@ export default function BillingPage({ userId }: { userId: string }) {
             <Button
               size="sm"
               onClick={() => {
-                db.update<Subscription>("subscriptions", sub.id, { status: "active", updated_at: now() });
-                logBilling(userId, "upgraded", `Subscription resumed on ${plan.name}`);
-                toast("Subscription resumed");
+                // Razorpay cannot reliably undo cancel-at-cycle-end, so a
+                // fresh hosted checkout reactivates the plan.
+                setCheckoutPlan(plan);
               }}
             >
               Resume subscription
@@ -438,7 +324,6 @@ export default function BillingPage({ userId }: { userId: string }) {
       <CheckoutModal
         open={!!checkoutPlan}
         onClose={() => setCheckoutPlan(null)}
-        userId={userId}
         plan={checkoutPlan}
         onDone={() => setCheckoutPlan(null)}
       />
@@ -457,20 +342,13 @@ export default function BillingPage({ userId }: { userId: string }) {
           <Button
             variant="danger"
             onClick={async () => {
-              if (isRemote()) {
-                try {
-                  await api("/api/billing/cancel", { body: {} });
-                  await syncFromServer(true);
-                  toast("Subscription canceled at period end", "info");
-                } catch (e) {
-                  toast(e instanceof Error ? e.message : "Cancellation failed.", "error");
-                }
-                setConfirmCancel(false);
-                return;
+              try {
+                await api("/api/billing/cancel", { body: {} });
+                await syncFromServer(true);
+                toast("Subscription canceled at period end", "info");
+              } catch (e) {
+                toast(e instanceof Error ? e.message : "Cancellation failed.", "error");
               }
-              db.update<Subscription>("subscriptions", sub.id, { status: "canceled", updated_at: now() });
-              logBilling(userId, "canceled", `${plan.name} canceled — access until ${sub.current_period_end?.slice(0, 10)}`);
-              toast(`Subscription canceled — access until ${sub.current_period_end?.slice(0, 10)}`, "info");
               setConfirmCancel(false);
             }}
           >

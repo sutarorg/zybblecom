@@ -10,8 +10,7 @@ import {
 import { useMemo, useState } from "react";
 import { useDb, db } from "../lib/db";
 import { scoreAllLeads } from "../lib/ai";
-import { deleteLeads, downloadCsv, exportLeadsCsv, leadsToCsv } from "../lib/leadops";
-import { isRemote } from "../lib/remote";
+import { deleteLeads, exportLeadsCsv } from "../lib/leadops";
 import { addLeadsToCampaign, launchCampaign } from "../lib/mailer";
 import { getPlan, PlanGateError } from "../lib/plans";
 import type { Campaign, EmailStatus, Lead } from "../lib/types";
@@ -93,33 +92,39 @@ export default function LeadsPage({ userId }: { userId: string }) {
   const selectedLeads = all.filter((l) => selected.has(l.id));
 
   const doExport = async () => {
-    if (isRemote()) {
-      try {
-        await exportLeadsCsv(selected.size > 0 ? Array.from(selected) : null);
-        toast(selected.size > 0 ? `Exported ${selected.size} lead${selected.size > 1 ? "s" : ""} to CSV` : "Exported all leads to CSV");
-      } catch (e) {
-        toast(e instanceof Error ? e.message : "Export failed.", "error");
-      }
-      return;
+    try {
+      await exportLeadsCsv(selected.size > 0 ? Array.from(selected) : null);
+      toast(
+        selected.size > 0
+          ? `Exported ${selected.size} lead${selected.size > 1 ? "s" : ""} to CSV`
+          : "Exported all leads to CSV"
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Export failed.", "error");
     }
-    const rows = selected.size > 0 ? selectedLeads : filtered;
-    if (rows.length === 0) return toast("Nothing to export.", "error");
-    downloadCsv(`zybble-leads-${new Date().toISOString().slice(0, 10)}.csv`, leadsToCsv(rows));
-    toast(`Exported ${rows.length} lead${rows.length > 1 ? "s" : ""} to CSV`);
   };
 
   const doDelete = async () => {
-    await deleteLeads(userId, Array.from(selected));
-    toast(`Deleted ${selected.size} lead${selected.size > 1 ? "s" : ""}`);
-    setSelected(new Set());
+    const count = selected.size;
+    try {
+      await deleteLeads(Array.from(selected));
+      toast(`Deleted ${count} lead${count > 1 ? "s" : ""}`);
+      setSelected(new Set());
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not delete leads.", "error");
+    }
     setConfirmDelete(false);
   };
 
   const doScoreAll = async () => {
     setScoring(true);
     try {
-      const n = await scoreAllLeads(userId);
-      toast(n > 0 ? `AI scored ${n} lead${n > 1 ? "s" : ""}` : "Every lead already has a score.");
+      const { scored, remaining } = await scoreAllLeads();
+      toast(
+        scored > 0
+          ? `AI scored ${scored} lead${scored > 1 ? "s" : ""}${remaining > 0 ? ` · ${remaining} still to go` : ""}`
+          : "Every lead already has a score."
+      );
     } catch (e) {
       if (e instanceof PlanGateError) {
         toast(e.message, "error");
@@ -402,7 +407,7 @@ export function CampaignPickerModal({
               key={c.id}
               onClick={async () => {
                 try {
-                  const n = await addLeadsToCampaign(userId, c.id, mailable.map((l) => l.id));
+                  const n = await addLeadsToCampaign(c.id, mailable.map((l) => l.id));
                   toast(n > 0 ? `Added ${n} lead${n > 1 ? "s" : ""} to “${c.name}”` : "Those leads are already in this campaign.", n > 0 ? "success" : "info");
                   onDone();
                 } catch (e) {

@@ -3,7 +3,6 @@ import { ArrowLeft, ArrowRight, KeyRound, Mail, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import Logo from "../../components/Logo";
 import {
-  consumeMagicLink,
   login,
   requestMagicLink,
   requestPasswordReset,
@@ -81,8 +80,6 @@ export default function AuthPage({ route }: { route: string }) {
   const isSignup = route.startsWith("/signup");
   const isForgot = route.startsWith("/forgot");
   const isReset = route.startsWith("/reset");
-  const magicToken = new URLSearchParams(route.split("?")[1] ?? "").get("magic");
-  const resetToken = new URLSearchParams(route.split("?")[1] ?? "").get("token");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,22 +89,6 @@ export default function AuthPage({ route }: { route: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // Consume magic-link token immediately when present.
-  if (magicToken) {
-    try {
-      consumeMagicLink(magicToken);
-      window.location.hash = "#/app/dashboard";
-    } catch (e) {
-      window.location.hash = "#/login";
-      return (
-        <AuthFrame heading="Sign in to Zybble" sub="Welcome back.">
-          <ErrorNote msg={e instanceof Error ? e.message : "Link expired."} />
-        </AuthFrame>
-      );
-    }
-    return null;
-  }
 
   const run = (fn: () => Promise<unknown> | unknown) => async (e: FormEvent) => {
     e.preventDefault();
@@ -175,8 +156,8 @@ export default function AuthPage({ route }: { route: string }) {
       <AuthFrame heading="Choose a new password" sub="At least 8 characters.">
         <form
           onSubmit={run(async () => {
-            if (!resetToken) throw new Error("Missing reset token.");
-            await resetPassword(resetToken, password);
+            // Supabase authenticates the recovery link before this renders.
+            await resetPassword(password);
             window.location.hash = "#/app/dashboard";
           })}
           className="space-y-4"

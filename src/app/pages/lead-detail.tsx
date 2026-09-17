@@ -14,7 +14,7 @@ import {
   PenLine,
   Sparkles,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDb, db } from "../lib/db";
 import { researchCompany, scoreLead, writeEmail, type Tone } from "../lib/ai";
 import { getPlan, PlanGateError } from "../lib/plans";
@@ -22,6 +22,8 @@ import type { AiResearch, AiScore, Lead } from "../lib/types";
 import { CampaignPickerModal } from "./leads";
 import { Badge, Button, Card, Empty, EmailStatusDot, Input, Modal, Select, Textarea, toast } from "../ui/kit";
 import { cn } from "../../utils/cn";
+import { saveLeadNotes } from "../lib/leadops";
+import { cacheRow } from "../lib/remote";
 
 function InfoRow({
   icon: Icon,
@@ -59,9 +61,15 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
   const [emailDraft, setEmailDraft] = useState<{ subject: string; body: string } | null>(null);
   const [tone, setTone] = useState<Tone>("friendly");
   const [campaignPicker, setCampaignPicker] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
 
   const lead = db.byId<Lead>("leads", leadId);
   const plan = getPlan(userId);
+
+  useEffect(() => {
+    setNotes(lead?.notes ?? "");
+  }, [lead?.id, lead?.notes]);
 
   if (!lead || lead.user_id !== userId) {
     return (
@@ -107,17 +115,17 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
   };
 
   const doResearch = gated("AI Research", async () => {
-    await researchCompany(userId, leadId);
+    await researchCompany(leadId, Boolean(research));
     toast("AI research complete");
   }, "research");
 
   const doScore = gated("AI Lead Scoring", async () => {
-    const s = await scoreLead(userId, leadId);
+    const s = await scoreLead(leadId, Boolean(score));
     toast(`AI Score: ${s.score} — ${s.verdict}`);
   }, "score");
 
   const doWrite = gated("AI Email Writer", async () => {
-    setEmailDraft(await writeEmail(userId, leadId, tone));
+    setEmailDraft(await writeEmail(leadId, tone));
   }, "write");
 
   const aiLocked = !plan.ai;
@@ -217,6 +225,47 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
               <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-600">{lead.description}</p>
             </div>
           )}
+
+          <div className="mt-5 border-t border-black/[0.05] pt-5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-neutral-400">
+                Notes
+              </p>
+              <span className="text-[10.5px] text-neutral-300">
+                {notes.length}/2000
+              </span>
+            </div>
+            <Textarea
+              value={notes}
+              maxLength={2000}
+              rows={3}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add context for this lead…"
+              className="mt-2 text-[12.5px]"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={savingNotes}
+              className="mt-2"
+              onClick={async () => {
+                setSavingNotes(true);
+                try {
+                  cacheRow("leads", await saveLeadNotes(lead.id, notes));
+                  toast("Notes saved");
+                } catch (err) {
+                  toast(
+                    err instanceof Error ? err.message : "Could not save notes.",
+                    "error"
+                  );
+                } finally {
+                  setSavingNotes(false);
+                }
+              }}
+            >
+              Save notes
+            </Button>
+          </div>
 
           <a
             href={lead.maps_url}
