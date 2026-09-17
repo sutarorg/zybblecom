@@ -64,7 +64,13 @@ export const env = {
   openaiModel: process.env.OPENAI_MODEL ?? "o4-mini",
   googleMapsKey: optional("GOOGLE_MAPS_API_KEY") ?? "",
   leadProvider:
-    process.env.LEAD_PROVIDER === "places" ? ("places" as const) : ("worker" as const),
+    process.env.LEAD_PROVIDER === "places"
+      ? ("places" as const)
+      : process.env.LEAD_PROVIDER === "worker"
+        ? ("worker" as const)
+        : (process.env.GOOGLE_MAPS_API_KEY && !process.env.SCRAPER_WORKER_SECRET
+            ? ("places" as const)
+            : ("worker" as const)),
   scraperWorkerSecret: optional("SCRAPER_WORKER_SECRET") ?? "",
   razorpayKeyId: optional("RAZORPAY_KEY_ID") ?? "",
   razorpayKeySecret: optional("RAZORPAY_KEY_SECRET") ?? "",
@@ -144,9 +150,14 @@ export async function requireUser(req: Request): Promise<AuthedUser> {
   const header = req.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) throw new HttpError(401, "Missing access token.");
-  const { data, error } = await sb.auth.getUser(token);
-  if (error || !data.user) throw new HttpError(401, "Invalid or expired access token.");
-  return { id: data.user.id, email: data.user.email ?? "" };
+  try {
+    const { data, error } = await sb.auth.getUser(token);
+    if (error || !data.user) throw new HttpError(401, "Invalid or expired access token.");
+    return { id: data.user.id, email: data.user.email ?? "" };
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(401, "Invalid or expired access token.");
+  }
 }
 
 /** Cron + internal endpoints. Vercel Cron sends the configured secret. */

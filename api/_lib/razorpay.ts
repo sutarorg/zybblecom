@@ -1,4 +1,4 @@
-import { env, hmacSha256, HttpError, log, safeEqualHex, sb } from "./core";
+import { env, hmacSha256, HttpError, log, safeEqualHex, sb } from "./core.ts";
 
 // ————————————————————————————————————————————————————————————
 // Razorpay — USD subscriptions via REST (plans auto-provisioned),

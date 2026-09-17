@@ -82,8 +82,17 @@ export async function api<T>(
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
-      const j = (await res.json()) as { error?: string; message?: string };
-      message = j.error ?? j.message ?? message;
+      const text = await res.text();
+      try {
+        const j = JSON.parse(text) as { error?: string; message?: string };
+        message = j.error ?? j.message ?? message;
+      } catch {
+        if (text && text.length < 300 && !text.includes("<!DOCTYPE") && !text.includes("<html")) {
+          message = text.trim();
+        } else if (res.status === 500) {
+          message = "Server error (500). Please try again in a few moments.";
+        }
+      }
     } catch {
       /* keep default */
     }
@@ -103,8 +112,15 @@ export async function apiText(path: string, body?: unknown): Promise<string> {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
-      const j = (await res.json()) as { error?: string };
-      message = j.error ?? message;
+      const text = await res.text();
+      try {
+        const j = JSON.parse(text) as { error?: string };
+        message = j.error ?? message;
+      } catch {
+        if (text && text.length < 300 && !text.includes("<!DOCTYPE") && !text.includes("<html")) {
+          message = text.trim();
+        }
+      }
     } catch {
       /* keep default */
     }
