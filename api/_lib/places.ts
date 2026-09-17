@@ -1,4 +1,4 @@
-import { env, HttpError, log, MissingEnvError } from "./core";
+import { env, HttpError, log, MissingEnvError } from "./core.ts";
 
 // ————————————————————————————————————————————————————————————
 // Google Maps business discovery.

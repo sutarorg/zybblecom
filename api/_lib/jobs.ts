@@ -1,8 +1,8 @@
-import { decryptSecret, log, sb } from "./core";
-import { findEmail } from "./email-finder";
-import { searchPlaces, type PlaceRecord } from "./places";
-import { logEvent, scheduleStep, unsubscribeUrl } from "./sequence";
-import { sendEmail } from "./smtp";
+import { decryptSecret, log, sb } from "./core.ts";
+import { findEmail } from "./email-finder.ts";
+import { searchPlaces, type PlaceRecord } from "./places.ts";
+import { logEvent, scheduleStep, unsubscribeUrl } from "./sequence.ts";
+import { sendEmail } from "./smtp.ts";
 
 // ————————————————————————————————————————————————————————————
 // Background processing for the single-app architecture.

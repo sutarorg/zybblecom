@@ -4,8 +4,8 @@ import {
   log,
   requireWorkerAuth,
   sb,
-} from "./core";
-import type { Router } from "./http";
+} from "./core.ts";
+import type { Router } from "./http.ts";
 
 // ————————————————————————————————————————————————————————————
 // Secure control plane for the optional Python/Selenium provider.

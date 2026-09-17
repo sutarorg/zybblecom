@@ -8,8 +8,8 @@ import {
   log,
   requireUser,
   sb,
-} from "./core";
-import { json as jsonResponse, type Router } from "./http";
+} from "./core.ts";
+import { json as jsonResponse, type Router } from "./http.ts";
 import {
   cancelSubscription,
   createSubscription,
@@ -17,7 +17,7 @@ import {
   getSubscription,
   verifyCheckoutSignature,
   verifyWebhookSignature,
-} from "./razorpay";
+} from "./razorpay.ts";
 
 // ————————————————————————————————————————————————————————————
 // Billing. Browser redirects are never trusted — the signed

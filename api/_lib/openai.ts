@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { env, log, MissingEnvError } from "./core";
+import { env, log, MissingEnvError } from "./core.ts";
 
 // ————————————————————————————————————————————————————————————
 // OpenAI o4-mini — research, scoring, email writing.

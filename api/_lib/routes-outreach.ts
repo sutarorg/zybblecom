@@ -10,10 +10,10 @@ import {
   planFor,
   requireUser,
   sb,
-} from "./core";
-import type { Router } from "./http";
-import { logEvent, newUnsubToken, scheduleStep } from "./sequence";
-import { verifySmtp } from "./smtp";
+} from "./core.ts";
+import type { Router } from "./http.ts";
+import { logEvent, newUnsubToken, scheduleStep } from "./sequence.ts";
+import { verifySmtp } from "./smtp.ts";
 
 // ————————————————————————————————————————————————————————————
 // SMTP senders, campaigns + sequences, suppression,

@@ -1,4 +1,4 @@
-import { env, randomToken, sb } from "./core";
+import { env, randomToken, sb } from "./core.ts";
 
 // ————————————————————————————————————————————————————————————
 // Sequence scheduling — shared by campaign routes (launch,

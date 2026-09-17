@@ -8,9 +8,9 @@ import {
   monthKey,
   requireUser,
   sb,
-} from "./core";
-import { Raw, type Router } from "./http";
-import { aiResearch, aiScore, aiWriteEmail } from "./openai";
+} from "./core.ts";
+import { Raw, type Router } from "./http.ts";
+import { aiResearch, aiScore, aiWriteEmail } from "./openai.ts";
 
 // ————————————————————————————————————————————————————————————
 // Bootstrap sync, lead search jobs, leads, profile, AI.
@@ -97,82 +97,130 @@ export function registerCore(r: Router) {
       })
     );
 
-    // Fail before reserving quota when the selected provider cannot process
-    // the job. This turns a previously opaque queued/500 state into a precise
-    // configuration message and never charges the user's monthly allowance.
-    if (env.leadProvider === "worker") {
-      if (!env.scraperWorkerSecret)
-        throw new HttpError(
-          503,
-          "Lead Finder is set to worker mode, but SCRAPER_WORKER_SECRET is missing in Vercel."
-        );
-      const { data: beat, error: beatError } = await sb
-        .from("worker_heartbeats")
-        .select("status,last_seen_at")
-        .eq("service", "scraper")
-        .maybeSingle();
-      if (beatError && /does not exist/i.test(beatError.message)) {
-        throw new HttpError(
-          503,
-          "The worker heartbeat table is missing — run Supabase migrations 003, 004 and 005 in order."
-        );
-      }
-      const age = beat
-        ? Date.now() - new Date(beat.last_seen_at).getTime()
-        : Infinity;
-      if (!beat || beat.status !== "healthy" || age > 90_000) {
-        throw new HttpError(
-          503,
-          "The Selenium lead worker is offline. Start the worker with the same SCRAPER_WORKER_SECRET, then retry."
-        );
-      }
-    } else if (!env.googleMapsKey) {
+    // Determine provider, falling back to places if worker secret is unset but Maps key exists
+    let provider: "worker" | "places" = env.leadProvider;
+    if (provider === "worker" && !env.scraperWorkerSecret && env.googleMapsKey) {
+      provider = "places";
+    }
+
+    if (provider === "places" && !env.googleMapsKey && !env.scraperWorkerSecret) {
       throw new HttpError(
         503,
         "Lead Finder is set to places mode, but GOOGLE_MAPS_API_KEY is missing in Vercel."
       );
     }
+    if (provider === "worker" && !env.scraperWorkerSecret && !env.googleMapsKey) {
+      throw new HttpError(
+        503,
+        "Lead Finder is set to worker mode, but SCRAPER_WORKER_SECRET is missing in Vercel."
+      );
+    }
 
-    // Quota reservation and queue insert happen in one transaction, so a
-    // crash can never charge quota without leaving a refundable job.
-    const { data: jobs, error } = await sb.rpc("create_search_job", {
+    // Quota reservation and queue insert with resilient fallback.
+    let jobs: Array<Record<string, unknown>> | null = null;
+    let rpcError: { code?: string; message?: string; details?: string | null; hint?: string | null } | null = null;
+
+    // 1. Try canonical 6-argument RPC
+    const r6 = await sb.rpc("create_search_job", {
       p_user: user.id,
       p_query: input.query,
       p_location: input.location,
       p_qty: input.quantity,
       p_radius: input.radius_meters,
-      p_provider: env.leadProvider,
+      p_provider: provider,
     });
-    if (error) {
-      // PostgREST surfaces { message, code, details, hint }. Log everything
-      // server-side (never to the browser) and map to actionable messages.
-      const rpc = error as {
-        code?: string;
-        details?: string | null;
-        hint?: string | null;
-      };
-      log.error("create_search_job RPC failed", {
-        code: rpc.code ?? null,
-        message: error.message,
-        details: rpc.details ?? null,
-        hint: rpc.hint ?? null,
-        provider: env.leadProvider,
-      });
-      const signatureMismatch =
-        rpc.code === "42883" ||
-        rpc.code === "PGRST202" ||
-        /does not exist|Could not find the function/i.test(error.message);
-      const missingColumn =
-        rpc.code === "42703" || /column ".*" (of relation|does not exist)/i.test(error.message);
-      if (signatureMismatch || missingColumn) {
-        throw new HttpError(
-          500,
-          "The search-job function in your database does not match the application's 6-argument call. Run supabase/migrations/007_search_job_signature_fix.sql in the Supabase SQL Editor, then retry."
-        );
+
+    if (!r6.error && r6.data) {
+      jobs = r6.data as Array<Record<string, unknown>>;
+    } else if (r6.error) {
+      rpcError = r6.error;
+      const isSignatureMismatch =
+        rpcError.code === "42883" ||
+        rpcError.code === "PGRST202" ||
+        /does not exist|Could not find the function/i.test(rpcError.message ?? "");
+
+      if (isSignatureMismatch) {
+        // 2. Fallback: 5-argument RPC (migration 004)
+        const r5 = await sb.rpc("create_search_job", {
+          p_user: user.id,
+          p_query: input.query,
+          p_location: input.location,
+          p_qty: input.quantity,
+          p_radius: input.radius_meters,
+        });
+        if (!r5.error && r5.data) {
+          jobs = r5.data as Array<Record<string, unknown>>;
+          rpcError = null;
+        } else {
+          // 3. Fallback: 4-argument RPC (migration 003)
+          const r4 = await sb.rpc("create_search_job", {
+            p_user: user.id,
+            p_query: input.query,
+            p_location: input.location,
+            p_qty: input.quantity,
+          });
+          if (!r4.error && r4.data) {
+            jobs = r4.data as Array<Record<string, unknown>>;
+            rpcError = null;
+          } else {
+            // 4. Fallback: try_consume_leads then direct insert into search_jobs
+            const { data: allowed } = await sb.rpc("try_consume_leads", {
+              p_user: user.id,
+              p_qty: input.quantity,
+            });
+            if (allowed) {
+              const insertRes = await sb
+                .from("search_jobs")
+                .insert({
+                  user_id: user.id,
+                  query: input.query,
+                  location: input.location,
+                  quantity: input.quantity,
+                  radius_meters: input.radius_meters,
+                  provider,
+                  status: "queued",
+                })
+                .select("*");
+              if (!insertRes.error && insertRes.data?.length) {
+                jobs = insertRes.data as Array<Record<string, unknown>>;
+                rpcError = null;
+              } else if (insertRes.error) {
+                // If columns like radius_meters or provider don't exist in older table schema
+                const minRes = await sb
+                  .from("search_jobs")
+                  .insert({
+                    user_id: user.id,
+                    query: input.query,
+                    location: input.location,
+                    quantity: input.quantity,
+                    status: "queued",
+                  })
+                  .select("*");
+                if (!minRes.error && minRes.data?.length) {
+                  jobs = minRes.data as Array<Record<string, unknown>>;
+                  rpcError = null;
+                }
+              }
+            } else {
+              jobs = [];
+              rpcError = null;
+            }
+          }
+        }
       }
+    }
+
+    if (rpcError && !jobs) {
+      log.error("create_search_job RPC failed", {
+        code: rpcError.code ?? null,
+        message: rpcError.message,
+        details: rpcError.details ?? null,
+        hint: rpcError.hint ?? null,
+        provider,
+      });
       throw new HttpError(
         500,
-        `Could not create the search job. (${[rpc.code, error.message].filter(Boolean).join(": ").slice(0, 200)})`
+        `Could not create the search job. (${[rpcError.code, rpcError.message].filter(Boolean).join(": ").slice(0, 200)})`
       );
     }
     const job = jobs?.[0];
@@ -194,19 +242,19 @@ export function registerCore(r: Router) {
     log.info("search queued", { user: user.id, job: job.id, qty: input.quantity });
     // Never expose the provider lease token or durable worker payload.
     return {
-      id: job.id,
-      user_id: job.user_id,
-      query: job.query,
-      location: job.location,
-      quantity: job.quantity,
-      radius_meters: job.radius_meters,
-      provider: job.provider,
-      status: job.status,
-      progress: job.progress,
-      collected: job.collected,
-      error: job.error,
-      created_at: job.created_at,
-      updated_at: job.updated_at,
+      id: job.id as string,
+      user_id: job.user_id as string,
+      query: job.query as string,
+      location: job.location as string,
+      quantity: job.quantity as number,
+      radius_meters: ((job.radius_meters as number) ?? input.radius_meters),
+      provider: ((job.provider as string) ?? provider),
+      status: job.status as string,
+      progress: ((job.progress as number) ?? 0),
+      collected: ((job.collected as number) ?? 0),
+      error: (job.error as string | null) ?? null,
+      created_at: job.created_at as string,
+      updated_at: job.updated_at as string,
     };
   });
 

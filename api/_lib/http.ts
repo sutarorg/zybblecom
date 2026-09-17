@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { env, HttpError, log } from "./core";
+import { env, HttpError, log } from "./core.ts";
 
 // ————————————————————————————————————————————————————————————
 // Minimal router + response helpers for the single catch-all
@@ -65,11 +65,18 @@ function corsHeaders(req: Request): Record<string, string> {
 }
 
 export class Raw {
+  readonly body: string;
+  readonly contentType: string;
+  readonly headers: Record<string, string>;
   constructor(
-    readonly body: string,
-    readonly contentType: string,
-    readonly headers: Record<string, string> = {}
-  ) {}
+    body: string,
+    contentType: string,
+    headers: Record<string, string> = {}
+  ) {
+    this.body = body;
+    this.contentType = contentType;
+    this.headers = headers;
+  }
 }
 
 export class Router {
@@ -110,7 +117,7 @@ export class Router {
   }
 
   async handle(req: Request): Promise<Response> {
-    const url = new URL(req.url);
+    const url = new URL(req.url, "https://zybble.com");
     const cors = corsHeaders(req);
 
     if (req.method === "OPTIONS") {
@@ -120,9 +127,10 @@ export class Router {
     // Vercel rewrites /api/:path* -> /api/router?path=:path*. Match against
     // that original path without rebuilding/consuming the Request body.
     const rewrittenPath = url.searchParams.get("path");
-    const segments = rewrittenPath
-      ? ["api", ...rewrittenPath.split("/").filter(Boolean)]
+    const rawSegments = rewrittenPath
+      ? rewrittenPath.split("/").filter(Boolean)
       : url.pathname.split("/").filter(Boolean);
+    const segments = rawSegments[0] === "api" ? rawSegments : ["api", ...rawSegments];
     const found = this.match(req.method, segments);
     if (!found) {
       return json({ error: "Not found" }, 404, cors);
@@ -189,12 +197,12 @@ export class Router {
     } catch (err) {
       const expected = err instanceof HttpError;
       const status = expected ? err.status : 500;
-      const message = err instanceof Error ? err.message : "Internal error";
+      const message = err instanceof Error && err.message ? err.message : "Internal error";
       if (status >= 500) log.error("request failed", { path: url.pathname, err: String(err) });
       else log.warn("request rejected", { path: url.pathname, status, msg: message });
       // HttpError messages are deliberately safe and actionable (missing env,
-      // migration/provider configuration). Mask only unexpected exceptions.
-      return json({ error: expected ? message : "Internal error" }, status, cors);
+      // migration/provider configuration).
+      return json({ error: message }, status, cors);
     }
   }
 }
