@@ -216,7 +216,10 @@ Every push to `main` redeploys everything together.
    use one, also set `APP_URL=https://yourdomain.com` so unsubscribe links point
    at the right host, then redeploy.
 4. **Verify cron is registered:** Vercel → your project → **Settings → Cron Jobs**.
-   You should see `/api/cron/tick` every 5 minutes.
+   You should see `/api/cron/tick` on a daily-at-midnight schedule. The Hobby
+   plan allows one cron run per day — background work is also drained
+   continuously while anyone has the app open (and can be triggered manually,
+   below), so nothing waits for the daily run unless nobody uses the app.
 
 ---
 
@@ -312,7 +315,7 @@ email_jobs:   scheduled → processing → sent
 
 | Trigger | When | Purpose |
 | --- | --- | --- |
-| Vercel Cron → `/api/cron/tick` | every 5 minutes | follow-ups, retries, stale recovery, rollovers |
+| Vercel Cron → `/api/cron/tick` | daily (midnight, Hobby limit) | scheduled follow-ups, stale recovery, rollovers |
 | App → `/api/jobs/tick` | while a signed-in user has pending work | instant start, no waiting for cron |
 
 **Safety properties**
@@ -388,11 +391,13 @@ These are real constraints, stated plainly rather than hidden:
    automation cannot run in serverless. This is also more reliable and does not
    break when Google changes its HTML — but it is a metered cost with a free
    monthly tier.
-3. **Cron granularity is 5 minutes** and requires a Vercel **Pro** plan for
-   sub-daily schedules; on **Hobby**, cron runs once per day. The in-app tick
-   compensates while a user has the dashboard open, so interactive work (search,
-   sending a launched campaign) still starts immediately. Unattended follow-ups
-   on Hobby will process on the daily run.
+3. **Hobby cron runs once per day.** Vercel Hobby allows a single daily cron
+   run (configured at `0 0 * * *`; sub-daily schedules require **Pro**). The
+   in-app tick compensates by draining the queue every few seconds while anyone
+   has the app open, so searches, deliveries and retries stay realtime during
+   use — only fully unattended workloads (e.g., a follow-up due overnight while
+   nobody is online) would wait for the daily run. You can also drain the queue
+   manually at any time: `curl -X POST https://<domain>/api/cron/tick -H "x-cron-secret: <CRON_SECRET>"` (see Local development).
 4. **Function timeout is 60s**, so work is chunked. A 60-lead search with email
    discovery typically spans several invocations over 1–3 minutes.
 5. **Email verification is DNS-level** (MX + published-address provenance). It

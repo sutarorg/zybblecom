@@ -61,7 +61,7 @@ export default function Shell({
     void syncFromServer(true);
     const sync = setInterval(() => void syncFromServer(), 6000);
     void tickJobs();
-    const tick = setInterval(() => void tickJobs(), 20_000);
+    const tick = setInterval(() => void tickJobs(), 10_000);
     return () => {
       clearInterval(sync);
       clearInterval(tick);
