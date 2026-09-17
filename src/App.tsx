@@ -14,6 +14,7 @@ import NotFound from "./marketing/NotFound";
 import PricingPage from "./marketing/PricingPage";
 import { Seo, usePathname } from "./seo/Seo";
 import { isConfigured } from "./app/lib/remote";
+import React from "react";
 
 const SHEET =
   "relative rounded-[24px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(20,18,15,0.03),0_40px_90px_-40px_rgba(23,20,15,0.14)] sm:rounded-[28px]";
@@ -115,10 +116,66 @@ export default function App() {
         </div>
       );
     }
-    return <ZybbleApp route={hashRoute} />;
+    return (
+      <ErrorBoundary>
+        <ZybbleApp route={hashRoute} />
+      </ErrorBoundary>
+    );
   }
 
   // Everything else: real, crawlable, indexable marketing URLs.
   const clean = pathname.replace(/\/+$/, "") || "/";
   return <MarketingRouter path={clean} />;
+}
+
+// ————————————————————————————————————————————————————————————
+// Error boundary — catches unhandled rendering errors so the app
+// shows a recoverable message instead of a blank screen.
+// ————————————————————————————————————————————————————————————
+
+interface EBProps {
+  children: React.ReactNode;
+}
+interface EBState {
+  hasError: boolean;
+  message: string;
+}
+
+class ErrorBoundary extends React.Component<EBProps, EBState> {
+  constructor(props: EBProps) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+  static getDerivedStateFromError(error: Error): EBState {
+    return { hasError: true, message: error.message || "An unexpected error occurred." };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("Zybble error boundary caught:", error, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="grid min-h-screen place-items-center bg-canvas px-6 text-center">
+          <div className="max-w-md">
+            <h1 className="font-display text-xl font-semibold text-neutral-950">
+              Something went wrong
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-neutral-500">
+              {this.state.message}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, message: "" });
+                window.location.hash = "#/app/dashboard";
+              }}
+              className="mt-6 inline-flex h-10 items-center rounded-xl bg-neutral-950 px-4 text-sm font-medium text-white"
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

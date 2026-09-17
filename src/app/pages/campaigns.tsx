@@ -56,8 +56,8 @@ function fmtWhen(iso: string | null): string {
   const d = new Date(iso);
   const diff = d.getTime() - Date.now();
   if (diff < -86_400_000) return d.toLocaleDateString();
-  if (diff < 0) return "Sending…";
-  if (diff < 60_000) return "in <1 min";
+  if (diff < -60_000) return "just now";
+  if (diff < 60_000) return "imminent";
   if (diff < 3_600_000) return `in ${Math.round(diff / 60_000)} min`;
   if (diff < 86_400_000) return `in ${Math.round(diff / 3_600_000)} hr`;
   return `in ${Math.round(diff / 86_400_000)} days`;

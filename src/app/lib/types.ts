@@ -80,7 +80,7 @@ export interface SearchJob {
   status: JobStatus;
   progress: number; // 0-100
   collected: number;
-  candidates: LeadCandidate[]; // durable payload — jobs survive reloads
+  candidates?: LeadCandidate[]; // legacy local-cache payload — server uses `payload` internally
   error: string | null;
   created_at: string;
   updated_at: string;
