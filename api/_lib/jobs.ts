@@ -1,4 +1,4 @@
-import { decryptSecret, log, sb } from "./core.ts";
+import { decryptSecret, env, log, sb } from "./core.ts";
 import { findEmail } from "./email-finder.ts";
 import { searchPlaces, type PlaceRecord } from "./places.ts";
 import { logEvent, scheduleStep, unsubscribeUrl } from "./sequence.ts";
@@ -240,15 +240,35 @@ async function finishJob(job: SearchJobRow) {
  * so the caller can keep draining the queue while time remains.
  */
 export async function processSearchSlice(budget: Budget): Promise<boolean> {
-  const { data: claimed, error } = await sb.rpc("claim_search_job", {
-    p_provider: "places",
-    p_lease_seconds: LEASE_SECONDS,
-  });
-  if (error) {
-    log.error("search claim failed", { error: error.message });
-    return false;
+  // Try the configured provider first; fall back to the other provider so
+  // that jobs are never stranded when only one processing path is active.
+  // The in-app processor uses Google Maps (places), so it can only process
+  // worker jobs when a Maps key is available.
+  const canPlaces = Boolean(env.googleMapsKey);
+  const providers: string[] = [];
+  if (env.leadProvider === "places") {
+    providers.push("places");
+  } else {
+    // Worker is primary, but the in-app processor uses the places API.
+    if (canPlaces) providers.push("worker", "places");
   }
-  const job = (claimed as SearchJobRow[] | null)?.[0];
+
+  let job: SearchJobRow | null = null;
+  for (const provider of providers) {
+    const { data: claimed, error } = await sb.rpc("claim_search_job", {
+      p_provider: provider,
+      p_lease_seconds: LEASE_SECONDS,
+    });
+    if (error) {
+      log.error("search claim failed", { provider, error: error.message });
+      continue;
+    }
+    const claimedJob = (claimed as SearchJobRow[] | null)?.[0];
+    if (claimedJob) {
+      job = claimedJob;
+      break;
+    }
+  }
   if (!job) return false;
 
   try {
