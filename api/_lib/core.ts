@@ -80,9 +80,39 @@ export const log = {
 
 // ————— Supabase (service role — bypasses RLS; every query is
 //          still explicitly scoped to the authenticated user) —————
+//
+// The client is created lazily inside a recovering Proxy: if the env URL is
+// malformed, construction would otherwise throw at module import and kill
+// the ENTIRE function (Vercel then returns a bare 500 with no JSON body —
+// "Request failed (500)" with no hint). Deferred creation turns that into a
+// clear 503 naming the exact variable.
 
-export const sb: SupabaseClient = createClient(env.supabaseUrl, env.supabaseServiceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
+let _sb: SupabaseClient | null = null;
+
+function getSb(): SupabaseClient {
+  if (_sb) return _sb;
+  const url = optional("SUPABASE_URL");
+  if (!url) throw new MissingEnvError("SUPABASE_URL");
+  try {
+    _sb = createClient(url.replace(/\/+$/, ""), env.supabaseServiceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  } catch (err) {
+    throw new MissingEnvError(
+      `SUPABASE_URL is invalid (${(err as Error).message.slice(0, 80)}) — use the full Project URL like https://xyz.supabase.co`
+    );
+  }
+  return _sb;
+}
+
+export const sb = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSb() as unknown as Record<PropertyKey, unknown>;
+    // Read with the real client as `this` from the start (getters included),
+    // and preserve it through method calls (sb.from, sb.rpc, sb.auth.x()).
+    const value = client[prop];
+    return typeof value === "function" ? value.bind(client) : value;
+  },
 });
 
 export interface AuthedUser {
@@ -227,7 +257,10 @@ export async function enforceRateLimit(
   });
   if (error) {
     log.error("rate limit unavailable", { action, error: error.message });
-    throw new HttpError(503, "Service temporarily unavailable.");
+    const hint = error.message.includes("does not exist")
+      ? " Missing migration: run supabase/migrations/003_production_hardening.sql (and later files) in the SQL Editor."
+      : "";
+    throw new HttpError(503, `Service temporarily unavailable. (${error.message.slice(0, 120)})${hint}`);
   }
   if (!data) throw new HttpError(429, "Too many requests. Please wait and try again.");
 }

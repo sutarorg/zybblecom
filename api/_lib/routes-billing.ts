@@ -97,13 +97,24 @@ export function registerBilling(r: Router) {
     const existing = await subFor(user.id);
     const rzpPlanId = await ensureRazorpayPlan(plan);
     const rzp = await createSubscription(rzpPlanId);
-    await sb.from("billing_checkouts").insert({
+    const { error: checkoutInsertError } = await sb.from("billing_checkouts").insert({
       razorpay_subscription_id: rzp.id,
       user_id: user.id,
       plan,
       previous_subscription_id: existing.razorpay_subscription_id,
       status: "pending",
     });
+    if (checkoutInsertError) {
+      // The Razorpay subscription exists but could not be persisted — cancel
+      // it immediately so the user is never charged for an orphaned plan.
+      try {
+        await cancelSubscription(rzp.id, false);
+      } catch { /* best effort */ }
+      const hint = /does not exist/i.test(checkoutInsertError.message)
+        ? " The billing_checkouts table is missing — run supabase/migrations/003_production_hardening.sql (and later migrations) in the SQL Editor."
+        : ` (${checkoutInsertError.message.slice(0, 160)})`;
+      throw new HttpError(500, `Could not start checkout.${hint}`);
+    }
     await recordBilling(user.id, "checkout", `Checkout started for ${plan} (subscription ${rzp.id})`);
     return { key_id: env.razorpayKeyId, subscription_id: rzp.id };
   });

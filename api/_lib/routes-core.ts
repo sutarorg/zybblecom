@@ -107,7 +107,10 @@ export function registerCore(r: Router) {
     });
     if (error) {
       log.error("search job transaction failed", { error: error.message });
-      throw new HttpError(500, "Could not create the search job.");
+      const hint = /does not exist|Could not find the function/i.test(error.message)
+        ? " Database function create_search_job is missing — run supabase/migrations/004_single_app.sql in the SQL Editor."
+        : ` (${error.message.slice(0, 160)})`;
+      throw new HttpError(500, `Could not create the search job.${hint}`);
     }
     const job = jobs?.[0];
     if (!job) {
