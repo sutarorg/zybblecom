@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   assertFeature,
+  env,
   enforceRateLimit,
   HttpError,
   log,
@@ -96,6 +97,42 @@ export function registerCore(r: Router) {
       })
     );
 
+    // Fail before reserving quota when the selected provider cannot process
+    // the job. This turns a previously opaque queued/500 state into a precise
+    // configuration message and never charges the user's monthly allowance.
+    if (env.leadProvider === "worker") {
+      if (!env.scraperWorkerSecret)
+        throw new HttpError(
+          503,
+          "Lead Finder is set to worker mode, but SCRAPER_WORKER_SECRET is missing in Vercel."
+        );
+      const { data: beat, error: beatError } = await sb
+        .from("worker_heartbeats")
+        .select("status,last_seen_at")
+        .eq("service", "scraper")
+        .maybeSingle();
+      if (beatError && /does not exist/i.test(beatError.message)) {
+        throw new HttpError(
+          503,
+          "The worker heartbeat table is missing — run Supabase migrations 003, 004 and 005 in order."
+        );
+      }
+      const age = beat
+        ? Date.now() - new Date(beat.last_seen_at).getTime()
+        : Infinity;
+      if (!beat || beat.status !== "healthy" || age > 90_000) {
+        throw new HttpError(
+          503,
+          "The Selenium lead worker is offline. Start the worker with the same SCRAPER_WORKER_SECRET, then retry."
+        );
+      }
+    } else if (!env.googleMapsKey) {
+      throw new HttpError(
+        503,
+        "Lead Finder is set to places mode, but GOOGLE_MAPS_API_KEY is missing in Vercel."
+      );
+    }
+
     // Quota reservation and queue insert happen in one transaction, so a
     // crash can never charge quota without leaving a refundable job.
     const { data: jobs, error } = await sb.rpc("create_search_job", {
@@ -104,11 +141,12 @@ export function registerCore(r: Router) {
       p_location: input.location,
       p_qty: input.quantity,
       p_radius: input.radius_meters,
+      p_provider: env.leadProvider,
     });
     if (error) {
       log.error("search job transaction failed", { error: error.message });
       const hint = /does not exist|Could not find the function/i.test(error.message)
-        ? " Database function create_search_job is missing — run supabase/migrations/004_single_app.sql in the SQL Editor."
+        ? " Database function create_search_job is missing — run supabase/migrations/005_pluggable_lead_provider.sql in the SQL Editor."
         : ` (${error.message.slice(0, 160)})`;
       throw new HttpError(500, `Could not create the search job.${hint}`);
     }
@@ -129,7 +167,22 @@ export function registerCore(r: Router) {
       );
     }
     log.info("search queued", { user: user.id, job: job.id, qty: input.quantity });
-    return job;
+    // Never expose the provider lease token or durable worker payload.
+    return {
+      id: job.id,
+      user_id: job.user_id,
+      query: job.query,
+      location: job.location,
+      quantity: job.quantity,
+      radius_meters: job.radius_meters,
+      provider: job.provider,
+      status: job.status,
+      progress: job.progress,
+      collected: job.collected,
+      error: job.error,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+    };
   });
 
   // ————— Leads —————

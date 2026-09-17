@@ -117,7 +117,12 @@ export class Router {
       return new Response(null, { status: 204, headers: { ...SECURITY_HEADERS, ...cors } });
     }
 
-    const segments = url.pathname.split("/").filter(Boolean);
+    // Vercel rewrites /api/:path* -> /api/router?path=:path*. Match against
+    // that original path without rebuilding/consuming the Request body.
+    const rewrittenPath = url.searchParams.get("path");
+    const segments = rewrittenPath
+      ? ["api", ...rewrittenPath.split("/").filter(Boolean)]
+      : url.pathname.split("/").filter(Boolean);
     const found = this.match(req.method, segments);
     if (!found) {
       return json({ error: "Not found" }, 404, cors);
@@ -151,6 +156,7 @@ export class Router {
       },
       query: <T,>(schema: z.ZodType<T>) => {
         const obj = Object.fromEntries(url.searchParams.entries());
+        delete obj.path;
         const result = schema.safeParse(obj);
         if (!result.success)
           throw new HttpError(400, result.error.issues[0]?.message ?? "Invalid query.");
@@ -181,11 +187,14 @@ export class Router {
       }
       return json(result, 200, cors);
     } catch (err) {
-      const status = err instanceof HttpError ? err.status : 500;
+      const expected = err instanceof HttpError;
+      const status = expected ? err.status : 500;
       const message = err instanceof Error ? err.message : "Internal error";
       if (status >= 500) log.error("request failed", { path: url.pathname, err: String(err) });
       else log.warn("request rejected", { path: url.pathname, status, msg: message });
-      return json({ error: status >= 500 ? "Internal error" : message }, status, cors);
+      // HttpError messages are deliberately safe and actionable (missing env,
+      // migration/provider configuration). Mask only unexpected exceptions.
+      return json({ error: expected ? message : "Internal error" }, status, cors);
     }
   }
 }

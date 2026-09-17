@@ -25,6 +25,8 @@ export interface LeadPayload {
 
 async function chat(system: string, user: string, maxTokens = 900): Promise<string> {
   if (!env.openaiKey) throw new MissingEnvError("OPENAI_API_KEY");
+  if (env.openaiModel !== "o4-mini")
+    throw new MissingEnvError("OPENAI_MODEL must be o4-mini");
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {

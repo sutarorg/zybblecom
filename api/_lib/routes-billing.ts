@@ -1,6 +1,14 @@
 import crypto from "node:crypto";
 import { z } from "zod";
-import { enforceRateLimit, env, HttpError, log, requireUser, sb } from "./core";
+import {
+  checkConfig,
+  enforceRateLimit,
+  env,
+  HttpError,
+  log,
+  requireUser,
+  sb,
+} from "./core";
 import { json as jsonResponse, type Router } from "./http";
 import {
   cancelSubscription,
@@ -88,6 +96,8 @@ async function retirePreviousSubscription(subscriptionId: string, replacementId:
 export function registerBilling(r: Router) {
   // ————— Create a Razorpay subscription for hosted checkout —————
   r.post("/api/billing/subscription", async ({ req, json }) => {
+    checkConfig("RAZORPAY_KEY_ID");
+    checkConfig("RAZORPAY_KEY_SECRET");
     const user = await requireUser(req);
     const { plan } = await json(z.object({ plan: z.enum(["growth", "agency"]) }));
     await enforceRateLimit(user.id, "billing-checkout", 5, 300);
@@ -121,6 +131,7 @@ export function registerBilling(r: Router) {
 
   // ————— Browser confirmation (webhook still reconciles) —————
   r.post("/api/billing/verify", async ({ req, json }) => {
+    checkConfig("RAZORPAY_KEY_SECRET");
     const user = await requireUser(req);
     const input = await json(
       z.object({
@@ -166,6 +177,8 @@ export function registerBilling(r: Router) {
 
   // ————— Cancel at cycle end —————
   r.post("/api/billing/cancel", async ({ req }) => {
+    checkConfig("RAZORPAY_KEY_ID");
+    checkConfig("RAZORPAY_KEY_SECRET");
     const user = await requireUser(req);
     const sub = await subFor(user.id);
     if (!sub.razorpay_subscription_id) throw new HttpError(400, "No paid subscription to cancel.");
@@ -184,6 +197,7 @@ export function registerBilling(r: Router) {
 
   // ————— Razorpay webhook (source of truth) —————
   r.post("/api/webhooks/razorpay", async ({ req, raw }) => {
+    checkConfig("RAZORPAY_WEBHOOK_SECRET");
     const rawBody = await raw();
     const signature = req.headers.get("x-razorpay-signature");
     if (!verifyWebhookSignature(rawBody, signature)) {

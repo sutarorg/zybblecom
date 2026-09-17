@@ -3,8 +3,12 @@
 **Find the businesses that need you.**
 AI-powered lead generation and outreach — find, enrich, research, score, write, send.
 
-Zybble is **one application**. One repository, one Vercel project, one deploy.
-There is no separate API service, no mailer daemon and no scraper container.
+Zybble has one frontend/API application on Vercel and a **pluggable lead
+provider**. With `LEAD_PROVIDER=worker`, Lead Finder uses the open-source
+Python/Selenium scraper (no Google Maps API key). With
+`LEAD_PROVIDER=places`, the same queue can use the serverless Places API
+fallback. The frontend, auth, AI, billing, SMTP delivery and campaign job
+engine stay inside the Vercel app in both modes.
 
 | Layer | Implementation |
 | --- | --- |
@@ -13,8 +17,8 @@ There is no separate API service, no mailer daemon and no scraper container.
 | Background jobs | Vercel Cron + in-app ticks, database-leased, chunked |
 | Database & Auth | Supabase (PostgreSQL + RLS + Auth) |
 | AI | OpenAI `o4-mini` (server-side only) |
-| Lead discovery | Google Places API (New) + Geocoding — real Google Maps data |
-| Email finder | Node `fetch` + DNS MX verification (SSRF-guarded) |
+| Lead discovery | `worker`: SoCloseSociety GoogleMapScraper adaptation (Selenium, no API key); `places`: API fallback |
+| Email finder | Source-backed public website scan + DNS MX verification (SSRF-guarded) |
 | Email sending | User's own SMTP via nodemailer, AES-256-GCM encrypted credentials |
 | Payments | Razorpay USD subscriptions + signed, idempotent webhooks |
 
@@ -22,8 +26,9 @@ There is no separate API service, no mailer daemon and no scraper container.
 zybble/
 ├─ src/                 → frontend (Vite build → dist/)
 ├─ api/
-│  ├─ index.ts          → the entire backend, one function
+│  ├─ router.ts         → the entire backend, one function
 │  └─ _lib/             → core, jobs, places, email-finder, smtp, openai, razorpay
+├─ worker/              → optional no-key Selenium provider (Docker)
 ├─ supabase/migrations/ → run once in the Supabase SQL editor
 └─ vercel.json          → function config + cron schedule + rewrites
 ```
@@ -36,7 +41,7 @@ zybble/
 2. [Step 1 — Push to GitHub](#step-1--push-to-github)
 3. [Step 2 — Supabase](#step-2--supabase)
 4. [Step 3 — OpenAI](#step-3--openai)
-5. [Step 4 — Google Maps](#step-4--google-maps-places-api)
+5. [Step 4 — Choose the lead provider](#step-4--choose-the-lead-provider)
 6. [Step 5 — Razorpay](#step-5--razorpay)
 7. [Step 6 — Generate local secrets](#step-6--generate-local-secrets)
 8. [Step 7 — Deploy to Vercel](#step-7--deploy-to-vercel)
@@ -58,7 +63,7 @@ zybble/
 | Vercel | https://vercel.com | **the only host** (sign up with GitHub) |
 | Supabase | https://supabase.com | database + auth |
 | OpenAI | https://platform.openai.com | AI research / scoring / writer |
-| Google Cloud | https://console.cloud.google.com | Places API (lead discovery) |
+| Docker runtime (worker mode only) | any container runtime you control | Python/Selenium Lead Finder |
 | Razorpay | https://dashboard.razorpay.com | subscriptions |
 
 You also need Git and a terminal for two `openssl` commands.
@@ -90,16 +95,17 @@ git push -u origin main
 1. **https://supabase.com** → **New project** → name `zybble`, generate a database
    password, pick the region closest to your users → **Create new project** (~2 min).
 
-### 2.2 Run the migrations — **all four, in order**
+### 2.2 Run the migrations — **all five, in order**
 1. Left sidebar → **SQL Editor** → **+ New query**.
 2. Paste the entire contents of each file and click **Run**, one at a time:
    - `supabase/migrations/001_init.sql`
    - `supabase/migrations/002_backend.sql`
    - `supabase/migrations/003_production_hardening.sql`
    - `supabase/migrations/004_single_app.sql` ← required for the single-app job engine
+   - `supabase/migrations/005_pluggable_lead_provider.sql` ← provider-scoped leases + secure worker claims
 
-Migration 004 adds the search radius, the durable job cursor, lease-based
-claiming (stale-job recovery) and the cron heartbeat.
+Migrations 004–005 add the search radius, durable job cursor, provider-scoped
+leases, stale recovery and secure worker ownership tokens.
 
 ### 2.3 Copy the keys
 Left sidebar → **gear icon** → **API**:
@@ -123,22 +129,54 @@ Left sidebar → **gear icon** → **API**:
 
 ---
 
-# Step 4 · Google Maps (Places API)
+# Step 4 · Choose the lead provider
 
-This replaces the old Selenium container. Browser automation cannot run in a
-serverless function, so Zybble uses Google's official API for the same data.
+## Mode A — Selenium worker, no Google Maps API key (requested mode)
 
-1. Go to **https://console.cloud.google.com** → create/select a project.
-2. **APIs & Services → Library** → enable **both**:
-   - **Places API (New)**
-   - **Geocoding API**
-3. **APIs & Services → Credentials** → **+ Create credentials → API key**.
-4. Copy it → `GOOGLE_MAPS_API_KEY`.
-5. Click the key → **Restrict key → API restrictions** → select the two APIs
-   above. Leave **Application restrictions** as *None* (the key is used
-   server-side, never in the browser).
-6. **Billing must be enabled** on the Google Cloud project; Places API returns
-   `403` without it. Google's monthly free tier covers typical early usage.
+Set `LEAD_PROVIDER=worker`. Generate a shared secret:
+
+```bash
+openssl rand -hex 32   # → SCRAPER_WORKER_SECRET
+```
+
+Put the same secret in Vercel and the worker. The worker needs only:
+
+```env
+ZYBBLE_APP_URL=https://your-zybble-domain.com
+SCRAPER_WORKER_SECRET=<same value as Vercel>
+SCRAPER_CONCURRENCY=2
+```
+
+Build and run its container from the repository root:
+
+```bash
+docker build -f worker/Dockerfile -t zybble-scraper .
+docker run -d --name zybble-scraper --restart unless-stopped \
+  --shm-size=2g \
+  -e ZYBBLE_APP_URL=https://your-zybble-domain.com \
+  -e SCRAPER_WORKER_SECRET=<secret> \
+  -e SCRAPER_CONCURRENCY=2 \
+  zybble-scraper
+```
+
+The worker never receives `SUPABASE_SERVICE_ROLE_KEY`. It authenticates to
+`/api/worker/*` with the shared secret; every claimed job also gets a unique,
+expiring lease token. Two workers can run concurrently without claiming the
+same job. Each job gets its own Chromium session, always closed in `finally`.
+
+Optional tuning:
+
+```env
+SCRAPER_POLL_SECONDS=5
+SCRAPER_JOB_TIMEOUT_SECONDS=1200
+SCRAPER_CONCURRENCY=2       # 1–4; allow ~600 MB RAM per browser
+```
+
+## Mode B — serverless fallback
+
+Set `LEAD_PROVIDER=places` and provide `GOOGLE_MAPS_API_KEY` with **Places API
+(New)** and **Geocoding API** enabled. No worker is needed. This mode is kept
+for operational fallback; worker mode does not read or require this key.
 
 ---
 
@@ -171,6 +209,7 @@ cached in `billing_plans` — nothing to configure manually.
 ```bash
 openssl rand -hex 32   # → SMTP_ENCRYPTION_KEY  (must be exactly 64 hex chars)
 openssl rand -hex 32   # → CRON_SECRET
+openssl rand -hex 32   # → SCRAPER_WORKER_SECRET (worker mode only)
 ```
 
 ---
@@ -191,7 +230,9 @@ openssl rand -hex 32   # → CRON_SECRET
 | `SUPABASE_SERVICE_ROLE_KEY` | Step 2.3 service_role key |
 | `OPENAI_API_KEY` | Step 3 |
 | `OPENAI_MODEL` | `o4-mini` |
-| `GOOGLE_MAPS_API_KEY` | Step 4 |
+| `LEAD_PROVIDER` | `worker` for Selenium/no key; `places` for fallback |
+| `SCRAPER_WORKER_SECRET` | Step 4 (required in worker mode) |
+| `GOOGLE_MAPS_API_KEY` | only when `LEAD_PROVIDER=places`; omit in worker mode |
 | `RAZORPAY_KEY_ID` | Step 5.1 |
 | `RAZORPAY_KEY_SECRET` | Step 5.1 |
 | `RAZORPAY_WEBHOOK_SECRET` | Step 5.2 |
@@ -289,6 +330,17 @@ npm run dev           # = vercel dev → http://localhost:3000
 `npm run dev:web` starts Vite alone (UI only, no API) if you are just doing
 visual work.
 
+To run the no-key scraper locally (second terminal, Docker required):
+
+```bash
+docker build -f worker/Dockerfile -t zybble-scraper .
+docker run --rm --shm-size=2g \
+  -e ZYBBLE_APP_URL=http://host.docker.internal:3000 \
+  -e SCRAPER_WORKER_SECRET="$SCRAPER_WORKER_SECRET" \
+  -e SCRAPER_CONCURRENCY=1 \
+  zybble-scraper
+```
+
 Trigger background processing locally:
 
 ```bash
@@ -299,8 +351,9 @@ curl -X POST localhost:3000/api/cron/tick -H "x-cron-secret: $CRON_SECRET"
 
 # How background jobs work
 
-There is no always-on process. Work is stored in Supabase and executed in
-bounded slices by ordinary function invocations.
+Work is stored in Supabase. Email jobs and the optional Places provider run in
+bounded serverless slices. In Selenium mode, the Python worker claims only
+`provider='worker'` jobs through the app's secure control plane.
 
 **Lifecycle**
 
@@ -317,11 +370,14 @@ email_jobs:   scheduled → processing → sent
 | --- | --- | --- |
 | Vercel Cron → `/api/cron/tick` | daily (midnight, Hobby limit) | scheduled follow-ups, stale recovery, rollovers |
 | App → `/api/jobs/tick` | while a signed-in user has pending work | instant start, no waiting for cron |
+| Selenium worker → `/api/worker/claim` | continuously, worker mode | real no-key Google Maps extraction |
 
 **Safety properties**
 
 - **Duplicate-job protection** — `claim_search_job` and `claim_due_email_jobs`
-  use `FOR UPDATE SKIP LOCKED`, so one invocation exclusively owns a job.
+  use provider-scoped `FOR UPDATE SKIP LOCKED` leases, so one processor owns a job.
+- **Worker isolation** — the worker has no Supabase key. A shared secret
+  authenticates the service; a per-job UUID lease token authorizes every write.
 - **Idempotent sends** — a unique index on `(campaign_lead_id, step_id)` means a
   step can only ever be queued once, and each send carries a stable `Message-ID`.
 - **Timeout protection** — every slice checks a time budget and stops early,
@@ -337,7 +393,8 @@ email_jobs:   scheduled → processing → sent
 
 # Environment variables
 
-All twelve live in **one place**: Vercel → Settings → Environment Variables.
+Application variables live in Vercel. Worker-only variables live only in its
+container runtime.
 
 | Variable | Scope | Source |
 | --- | --- | --- |
@@ -347,7 +404,9 @@ All twelve live in **one place**: Vercel → Settings → Environment Variables.
 | `SUPABASE_SERVICE_ROLE_KEY` | server | Step 2.3 |
 | `OPENAI_API_KEY` | server | Step 3 |
 | `OPENAI_MODEL` | server | `o4-mini` |
-| `GOOGLE_MAPS_API_KEY` | server | Step 4 |
+| `LEAD_PROVIDER` | server | `worker` (no API key) or `places` |
+| `SCRAPER_WORKER_SECRET` | server + worker | same generated value, worker mode only |
+| `GOOGLE_MAPS_API_KEY` | server, optional | Places fallback only |
 | `RAZORPAY_KEY_ID` | server | Step 5.1 |
 | `RAZORPAY_KEY_SECRET` | server | Step 5.1 |
 | `RAZORPAY_WEBHOOK_SECRET` | server | Step 5.2 |
@@ -356,9 +415,12 @@ All twelve live in **one place**: Vercel → Settings → Environment Variables.
 | `APP_URL` | server, optional | custom domain only |
 | `CORS_ORIGINS` | server, optional | extra allowed browser origins |
 
-**Removed** with the old architecture: `VITE_API_URL`, `WORKER_SECRET`,
-`WORKER_POLL_SECONDS`, `PORT`, `NEXT_PUBLIC_*`. The API is same-origin, so
+**Removed** with the old architecture: `VITE_API_URL`, the Supabase key on the
+worker, `PORT`, and `NEXT_PUBLIC_*`. The API is same-origin, so
 there is no API URL to configure.
+
+Worker-only: `ZYBBLE_APP_URL`, `SCRAPER_WORKER_SECRET`, and optional
+`SCRAPER_CONCURRENCY`, `SCRAPER_POLL_SECONDS`, `SCRAPER_JOB_TIMEOUT_SECONDS`.
 
 ---
 
@@ -367,10 +429,13 @@ there is no API URL to configure.
 | Symptom | Fix |
 | --- | --- |
 | Entirely white page | Hard-refresh first (Ctrl/Cmd+Shift+R). If it persists, the boot overlay will now show the underlying error; check `/api/ready` — it names every missing environment variable. |
-| `/ready` says "not configured" | One or more required env vars are unset in Vercel → Settings → Environment Variables. Set ALL twelve, then redeploy (env changes require a new deployment to take effect). |
-| `/api/*` returns the HTML page | The `/api/(.*)` rewrite must come **first** in `vercel.json`. Redeploy. |
+| `/ready` says "not configured" | A required env var is unset in Vercel → Settings → Environment Variables. In worker mode, `GOOGLE_MAPS_API_KEY` is not required. Redeploy after changes. |
+| `/api/*` returns the HTML page | The `/api/:path*` → `/api/router?path=:path*` rewrite must come **first** in `vercel.json`. Redeploy. |
 | API 500 on every route | A required env var is missing — the function throws on boot. Check **Vercel → Deployments → Functions logs**; the message names the variable. |
-| Search fails with "Google Maps rejected the request" | Enable **Places API (New)** *and* **Geocoding API**, and turn on **billing** for the Google Cloud project. |
+| Worker-mode search stays queued | Start the scraper container and verify `ZYBBLE_APP_URL` plus `SCRAPER_WORKER_SECRET`. `/api/ready` reports its heartbeat and age. |
+| Worker gets 401 | `SCRAPER_WORKER_SECRET` differs between Vercel and the container. Set the same 64-hex value and redeploy/restart. |
+| Worker gets 409 | Its job lease expired or was reclaimed — expected safe behavior; the worker drops the stale browser result and claims another job. |
+| Places-mode search is rejected | Only relevant with `LEAD_PROVIDER=places`: enable Places API (New), Geocoding, billing and set `GOOGLE_MAPS_API_KEY`. |
 | Search completes with 0 leads | No businesses matched. Widen the radius or use a broader location. Quota is refunded automatically. |
 | Job stuck in `collecting` | Wait one cron cycle — the lease expires after 2 minutes and the job resumes from its cursor. Check `/api/internal/metrics` with the cron secret. |
 | Emails scheduled but not sending | Confirm **Settings → Cron Jobs** shows `/api/cron/tick`, and that the campaign has a connected SMTP sender. Opening the app also drives a tick. |
@@ -385,34 +450,40 @@ there is no API URL to configure.
 
 These are real constraints, stated plainly rather than hidden:
 
-1. **Google caps text search at ~60 results per query.** Requesting 200 leads
-   returns every business Google will serve for that query (typically 20–60);
-   the unused quota is refunded automatically. For more volume, run several
-   narrower searches (different suburbs or sub-categories).
-2. **Places API is billed by Google.** It replaces Selenium because browser
-   automation cannot run in serverless. This is also more reliable and does not
-   break when Google changes its HTML — but it is a metered cost with a free
-   monthly tier.
-3. **Hobby cron runs once per day.** Vercel Hobby allows a single daily cron
+1. **Selenium layout changes are an operational risk.** The worker uses several
+   selector fallbacks and reports a precise `SelectorChangedError`, but Google
+   can change Maps markup. Monitor worker logs and `/api/ready`.
+2. **Worker mode needs a container runtime.** That is inherent to Chromium;
+   Vercel cannot run Selenium reliably. Provider C keeps the rest of Zybble as
+   one app and lets you switch to `places` without changing the frontend or DB.
+3. **Worker radius is viewport-based.** The worker geocodes the location with
+   Nominatim and sets Google Maps' center/zoom to the requested radius. Maps may
+   still return edge results; it is not a contractual geo-fence.
+4. **Scraping Google Maps may conflict with Google's Terms of Service.** The
+   upstream project carries the same warning. Use lawful public-business
+   research practices, do not bypass CAPTCHAs/access controls, and obtain legal
+   advice for your jurisdiction and scale.
+5. **Places fallback caps results** at roughly 60 per text query and is metered
+   by Google; it is not used in worker mode.
+6. **Hobby cron runs once per day.** Vercel Hobby allows a single daily cron
    run (configured at `0 0 * * *`; sub-daily schedules require **Pro**). The
    in-app tick compensates by draining the queue every few seconds while anyone
    has the app open, so searches, deliveries and retries stay realtime during
    use — only fully unattended workloads (e.g., a follow-up due overnight while
    nobody is online) would wait for the daily run. You can also drain the queue
    manually at any time: `curl -X POST https://<domain>/api/cron/tick -H "x-cron-secret: <CRON_SECRET>"` (see Local development).
-4. **Function timeout is 60s**, so work is chunked. A 60-lead search with email
-   discovery typically spans several invocations over 1–3 minutes.
-5. **Email verification is DNS-level** (MX + published-address provenance). It
+7. **Function timeout is 60s**, so email delivery and Places fallback are chunked.
+8. **Email verification is DNS-level** (MX + published-address provenance). It
    does not perform SMTP recipient probing, which providers widely block and
    which harms sender reputation.
-6. **No SMTP inbound parsing.** Bounces are detected from live SMTP 5xx
+9. **No SMTP inbound parsing.** Bounces are detected from live SMTP 5xx
    responses at send time; open/click tracking is intentionally not implemented.
 
 ---
 
 # Security
 
-- The service-role key, OpenAI key, Razorpay secrets, Google key and
+- The service-role key, OpenAI key, Razorpay secrets, optional Google key and
   `SMTP_ENCRYPTION_KEY` exist only in server-side function environment; only
   `VITE_*` variables reach the browser.
 - RLS is enabled on every table and grants read-only access to a user's own
@@ -424,5 +495,7 @@ These are real constraints, stated plainly rather than hidden:
 - The email finder enforces an SSRF guard, validating every redirect hop and
   refusing private, loopback and link-local addresses.
 - Rate limiting is database-backed, so it holds across all serverless instances.
+- The scraper carries only `SCRAPER_WORKER_SECRET`; every write also needs the
+  current per-job lease token. It never receives the Supabase service-role key.
 
 MIT © Zybble

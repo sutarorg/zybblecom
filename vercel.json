@@ -4,7 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/index.ts": {
+    "api/router.ts": {
       "maxDuration": 60,
       "memory": 1024
     }
@@ -16,7 +16,7 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/api/:path*", "destination": "/api/router?path=:path*" },
     {
       "source": "/((?!api/.*|assets/.*|robots\\.txt|sitemap\\.xml|site\\.webmanifest|og\\.png|apple-touch-icon\\.png|favicon\\..*).*)",
       "destination": "/index.html"

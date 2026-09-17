@@ -1,27 +1,21 @@
-"""
-Zybble email finder & verification.
+"""Find emails a business has published on its own public website.
 
-Discovers publicly listed business emails on a company's own
-website — homepage, /contact, /about — never guesses or invents
-addresses. Signals, strongest first:
-
-  mailto: link on a contact page  → verified
-  email text on a contact page    → verified
-  obfuscated "name [at] domain"   → risky
-  regex match on the homepage     → risky
-
-Verification: DNS MX lookup for the address domain. A domain
-with no MX records can never receive mail → invalid.
+No address patterns are guessed. Every address has a source URL. DNS MX
+validation separates invalid domains from verified/risky public addresses.
+Every redirect hop is checked against an SSRF denylist.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import re
 import socket
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urljoin, urlparse
 
+import dns.exception
+import dns.resolver
 import requests
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
@@ -34,125 +28,140 @@ OBFUSCATED_RE = re.compile(
 
 BLOCKED_LOCAL = {
     "noreply", "no-reply", "donotreply", "mailer-daemon", "postmaster",
-    "example", "email", "yourname", "name", "user", "webmaster",
+    "example", "email", "yourname", "name", "user", "webmaster", "sentry",
 }
-BLOCKED_DOMAIN_FRAGS = ("example.com", "sentry.io", "wixpress.com", "schema.org", "w3.org")
-BLOCKED_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js")
-
-CONTACT_PATHS = ("/contact", "/contact-us", "/about", "/about-us", "/company")
-
-UA = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+BLOCKED_DOMAINS = (
+    "example.com", "sentry.io", "wixpress.com", "schema.org", "w3.org",
+    "godaddy.com", "squarespace.com", "cloudflare.com",
 )
+CONTACT_PATHS = ("/contact", "/contact-us", "/about", "/about-us")
+UA = "ZybbleBusinessResearch/1.0 (+https://zybble.com/about)"
 MAX_BYTES = 600_000
-TIMEOUT = 9
+TIMEOUT = 8
 
 
 @dataclass
 class FoundEmail:
     email: str
-    status: str          # verified | risky | invalid | unknown
+    status: str
     source_url: str
 
 
-def _valid(addr: str) -> bool:
-    addr = addr.strip().strip(".,;:()[]<>").lower()
-    if not addr or len(addr) > 120:
+def _valid(address: str) -> bool:
+    value = address.strip().strip(".,;:()[]<>").lower()
+    if not value or len(value) > 120 or "@" not in value:
         return False
-    local, _, domain = addr.partition("@")
-    if not local or not domain or "." not in domain:
-        return False
-    if local in BLOCKED_LOCAL:
-        return False
-    if any(addr.endswith(sfx) for sfx in BLOCKED_SUFFIXES):
-        return False
-    if any(f in domain for f in BLOCKED_DOMAIN_FRAGS):
-        return False
-    return True
+    local, domain = value.rsplit("@", 1)
+    return (
+        local not in BLOCKED_LOCAL
+        and "." in domain
+        and not any(fragment in domain for fragment in BLOCKED_DOMAINS)
+        and not any(value.endswith(ext) for ext in (".png", ".jpg", ".svg", ".css", ".js"))
+    )
 
 
-def _has_mx(domain: str) -> Optional[bool]:
-    """DNS MX presence via stdlib resolver heuristics."""
+def _public_url(raw: str) -> bool:
     try:
-        import dns.resolver  # dnspython (optional dependency)
-
-        answers = dns.resolver.resolve(domain, "MX", lifetime=4.0)
-        return len(list(answers)) > 0
-    except ImportError:
-        try:
-            socket.getaddrinfo(domain, 25)
-            return True
-        except OSError:
-            return None
-    except Exception:
+        parsed = urlparse(raw)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        if parsed.port and parsed.port not in (80, 443):
+            return False
+        host = parsed.hostname.lower().rstrip(".")
+        if host == "localhost" or host.endswith(".local") or host == "metadata.google.internal":
+            return False
+        for info in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80)):
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                return False
+        return True
+    except (OSError, ValueError):
         return False
 
 
 def _fetch(url: str) -> Optional[str]:
-    try:
-        with requests.get(
-            url,
-            headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"},
-            timeout=TIMEOUT,
-            stream=True,
-            allow_redirects=True,
-        ) as res:
-            if res.status_code >= 400:
+    current = url
+    for _ in range(4):
+        if not _public_url(current):
+            return None
+        try:
+            response = requests.get(
+                current,
+                headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"},
+                timeout=TIMEOUT,
+                stream=True,
+                allow_redirects=False,
+            )
+        except requests.RequestException:
+            return None
+        if response.is_redirect:
+            location = response.headers.get("location")
+            response.close()
+            if not location:
                 return None
-            ctype = res.headers.get("content-type", "")
-            if "text/html" not in ctype and "text/plain" not in ctype and ctype:
+            current = urljoin(current, location)
+            continue
+        with response:
+            if response.status_code >= 400:
+                return None
+            ctype = response.headers.get("content-type", "")
+            if ctype and "text/html" not in ctype and "text/plain" not in ctype:
                 return None
             chunks, size = [], 0
-            for chunk in res.iter_content(8192, decode_unicode=False):
+            for chunk in response.iter_content(8192):
                 chunks.append(chunk)
                 size += len(chunk)
                 if size >= MAX_BYTES:
                     break
             return b"".join(chunks).decode("utf-8", errors="ignore")
-    except requests.RequestException:
+    return None
+
+
+def _mx(domain: str) -> Optional[bool]:
+    try:
+        return len(list(dns.resolver.resolve(domain, "MX", lifetime=4.0))) > 0
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return False
+    except (dns.resolver.NoNameservers, dns.exception.Timeout, OSError):
         return None
 
 
 def find_email(site_url: str) -> Optional[FoundEmail]:
-    parsed = urlparse(site_url if site_url.startswith("http") else f"https://{site_url}")
-    if not parsed.netloc:
+    try:
+        parsed = urlparse(site_url if site_url.startswith("http") else f"https://{site_url}")
+        if not parsed.netloc:
+            return None
+        base = f"{parsed.scheme}://{parsed.netloc}"
+    except ValueError:
         return None
-    base = f"{parsed.scheme}://{parsed.netloc}"
 
-    candidates: list[tuple[str, str, bool]] = []  # (email, source_page, strong)
-    for path in ("", *CONTACT_PATHS):
-        page_url = urljoin(base, path or "/")
+    candidates: list[tuple[str, str, bool]] = []
+    for path in ("/", *CONTACT_PATHS):
+        page_url = urljoin(base, path)
         html = _fetch(page_url)
         if not html:
             continue
-        strong_page = bool(path)
-        for m in MAILTO_RE.findall(html):
-            candidates.append((m.lower(), page_url, True))
-        for m in EMAIL_RE.findall(html):
-            candidates.append((m.lower(), page_url, strong_page))
+        strong = path != "/"
+        candidates.extend((email.lower(), page_url, True) for email in MAILTO_RE.findall(html))
+        candidates.extend((email.lower(), page_url, strong) for email in EMAIL_RE.findall(html))
         for local, domain in OBFUSCATED_RE.findall(html):
-            fixed_domain = re.sub(r"\s*(?:\(|\[)?\s*(?:dot)\s*(?:\)|\])?\s*", ".", domain, flags=re.I)
-            candidates.append((f"{local}@{fixed_domain}".lower(), page_url, False))
-
-        valid_here = [c for c in candidates if _valid(c[0])]
-        if valid_here:
-            break  # stop at the first page that yields data
+            fixed = re.sub(r"\s*(?:\(|\[)?\s*dot\s*(?:\)|\])?\s*", ".", domain, flags=re.I)
+            candidates.append((f"{local}@{fixed}".lower(), page_url, False))
+        if any(_valid(item[0]) for item in candidates):
+            break
 
     seen: set[str] = set()
-    ranked: list[tuple[str, str, bool]] = []
-    for cand in candidates:
-        addr = cand[0]
-        if not _valid(addr) or addr in seen:
-            continue
-        seen.add(addr)
-        ranked.append(cand)
+    ranked = []
+    for item in candidates:
+        if _valid(item[0]) and item[0] not in seen:
+            seen.add(item[0])
+            ranked.append(item)
+    ranked.sort(key=lambda item: item[2], reverse=True)
     if not ranked:
         return None
 
     email, source, strong = ranked[0]
-    domain = email.partition("@")[2]
-    mx = _has_mx(domain)
+    mx = _mx(email.rsplit("@", 1)[1])
     if mx is False:
-        return FoundEmail(email=email, status="invalid", source_url=source)
-    return FoundEmail(email=email, status="verified" if strong else "risky", source_url=source)
+        return FoundEmail(email, "invalid", source)
+    return FoundEmail(email, "verified" if strong else "risky", source)

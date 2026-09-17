@@ -16,8 +16,8 @@ const viteEnv = (import.meta as unknown as { env: Record<string, string | undefi
 const SUPABASE_URL = viteEnv?.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = viteEnv?.VITE_SUPABASE_ANON_KEY;
 
-/** Same-origin by default; override only for split local dev. */
-export const API_URL = (viteEnv?.VITE_API_URL ?? "").replace(/\/+$/, "");
+/** The API is always same-origin — there is no separately hosted API. */
+export const API_URL = "";
 
 export function isConfigured(): boolean {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);

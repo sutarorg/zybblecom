@@ -1,227 +1,308 @@
-"""
-Zybble lead-harvest worker — queue consumer.
+"""Zybble Selenium provider — production queue consumer.
 
-Polls `search_jobs` for queued work and drives the full pipeline,
-updating the job row live so the UI stepper never freezes:
-
-  queued → searching → collecting → enriching → finding_emails → complete
-
-Leads are upserted with dedupe on (user_id, company, city).
-Runs as a standalone Docker service — never inside serverless.
+Multiple job threads are safe: the app API atomically claims provider='worker'
+rows with a unique, expiring lease. The worker holds no Supabase credentials;
+all storage goes through authenticated /api/worker endpoints.
 """
 
 from __future__ import annotations
 
+import json
 import os
-import re
+import signal
+import socket
 import sys
+import threading
 import time
 import traceback
-from urllib.parse import urlparse
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Optional
 
-from supabase import Client, create_client
+import requests
+from selenium.common.exceptions import WebDriverException
 
 from email_finder import find_email
-from scraper import Place, scrape_places
+from scraper import JobTimeout, Place, SelectorChangedError, run_scrape
 
-SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
-SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-POLL_SECONDS = float(os.environ.get("WORKER_POLL_SECONDS", "5"))
+APP_URL = os.environ["ZYBBLE_APP_URL"].rstrip("/")
+WORKER_SECRET = os.environ["SCRAPER_WORKER_SECRET"]
+CONCURRENCY = max(1, min(4, int(os.environ.get("SCRAPER_CONCURRENCY", "2"))))
+POLL_SECONDS = max(2.0, float(os.environ.get("SCRAPER_POLL_SECONDS", "5")))
+JOB_TIMEOUT = max(300, int(os.environ.get("SCRAPER_JOB_TIMEOUT_SECONDS", "1200")))
+INSTANCE_ID = os.environ.get("HOSTNAME") or socket.gethostname()
 
-sb: Client = create_client(SUPABASE_URL, SERVICE_KEY)
-
-
-def log(msg: str, **fields) -> None:
-    extra = " ".join(f"{k}={v}" for k, v in fields.items())
-    print(f"[worker] {msg} {extra}".rstrip(), flush=True)
+stopping = threading.Event()
 
 
-def set_job(job_id: str, **patch) -> None:
-    """Update job state — the SQL `touch_search_jobs` trigger
-    maintains updated_at, so the UI's progress reflects reality."""
-    sb.table("search_jobs").update(patch).eq("id", job_id).execute()
-
-
-def claim_job() -> dict | None:
-    queued = (
-        sb.table("search_jobs")
-        .select("*")
-        .eq("status", "queued")
-        .order("created_at")
-        .limit(1)
-        .execute()
-        .data
+def log(level: str, message: str, **fields) -> None:
+    print(
+        json.dumps(
+            {"level": level, "message": message, "service": "zybble-scraper",
+             "instance": INSTANCE_ID, "ts": time.time(), **fields},
+            default=str,
+        ),
+        flush=True,
     )
-    if not queued:
-        return None
-    job = queued[0]
-    claimed = (
-        sb.table("search_jobs")
-        .update({"status": "searching", "progress": 4})
-        .eq("id", job["id"])
-        .eq("status", "queued")  # only one worker may win
-        .execute()
-        .data
-    )
-    return claimed[0] if claimed else None
 
 
-# ————— Field mapping: Place → leads row —————
-
-STREET_RE = re.compile(r"^(.*?),\s*([^,]+?)(?:,\s*([A-Z]{2}|[A-Za-z ]+?))?(?:\s+(\d{3,10}))?(?:,\s*(.+))?$")
-
-
-def split_address(address: str | None, fallback_country: str = "") -> tuple[str, str, str, str]:
-    """Best-effort "street, city, state zip, country" split."""
-    if not address:
-        return "", "", "", fallback_country
-    parts = [p.strip() for p in address.split(",") if p.strip()]
-    street = parts[0] if parts else ""
-    city = parts[1] if len(parts) > 1 else ""
-    state_zip = parts[2] if len(parts) > 2 else ""
-    state = re.sub(r"\d{3,10}", "", state_zip).strip()
-    country = parts[3] if len(parts) > 3 else fallback_country
-    return street, city, state, country
+class ApiError(RuntimeError):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
 
 
-def domain_of(url: str | None) -> str | None:
-    if not url:
-        return None
-    try:
-        return urlparse(url if url.startswith("http") else f"https://{url}").netloc.lower()
-    except Exception:
-        return None
+@dataclass
+class WorkerApi:
+    session: requests.Session
+
+    @classmethod
+    def create(cls) -> "WorkerApi":
+        session = requests.Session()
+        session.headers.update(
+            {
+                "Authorization": f"Bearer {WORKER_SECRET}",
+                "Content-Type": "application/json",
+                "User-Agent": "ZybbleScraperWorker/1.0",
+            }
+        )
+        return cls(session)
+
+    def call(
+        self,
+        method: str,
+        path: str,
+        body: Optional[dict] = None,
+        lease: Optional[str] = None,
+        timeout: int = 30,
+    ) -> dict:
+        headers = {"X-Job-Lease": lease} if lease else None
+        try:
+            response = self.session.request(
+                method,
+                f"{APP_URL}/api{path}",
+                json=body,
+                headers=headers,
+                timeout=timeout,
+            )
+        except requests.RequestException as err:
+            raise ApiError(503, f"Zybble API unavailable: {err}") from err
+        try:
+            payload = response.json() if response.content else {}
+        except ValueError:
+            payload = {}
+        if not response.ok:
+            raise ApiError(response.status_code, payload.get("error", response.text[:240]))
+        return payload
+
+    def heartbeat(self, status: str = "healthy", **details) -> None:
+        self.call(
+            "POST",
+            "/worker/heartbeat",
+            {"instance_id": INSTANCE_ID, "status": status, "details": details},
+        )
+
+    def claim(self) -> Optional[dict]:
+        payload = self.call("POST", "/worker/claim", {"instance_id": INSTANCE_ID})
+        return payload.get("job")
+
+    def progress(
+        self,
+        job: dict,
+        status: str,
+        progress: int,
+        collected: Optional[int] = None,
+        message: Optional[str] = None,
+    ) -> None:
+        body = {"status": status, "progress": max(1, min(99, int(progress)))}
+        if collected is not None:
+            body["collected"] = collected
+        if message:
+            body["message"] = message[:280]
+        self.call("POST", f"/worker/jobs/{job['id']}/progress", body, job["lease_token"])
+
+    def leads(self, job: dict, places: list[Place]) -> dict:
+        return self.call(
+            "POST",
+            f"/worker/jobs/{job['id']}/leads",
+            {"leads": [place.json() for place in places]},
+            job["lease_token"],
+            timeout=45,
+        )
+
+    def email(self, job: dict, lead_id: str, found) -> None:
+        self.call(
+            "POST",
+            f"/worker/jobs/{job['id']}/leads/{lead_id}/email",
+            {
+                "email": found.email if found else None,
+                "email_status": found.status if found else "unknown",
+                "email_source_url": found.source_url if found else None,
+            },
+            job["lease_token"],
+        )
+
+    def pending_emails(self, job: dict) -> list[dict]:
+        payload = self.call(
+            "GET",
+            f"/worker/jobs/{job['id']}/pending-emails",
+            lease=job["lease_token"],
+        )
+        return payload.get("leads", [])
+
+    def complete(self, job: dict) -> dict:
+        return self.call("POST", f"/worker/jobs/{job['id']}/complete", {}, job["lease_token"])
+
+    def fail(self, job: dict, error: str, retryable: bool) -> dict:
+        return self.call(
+            "POST",
+            f"/worker/jobs/{job['id']}/fail",
+            {"error": error[:280], "retryable": retryable},
+            job["lease_token"],
+        )
 
 
 def process_job(job: dict) -> None:
+    api = WorkerApi.create()
     job_id = job["id"]
-    user_id = job["user_id"]
-    query = f"{job['query']} in {job['location']}"
-    limit = int(job["quantity"])
-    collected = 0
+    stored: list[dict] = []
+    pending_batch: list[Place] = []
+    collected = int(job.get("collected", 0))
+    log("info", "job started", job=job_id, query=job["query"], location=job["location"])
 
-    log("job started", job=job_id, query=query, limit=limit)
-    set_job(job_id, status="collecting", progress=8)
-
-    existing = (
-        sb.table("leads")
-        .select("company,city")
-        .eq("user_id", user_id)
-        .limit(5000)
-        .execute()
-        .data
-    )
-    seen = {(r["company"].lower().strip(), (r["city"] or "").lower().strip()) for r in existing}
-
-    def persist(place: Place) -> None:
-        nonlocal collected
-        street, city, state, country = split_address(place.address)
-        key = (place.name.lower().strip(), city.lower().strip())
-        if key in seen:
+    def flush() -> None:
+        nonlocal pending_batch, collected
+        if not pending_batch:
             return
-        seen.add(key)
+        result = api.leads(job, pending_batch)
+        stored.extend(result.get("leads", []))
+        collected = int(result.get("collected", collected))
+        pending_batch = []
 
-        category = place.category or job["query"]
-        description = None
-        if place.rating and place.reviews:
-            description = (
-                f"{place.name} is a {category.lower()} in {city or job['location']} "
-                f"rated {place.rating} across {place.reviews} Google reviews."
-            )
+    def link_progress(value: int) -> None:
+        api.progress(job, "searching", value, collected)
 
-        row = {
-            "user_id": user_id,
-            "job_id": job_id,
-            "company": place.name,
-            "category": category,
-            "address": street,
-            "city": city,
-            "state": state,
-            "country": country or "United States",
-            "phone": place.phone,
-            "website": place.website,
-            "maps_url": place.maps_url,
-            "rating": place.rating,
-            "reviews": place.reviews,
-            "hours": place.hours,
-            "description": description,
-        }
-        res = (
-            sb.table("leads")
-            .upsert(row, on_conflict="user_id,company,city", ignore_duplicates=True)
-            .execute()
+    def place_found(place: Place, position: int, total: int) -> None:
+        nonlocal pending_batch
+        pending_batch.append(place)
+        if len(pending_batch) >= 5 or position == total:
+            flush()
+        api.progress(
+            job,
+            "collecting",
+            30 + int((position / max(1, total)) * 30),
+            collected,
         )
-        if res.data:
-            collected += 1
-            set_job(
-                job_id,
-                collected=collected,
-                progress=8 + round((collected / max(1, limit)) * 50),
-            )
-            log("lead stored", job=job_id, company=place.name, collected=collected)
 
-    harvested = scrape_places(query, limit, persist)
+    try:
+        api.progress(job, "searching", 3, collected)
+        run_scrape(
+            query=job["query"],
+            location=job["location"],
+            radius_meters=int(job["radius_meters"]),
+            limit=max(1, int(job["quantity"]) - collected),
+            timeout_seconds=JOB_TIMEOUT,
+            on_links_progress=link_progress,
+            on_place=place_found,
+        )
+        flush()
 
-    # ————— Enriching (website presence already captured; ratings normalized) —————
-    set_job(job_id, status="enriching", progress=64)
-    time.sleep(1)
-    set_job(job_id, progress=70)
+        api.progress(job, "enriching", 65, collected)
+        api.progress(job, "finding_emails", 70, collected)
 
-    # ————— Finding emails: public pages only, never invented —————
-    set_job(job_id, status="finding_emails")
-    leads = (
-        sb.table("leads")
-        .select("id,website,email")
-        .eq("job_id", job_id)
-        .is_("email", "null")
-        .not_.is_("website", "null")
-        .execute()
-        .data
-    )
-    total = max(1, len(leads))
-    for idx, lead in enumerate(leads):
-        try:
-            found = find_email(lead["website"])
-        except Exception:
+        # Ask the server for every still-unenriched lead in this job. This
+        # includes crash-safe batches stored by a previous browser session.
+        pending = api.pending_emails(job)
+        total = len(pending)
+        for index, lead in enumerate(pending):
+            if stopping.is_set():
+                raise JobTimeout("Worker received shutdown signal; job will retry")
             found = None
-        if found:
-            sb.table("leads").update(
-                {
-                    "email": found.email,
-                    "email_status": found.status,
-                    "email_source_url": found.source_url,
-                }
-            ).eq("id", lead["id"]).execute()
-            log("email found", job=job_id, email=found.email, status=found.status)
-        else:
-            sb.table("leads").update({"email_status": "unknown"}).eq("id", lead["id"]).execute()
-        if idx % 3 == 0:
-            set_job(job_id, progress=70 + round(((idx + 1) / total) * 28))
+            if lead.get("website"):
+                try:
+                    found = find_email(lead["website"])
+                except Exception as err:
+                    log("warning", "email discovery failed", job=job_id, lead=lead["id"], error=str(err))
+            api.email(job, lead["id"], found)
+            api.progress(
+                job,
+                "finding_emails",
+                min(99, 70 + int(((index + 1) / max(1, total)) * 29)),
+                collected,
+            )
 
-    set_job(job_id, status="complete", progress=100, collected=collected)
-    log("job complete", job=job_id, collected=collected)
+        result = api.complete(job)
+        log(
+            "info",
+            "job completed",
+            job=job_id,
+            collected=result.get("collected"),
+            refunded=result.get("refunded"),
+        )
+    except ApiError as err:
+        # 409 means the lease expired and another worker owns the job; do not
+        # overwrite its state. Network/5xx failures are retryable.
+        if err.status == 409:
+            log("warning", "job lease lost", job=job_id, error=str(err))
+            return
+        log("error", "worker API error", job=job_id, status=err.status, error=str(err))
+        try:
+            api.fail(job, str(err), err.status >= 500)
+        except Exception:
+            pass
+    except Exception as err:
+        retryable = isinstance(err, (JobTimeout, SelectorChangedError, WebDriverException, RuntimeError))
+        log("error", "job failed", job=job_id, retryable=retryable, error=str(err))
+        traceback.print_exc()
+        try:
+            api.fail(job, str(err), retryable)
+        except Exception as api_err:
+            log("error", "could not report failure", job=job_id, error=str(api_err))
+    finally:
+        api.session.close()
+
+
+def handle_signal(_signum, _frame) -> None:
+    log("info", "shutdown requested")
+    stopping.set()
 
 
 def main() -> None:
-    log("scraper worker online", poll=f"{POLL_SECONDS}s")
-    while True:
-        job: dict | None = None
-        try:
-            job = claim_job()
-            if job is None:
-                time.sleep(POLL_SECONDS)
-                continue
-            process_job(job)
-        except KeyboardInterrupt:
-            sys.exit(0)
-        except Exception as err:
-            traceback.print_exc()
-            if job is not None:
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+    api = WorkerApi.create()
+    log("info", "worker online", concurrency=CONCURRENCY, app=APP_URL)
+
+    with ThreadPoolExecutor(max_workers=CONCURRENCY, thread_name_prefix="scrape") as pool:
+        active: set[Future] = set()
+        last_heartbeat = 0.0
+        while not stopping.is_set():
+            active = {future for future in active if not future.done()}
+            if time.time() - last_heartbeat >= 20:
                 try:
-                    set_job(job["id"], status="failed", error=str(err)[:280])
-                except Exception:
-                    pass
-            time.sleep(POLL_SECONDS)
+                    api.heartbeat("healthy", active_jobs=len(active), capacity=CONCURRENCY)
+                except Exception as err:
+                    log("warning", "heartbeat failed", error=str(err))
+                last_heartbeat = time.time()
+
+            while len(active) < CONCURRENCY and not stopping.is_set():
+                try:
+                    job = api.claim()
+                except Exception as err:
+                    log("error", "claim failed", error=str(err))
+                    break
+                if not job:
+                    break
+                active.add(pool.submit(process_job, job))
+
+            stopping.wait(POLL_SECONDS)
+
+        log("info", "waiting for active browsers", active_jobs=len(active))
+        # Executor waits; each job notices stopping during email work, while
+        # Selenium itself remains bounded by its page/job timeout.
+
+    api.session.close()
+    log("info", "worker stopped")
 
 
 if __name__ == "__main__":

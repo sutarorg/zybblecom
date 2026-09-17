@@ -32,14 +32,21 @@ jobs:
             const c = JSON.parse(require('fs').readFileSync('vercel.json'));
             if (!c.crons?.some(j => j.path === '/api/cron/tick'))
               throw new Error('missing background cron');
-            if (!c.rewrites?.some(r => r.source === '/api/(.*)'))
+            if (!c.rewrites?.some(r => r.source === '/api/:path*'))
               throw new Error('missing api rewrite');
             console.log('vercel.json OK');
           "
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate optional scraper provider
+        run: python -m compileall -q worker
+
       - name: Assert no separate-service infrastructure remains
         run: |
-          for path in server worker railway.json render.yaml docker-compose.yml; do
+          for path in server railway.json render.yaml docker-compose.yml; do
             if [ -e "$path" ]; then
               echo "::error::$path should not exist in the single-app architecture"
               exit 1

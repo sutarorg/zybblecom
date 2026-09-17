@@ -51,6 +51,9 @@ export const env = {
   openaiKey: optional("OPENAI_API_KEY") ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "o4-mini",
   googleMapsKey: optional("GOOGLE_MAPS_API_KEY") ?? "",
+  leadProvider:
+    process.env.LEAD_PROVIDER === "places" ? ("places" as const) : ("worker" as const),
+  scraperWorkerSecret: optional("SCRAPER_WORKER_SECRET") ?? "",
   razorpayKeyId: optional("RAZORPAY_KEY_ID") ?? "",
   razorpayKeySecret: optional("RAZORPAY_KEY_SECRET") ?? "",
   razorpayWebhookSecret: optional("RAZORPAY_WEBHOOK_SECRET") ?? "",
@@ -59,10 +62,6 @@ export const env = {
   isProduction: process.env.VERCEL_ENV === "production",
   commit: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 12),
 };
-
-if (env.openaiModel !== "o4-mini") {
-  throw new MissingEnvError("OPENAI_MODEL must be o4-mini for this deployment.");
-}
 
 // ————— Structured logging (never logs secrets) —————
 
@@ -144,16 +143,27 @@ export function requireCronAuth(req: Request) {
     throw new HttpError(401, "Unauthorized.");
 }
 
+/** Constant-time authentication for the optional Selenium worker. */
+export function requireWorkerAuth(req: Request) {
+  checkConfig("SCRAPER_WORKER_SECRET");
+  const header = req.headers.get("authorization") ?? "";
+  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const a = Buffer.from(provided);
+  const b = Buffer.from(env.scraperWorkerSecret);
+  if (!provided || a.length !== b.length || !crypto.timingSafeEqual(a, b))
+    throw new HttpError(401, "Unauthorized worker.");
+}
+
 // ————— AES-256-GCM for SMTP passwords —————
 
 const KEY = optional("SMTP_ENCRYPTION_KEY")
   ? Buffer.from(optional("SMTP_ENCRYPTION_KEY")!, "hex")
   : null;
-if (KEY && KEY.length !== 32)
-  throw new MissingEnvError("SMTP_ENCRYPTION_KEY must be 64 hex chars (32 bytes).");
 
 function encryptionKey(): Buffer {
   if (!KEY) throw new MissingEnvError("SMTP_ENCRYPTION_KEY");
+  if (KEY.length !== 32)
+    throw new MissingEnvError("SMTP_ENCRYPTION_KEY must be 64 hex chars (32 bytes)");
   return KEY;
 }
 

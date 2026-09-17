@@ -42,6 +42,7 @@ interface SearchJobRow {
   collected: number;
   worker_attempts: number;
   payload: { places?: PlaceRecord[]; cursor?: number; exhausted?: boolean };
+  lease_token: string;
 }
 
 function leadKey(company: string, city: string) {
@@ -135,7 +136,11 @@ async function stageCollect(job: SearchJobRow, budget: Budget) {
       progress: 10 + Math.round((cursor / places.length) * 50),
       payload: { ...job.payload, cursor },
     });
-    await sb.rpc("extend_search_job_lease", { p_job: job.id, p_lease_seconds: LEASE_SECONDS });
+    await sb.rpc("extend_search_job_lease", {
+      p_job: job.id,
+      p_lease_token: job.lease_token,
+      p_lease_seconds: LEASE_SECONDS,
+    });
   }
 
   if (cursor >= places.length) {
@@ -204,7 +209,11 @@ async function stageFindEmails(job: SearchJobRow, budget: Budget) {
     await setJob(job.id, {
       progress: Math.min(99, 70 + Math.round((done / Math.max(1, totalLeads)) * 29)),
     });
-    await sb.rpc("extend_search_job_lease", { p_job: job.id, p_lease_seconds: LEASE_SECONDS });
+    await sb.rpc("extend_search_job_lease", {
+      p_job: job.id,
+      p_lease_token: job.lease_token,
+      p_lease_seconds: LEASE_SECONDS,
+    });
   }
 
   if (index >= queue.length) await finishJob(job);
@@ -232,6 +241,7 @@ async function finishJob(job: SearchJobRow) {
  */
 export async function processSearchSlice(budget: Budget): Promise<boolean> {
   const { data: claimed, error } = await sb.rpc("claim_search_job", {
+    p_provider: "places",
     p_lease_seconds: LEASE_SECONDS,
   });
   if (error) {
@@ -259,7 +269,10 @@ export async function processSearchSlice(budget: Budget): Promise<boolean> {
       default:
         break;
     }
-    await sb.rpc("release_search_job", { p_job: job.id });
+    await sb.rpc("release_search_job", {
+      p_job: job.id,
+      p_lease_token: job.lease_token,
+    });
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
