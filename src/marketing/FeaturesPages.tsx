@@ -30,14 +30,14 @@ interface Feature {
   related: { title: string; body: string; to: string }[];
 }
 
-const FEATURES: Feature[] = [
+export const FEATURES: Feature[] = [
   {
     slug: "/features/lead-finder",
     kicker: "Lead Finder",
     h1: "Find local businesses that actually need what you sell.",
     lede: "Describe your market in plain language — Zybble searches public business listings and returns clean, deduplicated leads with the context that decides fit.",
     metaTitle: "Local Lead Finder — Find Businesses to Sell To | Zybble",
-    metaDesc: "Search local businesses by industry, location and signals that matter. Zybble's lead finder returns enriched, deduplicated prospects in seconds — free 100 leads/month.",
+    metaDesc: "Search local businesses by industry, location and useful public signals. Zybble returns enriched, deduplicated prospects with 100 free leads each month.",
     sections: [
       {
         h: "Search the way you'd ask a colleague",
@@ -95,7 +95,7 @@ const FEATURES: Feature[] = [
   {
     slug: "/features/lead-enrichment",
     kicker: "Enrichment & Email Finder",
-    h1: "From a map pin to an outreach-ready record in seconds.",
+    h1: "From a map pin to an outreach-ready record.",
     lede: "Zybble enriches every business with its public website, phone, hours and reputation — then finds the email the business itself published, and tells you how much to trust it.",
     metaTitle: "Lead Enrichment & Email Verification | Zybble",
     metaDesc: "Enrich leads with verified public data and find business-published emails with honest statuses: verified, risky, invalid or unknown — never invented addresses.",
@@ -167,7 +167,7 @@ const FEATURES: Feature[] = [
     h1: "A 0–100 fit score you can actually audit.",
     lede: "Zybble scores every lead against visible signals — reputation, reachability, web presence, completeness — and shows its work. No black box, no mysticism.",
     metaTitle: "AI Lead Scoring Software, Explained | Zybble",
-    metaDesc: "Score leads 0–100 with transparent, explainable AI. See exactly why each lead earned its score — reputation, reachability, web presence — and focus on the top 5%.",
+    metaDesc: "Score leads from 0–100 with transparent, explainable AI. See why each lead earned its score across reputation, reachability and web presence.",
     sections: [
       {
         h: "What the score actually looks at",
@@ -200,7 +200,7 @@ const FEATURES: Feature[] = [
       {
         h: "Score ten leads or ten thousand",
         paras: [
-          "Single leads score in about two seconds from the lead detail page, and \"Score all\" runs your whole database through the same engine. Scores are cached per lead — they don't drift every time you look, and they refresh when you ask them to.",
+          "Score a lead from its detail page, or run \"Score all\" across your database with the same engine. Scores are cached per lead and refresh when you ask them to.",
         ],
       },
       {
@@ -236,7 +236,7 @@ const FEATURES: Feature[] = [
     h1: "Cold emails that read like you did the homework — because the AI did.",
     lede: "Zybble drafts short, personal outreach grounded only in real lead data: the rating you saw, the city they serve, the gap they have. Choose the tone, keep the specifics, send it as yourself.",
     metaTitle: "AI Cold Email Writer — No Templates, Real Research | Zybble",
-    metaDesc: "Write personalized cold outreach with AI that's grounded only in real lead data. No hallucinated facts, no fake flattery, no templates — choose the tone and send as yourself.",
+    metaDesc: "Write personalized cold outreach with AI grounded in real lead data. No hallucinated facts, fake flattery or generic templates — edit and send as yourself.",
     sections: [
       {
         h: "Grounded in research — literally",
@@ -245,7 +245,7 @@ const FEATURES: Feature[] = [
         ],
       },
       {
-        h: "The anti-hallucination guarantee",
+        h: "Grounding guardrails",
         paras: [
           "Most AI outreach fails the same way: invented case studies, imagined tech stacks, fake compliments about a redesign that never happened. Zybble's writer is instructed to use only the provided business data, and the system prompt forbids fabricating customers, achievements, partnerships, technologies or staff. Here is exactly what the writer will never put in an email:",
         ],
@@ -273,7 +273,7 @@ const FEATURES: Feature[] = [
       {
         h: "What actually earns replies in 2026",
         paras: [
-          "The emails that work are short, specific and end with one small question. Zybble keeps drafts under about 120 words, leads with something true about their business, and closes with a low-commitment ask. You stay the editor — copy the draft, adjust a line, or drop it straight into a campaign.",
+          "A practical draft is short, specific and ends with one small question. Zybble keeps drafts concise, leads with something true about the business, and closes with a low-commitment ask. You stay the editor — copy the draft, adjust a line, or drop it straight into a campaign.",
         ],
       },
     ],
@@ -301,14 +301,14 @@ const FEATURES: Feature[] = [
     slug: "/features/email-sequences",
     kicker: "Email Sequences",
     h1: "Follow-up automation with the guardrails already on.",
-    lede: "Most replies arrive after the second or third touch. Zybble sends your Day 0 email, waits, follows up — and stops the moment someone replies, bounces or unsubscribes.",
+    lede: "A sequence gives each message a clear job. Zybble sends your Day 0 email, waits, follows up — and stops the moment someone replies, bounces or unsubscribes.",
     metaTitle: "Email Sequences & Follow-up Automation | Zybble",
-    metaDesc: "Automated email sequences with stop-on-reply, bounce suppression and one-click unsubscribe built in. Send through your own SMTP and let follow-ups run themselves.",
+    metaDesc: "Automated email sequences with stop-on-reply, bounce suppression and one-click unsubscribe built in. Send through your own SMTP connection.",
     sections: [
       {
         h: "The reply math behind follow-ups",
         paras: [
-          "One-off cold emails leave most of your replies on the table. The majority of positive responses arrive after the second or third contact — yet almost nobody follows up consistently by hand. A simple cadence beats a clever message sent once.",
+          "A single cold email gives a prospect one opportunity to respond. A clear cadence creates room for a considered follow-up without relying on memory or manual reminders.",
         ],
         table: {
           head: ["Step", "When", "Job of the email"],

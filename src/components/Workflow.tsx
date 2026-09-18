@@ -31,7 +31,7 @@ const STEPS: Step[] = [
   {
     n: "04",
     title: "Prioritize",
-    desc: "AI scoring ranks every lead by fit, so your time goes to the opportunities most likely to close.",
+    desc: "AI scoring ranks every lead by fit, so you can review the strongest opportunities first.",
     icon: <Gauge className="h-[15px] w-[15px]" />,
   },
   {
@@ -68,7 +68,7 @@ export default function Workflow() {
           <Reveal delay={0.16}>
             <p className="mt-5 max-w-md text-[16px] leading-relaxed text-neutral-500">
               Six connected steps in one simple platform — from first search
-              to booked reply, without stitching five tools together.
+              to a thoughtful outreach workflow, without stitching five tools together.
             </p>
           </Reveal>
           <Reveal delay={0.24}>

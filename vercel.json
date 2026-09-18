@@ -3,6 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "trailingSlash": false,
   "functions": {
     "api/router.ts": {
       "maxDuration": 60,
@@ -15,11 +16,33 @@
       "schedule": "0 0 * * *"
     }
   ],
+  "redirects": [
+    { "source": "/login", "destination": "/#/login", "permanent": false },
+    { "source": "/signup", "destination": "/#/signup", "permanent": false },
+    { "source": "/forgot", "destination": "/#/forgot", "permanent": false },
+    { "source": "/reset", "destination": "/#/reset", "permanent": false },
+    { "source": "/unsubscribe", "destination": "/#/unsubscribe", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/router?path=:path*" },
+    { "source": "/", "destination": "/index.html" },
+    { "source": "/features", "destination": "/features/index.html" },
+    { "source": "/features/lead-finder", "destination": "/features/lead-finder/index.html" },
+    { "source": "/features/lead-enrichment", "destination": "/features/lead-enrichment/index.html" },
+    { "source": "/features/ai-lead-scoring", "destination": "/features/ai-lead-scoring/index.html" },
+    { "source": "/features/ai-email-writer", "destination": "/features/ai-email-writer/index.html" },
+    { "source": "/features/email-sequences", "destination": "/features/email-sequences/index.html" },
+    { "source": "/pricing", "destination": "/pricing/index.html" },
+    { "source": "/blog", "destination": "/blog/index.html" },
+    { "source": "/blog/build-a-local-lead-list", "destination": "/blog/build-a-local-lead-list/index.html" },
+    { "source": "/blog/cold-email-deliverability-checklist", "destination": "/blog/cold-email-deliverability-checklist/index.html" },
+    { "source": "/blog/how-ai-lead-scoring-works", "destination": "/blog/how-ai-lead-scoring-works/index.html" },
+    { "source": "/about", "destination": "/about/index.html" },
+    { "source": "/privacy", "destination": "/privacy/index.html" },
+    { "source": "/terms", "destination": "/terms/index.html" },
     {
-      "source": "/((?!api/.*|assets/.*|robots\\.txt|sitemap\\.xml|site\\.webmanifest|og\\.png|apple-touch-icon\\.png|favicon\\..*).*)",
-      "destination": "/index.html"
+      "source": "/((?!api/.*|assets/.*|robots\\.txt|sitemap\\.xml|site\\.webmanifest|404\\.html|og\\.png|apple-touch-icon\\.png|favicon\\.svg|logo\\.svg|favicon\\..*).*)",
+      "destination": "/404.html"
     }
   ],
   "headers": [
@@ -35,6 +58,14 @@
     {
       "source": "/assets/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/(logo.svg|favicon.svg|apple-touch-icon.png|site.webmanifest)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
     }
   ]
 }

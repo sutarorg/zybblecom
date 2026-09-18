@@ -1,9 +1,15 @@
-# Zybble — robots.txt
-# The marketing site is fully crawlable. The authenticated app is
-# client-side and holds no indexable content.
+# Zybble crawl policy
+# Public marketing pages are crawlable. Private product and API URLs are not
+# indexable content; robots.txt is only a crawl control, not access control.
 
 User-agent: *
 Allow: /
+Disallow: /api/
 Disallow: /app
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot
+Disallow: /reset
+Disallow: /unsubscribe
 
 Sitemap: https://zybble.com/sitemap.xml

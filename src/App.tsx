@@ -5,7 +5,7 @@ import Navbar from "./components/Navbar";
 import Pricing from "./components/Pricing";
 import Showcase from "./components/showcase/Showcase";
 import Workflow from "./components/Workflow";
-import ZybbleApp, { useHashRoute } from "./app/index";
+const ZybbleApp = lazy(() => import("./app/index"));
 import AboutPage from "./marketing/AboutPage";
 import { ArticleDetail, BlogIndex } from "./marketing/BlogPages";
 import { FeatureDetail, FeaturesIndex } from "./marketing/FeaturesPages";
@@ -13,11 +13,23 @@ import { PrivacyPage, TermsPage } from "./marketing/LegalPages";
 import NotFound from "./marketing/NotFound";
 import PricingPage from "./marketing/PricingPage";
 import { Seo, usePathname } from "./seo/Seo";
-import { isConfigured } from "./app/lib/remote";
-import React from "react";
+import { isConfigured } from "./app/lib/config";
+import React, { lazy, Suspense } from "react";
 
 const SHEET =
   "relative rounded-[24px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(20,18,15,0.03),0_40px_90px_-40px_rgba(23,20,15,0.14)] sm:rounded-[28px]";
+
+function useHashRoute(): string {
+  const [hash, setHash] = React.useState(() =>
+    typeof window === "undefined" ? "/" : window.location.hash.replace(/^#/, "") || "/"
+  );
+  React.useEffect(() => {
+    const onChange = () => setHash(window.location.hash.replace(/^#/, "") || "/");
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return hash;
+}
 
 function isAppRoute(route: string): boolean {
   return (
@@ -33,8 +45,26 @@ function isAppRoute(route: string): boolean {
 const HOME_SEO = {
   title: "Zybble — Find the businesses that need you",
   description:
-    "Zybble is the AI-powered lead generation platform that finds, enriches and researches your next customers — then helps you reach them. Free plan included.",
+    "Zybble is an AI-powered lead generation platform that helps you find, enrich and reach your next customers. Start with 100 free leads each month.",
   path: "/",
+  jsonld: {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "@id": "https://zybble.com/#software",
+    name: "Zybble",
+    url: "https://zybble.com/",
+    applicationCategory: "BusinessApplication",
+    applicationSubCategory: "Lead generation software",
+    operatingSystem: "Web",
+    description:
+      "AI-powered lead generation and outreach platform for finding, enriching, researching, scoring and contacting businesses.",
+    creator: { "@id": "https://zybble.com/#org" },
+    offers: [
+      { "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD" },
+      { "@type": "Offer", name: "Growth", price: "49", priceCurrency: "USD" },
+      { "@type": "Offer", name: "Agency", price: "129", priceCurrency: "USD" },
+    ],
+  },
 };
 
 function Landing() {
@@ -56,7 +86,7 @@ function Landing() {
       />
 
       {/* ——— Hero sheet ——— */}
-      <main className={`${SHEET} overflow-hidden`}>
+      <main id="main-content" className={`${SHEET} overflow-hidden`}>
         <Navbar />
         <Hero />
       </main>
@@ -76,7 +106,7 @@ function Landing() {
   );
 }
 
-function MarketingRouter({ path }: { path: string }) {
+export function MarketingRouter({ path }: { path: string }) {
   if (path === "/") return <Landing />;
   if (path === "/pricing") return <PricingPage />;
   if (path === "/features") return <FeaturesIndex />;
@@ -93,8 +123,12 @@ export default function App() {
   const hashRoute = useHashRoute();
   const pathname = usePathname();
 
-  // The authenticated product continues to live behind hash routes.
-  if (isAppRoute(hashRoute)) {
+  // The authenticated product continues to live behind hash routes. Treating
+  // direct auth paths the same way prevents accidental indexable 200 pages
+  // when a user lands on /login or /signup without a hash.
+  const directAppPath = isAppRoute(pathname) ? pathname : "";
+  const appRoute = isAppRoute(hashRoute) ? hashRoute : directAppPath;
+  if (appRoute) {
     if (!isConfigured()) {
       return (
         <div className="grid min-h-screen place-items-center bg-canvas px-6 text-center">
@@ -118,7 +152,15 @@ export default function App() {
     }
     return (
       <ErrorBoundary>
-        <ZybbleApp route={hashRoute} />
+        <Suspense
+          fallback={
+            <div className="grid min-h-screen place-items-center bg-canvas" aria-label="Loading Zybble">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900" />
+            </div>
+          }
+        >
+          <ZybbleApp route={appRoute} />
+        </Suspense>
       </ErrorBoundary>
     );
   }

@@ -108,7 +108,7 @@ export default function MarketingLayout({
       </header>
 
       {/* Page */}
-      <main className="flex-1">{children}</main>
+      <main id="main-content" className="flex-1">{children}</main>
 
       <Footer />
     </div>

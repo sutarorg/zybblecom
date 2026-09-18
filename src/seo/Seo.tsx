@@ -59,27 +59,59 @@ export function applySeo(props: SeoProps) {
   upsertMeta("name", "robots", props.robots ?? "index, follow, max-image-preview:large, max-snippet:-1");
   upsertLink("canonical", canonical);
 
+  upsertMeta("property", "og:site_name", "Zybble");
+  upsertMeta("property", "og:locale", "en_US");
   upsertMeta("property", "og:title", ogTitle);
   upsertMeta("property", "og:description", ogDescription);
   upsertMeta("property", "og:url", canonical);
   upsertMeta("property", "og:type", props.ogType ?? "website");
   upsertMeta("property", "og:image", ogImage);
+  upsertMeta("property", "og:image:width", "1200");
+  upsertMeta("property", "og:image:height", "630");
+  upsertMeta("property", "og:image:alt", "Zybble — AI-powered lead generation and outreach");
+  upsertMeta("name", "twitter:card", "summary_large_image");
   upsertMeta("name", "twitter:title", ogTitle);
   upsertMeta("name", "twitter:description", ogDescription);
   upsertMeta("name", "twitter:image", ogImage);
+  upsertMeta("name", "twitter:image:alt", "Zybble — AI-powered lead generation and outreach");
 
-  // Page-level JSON-LD (previous injection removed first).
+  // Replace build-time JSON-LD after hydration with one canonical graph. This
+  // keeps prerendered HTML useful to crawlers without leaving duplicate
+  // Organization/Breadcrumb objects in the live document.
   document
     .head
-    .querySelectorAll("script[data-seo-jsonld]")
+    .querySelectorAll('script[type="application/ld+json"][data-static-jsonld], script[data-seo-jsonld]')
     .forEach((n) => n.remove());
-  if (props.jsonld) {
-    const script = document.createElement("script");
-    script.type = "application/ld+json";
-    script.setAttribute("data-seo-jsonld", "true");
-    script.textContent = JSON.stringify(props.jsonld);
-    document.head.appendChild(script);
-  }
+  const baseJsonLd = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#org`,
+      name: "Zybble",
+      url: `${SITE_URL}/`,
+      logo: { "@type": "ImageObject", url: `${SITE_URL}/logo.svg`, width: 938, height: 938 },
+      email: "hello@zybble.com",
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
+      name: "Zybble",
+      publisher: { "@id": `${SITE_URL}/#org` },
+      inLanguage: "en",
+    },
+  ];
+  const pageJsonLd = props.jsonld
+    ? Array.isArray(props.jsonld)
+      ? props.jsonld
+      : [props.jsonld]
+    : [];
+  const script = document.createElement("script");
+  script.type = "application/ld+json";
+  script.setAttribute("data-seo-jsonld", "true");
+  script.textContent = JSON.stringify([...baseJsonLd, ...pageJsonLd]);
+  document.head.appendChild(script);
 }
 
 /** Route-aware head manager. Also resets scroll on navigation. */
@@ -99,7 +131,9 @@ export function noindexApp() {
 // ————————————————— Pathname routing —————————————————
 
 export function usePathname(): string {
-  const [path, setPath] = useState(() => window.location.pathname);
+  const [path, setPath] = useState(() =>
+    typeof window === "undefined" ? "/" : window.location.pathname
+  );
   useEffect(() => {
     const onNav = () => setPath(window.location.pathname);
     window.addEventListener("popstate", onNav);

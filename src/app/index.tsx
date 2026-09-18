@@ -14,7 +14,9 @@ import Shell from "./ui/shell";
 import { Toaster } from "./ui/kit";
 
 export function useHashRoute(): string {
-  const [hash, setHash] = useState(() => window.location.hash.replace(/^#/, "") || "/");
+  const [hash, setHash] = useState(() =>
+    typeof window === "undefined" ? "/" : window.location.hash.replace(/^#/, "") || "/"
+  );
   useEffect(() => {
     const onChange = () => setHash(window.location.hash.replace(/^#/, "") || "/");
     window.addEventListener("hashchange", onChange);

@@ -1,6 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { db } from "./db";
 import type { Table } from "./types";
+import { isConfigured } from "./config";
+
+export { isConfigured } from "./config";
 
 // ————————————————————————————————————————————————————————————
 // Backend integration.
@@ -18,10 +21,6 @@ const SUPABASE_ANON_KEY = viteEnv?.VITE_SUPABASE_ANON_KEY;
 
 /** The API is always same-origin — there is no separately hosted API. */
 export const API_URL = "";
-
-export function isConfigured(): boolean {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-}
 
 let _sb: SupabaseClient | null = null;
 export function supabase(): SupabaseClient {

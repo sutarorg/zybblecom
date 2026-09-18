@@ -31,6 +31,16 @@ body {
   color: #ffffff;
 }
 
+:focus-visible {
+  outline: 3px solid #6366f1;
+  outline-offset: 3px;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* ————— Motion primitives ————— */
 
 @keyframes float-y {

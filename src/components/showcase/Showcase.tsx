@@ -27,7 +27,7 @@ const SECTIONS: Section[] = [
     n: "01",
     tag: "Find",
     title: "Find leads without the endless searching.",
-    copy: "Describe your market in plain language. Zybble scans millions of local and B2B businesses and returns clean, verified, outreach-ready leads — in seconds, not weekends.",
+    copy: "Describe your market in plain language. Zybble searches public business listings and returns clean, deduplicated leads with the context you need to decide who to contact.",
     bullets: [
       "Search by industry, location and size",
       "Verified emails and company data included",
@@ -46,7 +46,7 @@ const SECTIONS: Section[] = [
     bullets: [
       "Transparent score breakdowns",
       "Fit measured against your real ICP",
-      "Focus your effort on the top 5%",
+      "Focus your effort on the strongest fit signals",
     ],
     cta: "See AI scoring",
     mock: <MockScore />,
@@ -57,11 +57,11 @@ const SECTIONS: Section[] = [
     n: "03",
     tag: "Understand",
     title: "Understand every prospect before you reach out.",
-    copy: "Zybble reads each business's website, reviews and footprint, then hands you a brief: what they do, what they care about, and the angle most likely to land.",
+    copy: "Zybble reads each business's website, reviews and footprint, then hands you a brief: what they do, what they care about, and a potential angle to review.",
     bullets: [
-      "Company briefs in seconds",
+      "Company briefs from public signals",
       "Signals from reviews and the web",
-      "A clear outreach angle, every time",
+      "A clear outreach angle to review",
     ],
     cta: "Explore AI research",
     mock: <MockResearch />,
@@ -87,7 +87,7 @@ const SECTIONS: Section[] = [
     n: "05",
     tag: "Reach",
     title: "Follow up without following up manually.",
-    copy: "Most replies arrive after the second touch. Set a simple cadence once — Zybble sends, waits and follows up until you get an answer.",
+    copy: "Give each follow-up a clear job. Set a simple cadence once — Zybble sends, waits and follows up until you get an answer.",
     bullets: [
       "Simple day-based cadences",
       "Stops automatically on reply",

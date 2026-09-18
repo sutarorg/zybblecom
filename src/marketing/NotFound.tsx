@@ -22,7 +22,7 @@ export default function NotFound() {
           </MLink>
         </div>
       </header>
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
+      <main id="main-content" className="flex flex-1 items-center justify-center px-6 py-24">
         <div className="text-center">
           <p className="flex items-center justify-center gap-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-neutral-400">
             <Search className="h-3.5 w-3.5" /> 404

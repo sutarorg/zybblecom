@@ -426,7 +426,7 @@ function CampaignDetail({ userId, campaignId }: { userId: string; campaignId: st
               onClick={async () => {
                 try {
                   await launchCampaign(c.id);
-                  toast(`“${c.name}” launched — first emails go out within seconds`);
+                  toast(`“${c.name}” launched — first emails are queued shortly`);
                 } catch (e) {
                   toast(e instanceof Error ? e.message : "Cannot launch.", "error");
                 }

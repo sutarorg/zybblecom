@@ -445,11 +445,11 @@ Or **GitHub → Actions → Production E2E → Run workflow** after adding the
 ```bash
 npm install
 npm run typecheck     # frontend + API in one pass
-npm run build
-npm test              # API tests + Lead Finder tests + scraper worker tests
+npm run build         # client build + public-route prerender + SEO verification
+npm test             # API tests + Lead Finder tests + scraper worker tests
 ```
 
-`npm test` runs, in order:
+`npm run verify:seo` checks the generated marketing documents, canonical URLs, titles, descriptions, robots controls, JSON-LD, sitemap and brand assets. `npm test` runs, in order:
 
 | Script | What it checks |
 | --- | --- |
