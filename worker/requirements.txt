@@ -1,4 +1,14 @@
-selenium==4.25.0
-requests==2.32.3
-dnspython==2.7.0
-beautifulsoup4==4.12.3
+# Zybble scraper worker — Python runtime dependencies.
+#
+# The Google Maps discovery engine is NOT a Python dependency: it is the Go
+# binary `google-maps-scraper` from https://github.com/gosom/google-maps-scraper
+# (pinned in worker/vendor/engine.json) that worker/Dockerfile builds from
+# source and worker/gmaps_engine.py runs as a child process. It drives Chromium
+# through Playwright, so this image needs no Selenium, no chromedriver and no
+# BeautifulSoup — all three went away with the retired vendored scraper.
+#
+# requests   → Nominatim geocoding (coverage.py), website scan (email_finder.py),
+#              and the /api/worker/* control plane (worker.py)
+# dnspython  → DNS MX verification of every discovered address (email_finder.py)
+requests==2.34.2
+dnspython==2.8.0

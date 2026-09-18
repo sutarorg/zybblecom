@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from coverage import GeoBox, build_coverage, build_tiles, geocode_location, zoom_for_radius
-from tests.fake_maps import DELHI_BOX, MUMBAI_BOX, geocode_stub
+from tests.fake_gms import DELHI_BOX, MUMBAI_BOX, geocode_stub
 
 
 class ZoomTest(unittest.TestCase):

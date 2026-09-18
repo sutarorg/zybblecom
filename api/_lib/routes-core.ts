@@ -89,7 +89,8 @@ export function registerCore(r: Router) {
   // ————— Lead Finder: enqueue a search job —————
   //
   // Discovery runs on the Railway scraper worker, which drives real Google
-  // Maps through the open-source GoogleMapScraper engine (worker/scraper.py).
+  // Maps through the open-source google-maps-scraper engine
+  // (worker/gmaps_engine.py → worker/scraper.py).
   // No Google Maps API key, Places API or Geocoding API is involved anywhere
   // in this path — Vercel only creates the durable job and tracks it.
   r.post("/api/search", async ({ req, json }) => {
@@ -109,7 +110,7 @@ export function registerCore(r: Router) {
     if (!env.scraperWorkerSecret) {
       throw new HttpError(
         503,
-        "Lead Finder is not configured: set SCRAPER_WORKER_SECRET in Vercel (and in the Railway worker) so the GoogleMapScraper worker can claim search jobs.",
+        "Lead Finder is not configured: set SCRAPER_WORKER_SECRET in Vercel (and in the Railway worker) so the scraper worker can claim search jobs.",
       );
     }
 

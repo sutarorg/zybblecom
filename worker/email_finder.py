@@ -10,6 +10,11 @@ Zybble additions:
     a job. Missing or unusable emails are reported as ``unknown``.
   * public social profiles published on the same pages are collected too, which
     powers the "has social profile" lead filter.
+  * :func:`find_site_intel` also accepts ``candidates`` — addresses the scraping
+    engine (`gosom/google-maps-scraper`, ``-email``) already read on the same
+    website. They go through exactly the same validation and DNS MX check as
+    addresses found here, are only used when this scan finds nothing, and are
+    reported as ``risky`` because the publishing page is not re-verified.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ import ipaddress
 import re
 import socket
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Sequence
 from urllib.parse import urljoin, urlparse
 
 import dns.exception
@@ -210,8 +215,28 @@ class SiteIntel:
     social_profiles: list[str] = field(default_factory=list)
 
 
-def find_site_intel(site_url: str) -> Optional[SiteIntel]:
+def verify_candidate_emails(candidates: Optional[Sequence[str]]) -> Optional[str]:
+    """Validate engine-supplied addresses; return the first that can receive mail.
+
+    Nothing is invented and nothing unverified is returned: an address that is
+    syntactically invalid, or whose domain publishes no MX record, is dropped.
+    """
+    for raw in candidates or ():
+        email = normalize_email(raw)
+        if not email:
+            continue
+        if _mx(email.rsplit("@", 1)[1]) is False:
+            continue
+        return email
+    return None
+
+
+def find_site_intel(site_url: str, engine_candidates: Optional[Sequence[str]] = None) -> Optional[SiteIntel]:
     """Discover a published address *and* public social profiles.
+
+    ``engine_candidates`` are addresses the scraping engine already read on this
+    website; they are used only when this scan finds nothing, and are held to
+    the same validation + DNS MX rules.
 
     Raises nothing for unreachable or malformed sites: callers treat a missing
     address as ``unknown`` and keep the lead.
@@ -258,6 +283,16 @@ def find_site_intel(site_url: str) -> Optional[SiteIntel]:
             deduped_socials.append(url)
 
     if not ranked:
+        # Nothing published where we looked. Fall back to the addresses the
+        # scraping engine read on this site — validated and MX-checked here.
+        candidate = verify_candidate_emails(engine_candidates)
+        if candidate:
+            return SiteIntel(
+                email=candidate,
+                status="risky",
+                source_url=base,
+                social_profiles=deduped_socials[:MAX_SOCIALS],
+            )
         # No valid address — social profiles are still real enrichment.
         return (
             SiteIntel(email=None, status="unknown", source_url=base, social_profiles=deduped_socials[:MAX_SOCIALS])

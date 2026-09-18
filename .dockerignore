@@ -9,3 +9,9 @@ src
 public
 supabase
 scripts
+
+# Python / test artefacts — never part of the worker image build context
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/

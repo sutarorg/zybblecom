@@ -12,6 +12,10 @@ dist/
 # Platform
 .vercel/
 
+# Python virtualenvs (dev only — the worker image installs its own)
+.venv/
+venv/
+
 # OS / logs
 .DS_Store
 npm-debug.log*

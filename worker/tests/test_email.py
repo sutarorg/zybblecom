@@ -159,5 +159,91 @@ class DiscoveryTest(unittest.TestCase):
                 self.assertFalse(ef._public_url(host))
 
 
+class EngineCandidatesTest(unittest.TestCase):
+    """Addresses the engine read on a business website (SCRAPER_ENGINE_EXTRACT_EMAIL=1).
+
+    The engine is a *source of candidates*, not of truth: every address is held
+    to Zybble's own syntax, role-address and DNS MX rules, and is never ranked
+    above what the business publishes where we looked.
+    """
+
+    def setUp(self):
+        self.original_fetch = ef._fetch
+        self.original_mx = ef._mx
+
+    def tearDown(self):
+        ef._fetch = self.original_fetch
+        ef._mx = self.original_mx
+
+    def test_a_published_address_wins_over_an_engine_candidate(self):
+        ef._fetch = lambda url: CONTACT_PAGE if url.endswith("/contact") else "<html></html>"
+        ef._mx = lambda domain: True
+        intel = find_site_intel("https://ironyard.example.in", engine_candidates=["other@example.in"])
+        self.assertIsNotNone(intel)
+        self.assertEqual(intel.email, "hello@ironyard.example.in")
+        self.assertEqual(intel.status, "verified")
+
+    def test_a_candidate_is_used_when_the_site_publishes_nothing(self):
+        ef._fetch = lambda url: NO_EMAIL_PAGE
+        ef._mx = lambda domain: True
+        intel = find_site_intel("https://ironyard.example.in",
+                                engine_candidates=["Contact@IronYard.example.in"])
+        self.assertIsNotNone(intel)
+        self.assertEqual(intel.email, "contact@ironyard.example.in")
+        self.assertEqual(intel.status, "risky", "an engine-read address is never claimed as verified")
+        self.assertEqual(intel.source_url, "https://ironyard.example.in")
+
+    def test_a_candidate_on_a_domain_without_mail_records_is_dropped(self):
+        ef._fetch = lambda url: NO_EMAIL_PAGE
+        ef._mx = lambda domain: False
+        intel = find_site_intel("https://x.example.in", engine_candidates=["hello@x.example.in"])
+        self.assertTrue(intel is None or intel.email is None)
+
+    def test_invalid_and_role_addresses_never_survive(self):
+        ef._fetch = lambda url: NO_EMAIL_PAGE
+        ef._mx = lambda domain: True
+        for bad in ("not-an-email", "noreply@x.example.in", "hello@", "a@b"):
+            with self.subTest(candidate=bad):
+                self.assertIsNone(ef.verify_candidate_emails([bad]))
+        intel = find_site_intel("https://x.example.in",
+                                engine_candidates=["noreply@x.example.in", "sales@x.example.in"])
+        self.assertIsNotNone(intel)
+        self.assertEqual(intel.email, "sales@x.example.in")
+
+    def test_without_candidates_the_behaviour_is_unchanged(self):
+        ef._fetch = lambda url: NO_EMAIL_PAGE
+        ef._mx = lambda domain: True
+        self.assertIsNone(find_site_intel("https://x.example.in"))
+        self.assertIsNone(find_site_intel("https://x.example.in", engine_candidates=[]))
+        self.assertIsNone(find_email("https://x.example.in"))
+
+    def test_social_profiles_survive_alongside_a_candidate(self):
+        ef._fetch = lambda url: (
+            '<html><body><a href="https://www.instagram.com/ironyard">ig</a></body></html>'
+            if url.endswith("/contact")
+            else "<html></html>"
+        )
+        ef._mx = lambda domain: True
+        intel = find_site_intel("https://ironyard.example.in",
+                                engine_candidates=["hello@ironyard.example.in"])
+        self.assertIsNotNone(intel)
+        self.assertEqual(intel.email, "hello@ironyard.example.in")
+        self.assertEqual(len(intel.social_profiles), 1)
+
+    def test_verify_returns_the_first_address_that_can_receive_mail(self):
+        ef._mx = lambda domain: domain.endswith("example.in")
+        self.assertEqual(
+            ef.verify_candidate_emails(["bad", "hello@nope.test", "ok@example.in", "second@example.in"]),
+            "ok@example.in",
+        )
+        self.assertIsNone(ef.verify_candidate_emails(None))
+        self.assertIsNone(ef.verify_candidate_emails([]))
+        self.assertIsNone(ef.verify_candidate_emails(["hello@nope.test"]))
+
+    def test_a_candidate_never_bypasses_the_public_host_check(self):
+        """An internal address in the engine output is still just a string here."""
+        self.assertIsNone(find_site_intel("http://169.254.169.254", engine_candidates=["a@b.example.in"]))
+
+
 if __name__ == "__main__":
     unittest.main()
