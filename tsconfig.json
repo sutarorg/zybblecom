@@ -10,6 +10,12 @@
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    /* The api/ code imports with explicit ".ts" extensions. Vercel's Node
+       builder compiles api/*.ts with tsc using THIS tsconfig; without this
+       flag the emitted .js keeps `from "./_lib/application.ts"`, which
+       Node cannot resolve at runtime (ERR_MODULE_NOT_FOUND) and every /api/*
+       request fails with 500 FUNCTION_INVOCATION_FAILED. Requires TS >= 5.7. */
+    "rewriteRelativeImportExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

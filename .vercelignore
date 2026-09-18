@@ -4,6 +4,8 @@ node_modules
 dist
 supabase
 scripts
+# …except the build-time guard that `npm run build` runs.
+!scripts/verify-api-emit.mjs
 worker
 .github
 .env
