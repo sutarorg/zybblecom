@@ -3,7 +3,11 @@
 node_modules
 dist
 supabase
-scripts
+# Ignore the directory's *contents* (not the directory itself) so the one
+# build-time guard that `npm run build` runs can be re-included below —
+# gitignore semantics cannot un-ignore a file inside an ignored directory.
+scripts/*
+!scripts/verify-api-emit.mjs
 worker
 .github
 .env
