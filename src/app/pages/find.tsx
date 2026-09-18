@@ -1,62 +1,137 @@
 import { motion } from "framer-motion";
-import { ArrowRight, MapPin, Search, Sparkles } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  ArrowRight,
+  ChevronDown,
+  Filter as FilterIcon,
+  MapPin,
+  Search,
+  Sparkles,
+} from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useDb, db } from "../lib/db";
 import { startSearch } from "../lib/engine";
 import { leadsRemaining, QuotaError } from "../lib/plans";
-import type { SearchJob } from "../lib/types";
+import type { EmailStatus, JobCounts, OpenStatus, SearchFilters, SearchJob, SortBy } from "../lib/types";
 import { cn } from "../../utils/cn";
-import { Badge, Button, Card, Field, Input, Select, StageStepper, stageLabel, toast, UsageMeter } from "../ui/kit";
+import {
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  Select,
+  StageStepper,
+  stageLabel,
+  toast,
+  UsageMeter,
+} from "../ui/kit";
 import { getPlan, getUsage } from "../lib/plans";
 
 const SUGGESTIONS = [
   { q: "Dentists", l: "Texas" },
   { q: "Roofing companies", l: "Dallas" },
   { q: "Marketing agencies", l: "London" },
-  { q: "HVAC companies", l: "Arizona" },
+  { q: "Gym", l: "Delhi" },
 ];
+
+const EMPTY_COUNTS: JobCounts = {
+  requested: 0,
+  discovered: 0,
+  unique: 0,
+  duplicates: 0,
+  filtered: 0,
+  enriched: 0,
+  email_found: 0,
+  errors: 0,
+  coverage_total: 0,
+  coverage_done: 0,
+  saved: 0,
+};
+
+function countsOf(job: SearchJob): JobCounts {
+  return {
+    ...EMPTY_COUNTS,
+    requested: job.requested ?? job.quantity,
+    saved: job.collected,
+    ...(job.counts ?? {}),
+  };
+}
+
+// ————————————————————————————————————————————————————————————
+// Live job card
+// ————————————————————————————————————————————————————————————
+
+function Metric({ label, value, tone }: { label: string; value: number | string; tone?: string }) {
+  return (
+    <div className="min-w-[62px]">
+      <p className={cn("text-[15px] font-semibold tabular-nums", tone ?? "text-neutral-900")}>{value}</p>
+      <p className="text-[10.5px] font-medium uppercase tracking-wide text-neutral-400">{label}</p>
+    </div>
+  );
+}
 
 function JobRow({ job }: { job: SearchJob }) {
   const live = job.status !== "complete" && job.status !== "failed";
+  const counts = countsOf(job);
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[13.5px] font-semibold text-neutral-900">{job.query}</p>
-          <span className="inline-flex items-center gap-1 text-[11.5px] text-neutral-400">
-            <MapPin className="h-3 w-3" />
-            {job.location}
-          </span>
-          {job.status === "complete" ? (
-            <Badge tone="green">Complete</Badge>
-          ) : job.status === "failed" ? (
-            <Badge tone="red">Failed</Badge>
-          ) : (
-            <Badge tone="blue">{stageLabel(job.status)}</Badge>
-          )}
-        </div>
-        <div className="mt-2 flex items-center gap-3">
-          <StageStepper status={job.status} />
-          <span className="text-[11px] font-medium text-neutral-400">
-            {job.collected}/{job.quantity} leads · {job.progress}%
-          </span>
-        </div>
-        {job.status === "failed" && job.error && (
-          <p className="mt-2 text-[12px] font-medium text-red-600">{job.error}</p>
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="px-5 py-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-[13.5px] font-semibold text-neutral-900">{job.query}</p>
+        <span className="inline-flex items-center gap-1 text-[11.5px] text-neutral-400">
+          <MapPin className="h-3 w-3" />
+          {job.location}
+        </span>
+        {job.status === "complete" ? (
+          <Badge tone="green">Complete</Badge>
+        ) : job.status === "failed" ? (
+          <Badge tone="red">Failed</Badge>
+        ) : (
+          <Badge tone="blue">{stageLabel(job.status)}</Badge>
         )}
+        {job.status === "queued" && <Badge tone="blue">Waiting for the scraper worker</Badge>}
+        {counts.errors > 0 && <Badge tone="amber">{counts.errors} warnings</Badge>}
+        <span className="ml-auto text-[11.5px] font-medium text-neutral-400">{job.progress}%</span>
       </div>
-      <div className="flex shrink-0 items-center gap-3">
-        {live && (
-          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-neutral-200/70 sm:w-32">
-            <div className="h-full rounded-full bg-neutral-900 transition-all duration-500" style={{ width: `${job.progress}%` }} />
+
+      <div className="mt-3">
+        <StageStepper status={job.status} labels />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 lg:grid-cols-7">
+        <Metric label="Requested" value={counts.requested || job.quantity} />
+        <Metric label="Discovered" value={counts.discovered} />
+        <Metric label="Unique" value={counts.unique} />
+        <Metric label="Saved" value={counts.saved} />
+        <Metric label="Duplicates" value={counts.duplicates} />
+        <Metric label="Filtered" value={counts.filtered} />
+        <Metric label="Emails" value={counts.email_found} tone="text-emerald-600" />
+      </div>
+
+      {live && (
+        <div className="mt-3">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-200/70">
+            <div
+              className="h-full rounded-full bg-neutral-900 transition-all duration-500"
+              style={{ width: `${job.progress}%` }}
+            />
           </div>
-        )}
-        {job.status === "complete" && (
+          <p className="mt-2 text-[11.5px] font-medium text-neutral-400">
+            {job.message ??
+              (counts.coverage_total > 0
+                ? `Search coverage ${counts.coverage_done}/${counts.coverage_total} · ${counts.saved}/${job.quantity} leads saved`
+                : `Collecting ${counts.saved}/${job.quantity} leads`)}
+          </p>
+        </div>
+      )}
+
+      {job.status === "complete" && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[12px] font-medium text-neutral-500">
+            {job.message ??
+              `Saved ${counts.saved} of ${job.quantity} requested · ${counts.email_found} with an email${
+                counts.duplicates ? ` · ${counts.duplicates} duplicates skipped` : ""
+              }`}
+          </p>
           <a
             href="#/app/leads"
             className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-neutral-950 hover:underline underline-offset-4"
@@ -64,17 +139,326 @@ function JobRow({ job }: { job: SearchJob }) {
             View leads
             <ArrowRight className="h-3.5 w-3.5" />
           </a>
-        )}
-      </div>
+        </div>
+      )}
+
+      {job.status === "failed" && job.error && (
+        <p className="mt-3 text-[12px] font-medium text-red-600">{job.error}</p>
+      )}
     </motion.div>
   );
 }
 
+// ————————————————————————————————————————————————————————————
+// Filters
+// ————————————————————————————————————————————————————————————
+
+const EMAIL_STATUS_OPTIONS: EmailStatus[] = ["verified", "risky", "invalid", "unknown"];
+const OPEN_STATUS_OPTIONS: OpenStatus[] = ["open", "closed", "permanently_closed", "unknown"];
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: "relevance", label: "Relevance" },
+  { value: "rating", label: "Highest rating" },
+  { value: "reviews", label: "Most reviews" },
+  { value: "newest", label: "Newest collected" },
+];
+
+function TriState({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean | null;
+  onChange: (next: boolean | null) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{label}</p>
+      <div className="flex overflow-hidden rounded-lg border border-black/[0.08]">
+        {(
+          [
+            { v: null, l: "Any" },
+            { v: true, l: "Yes" },
+            { v: false, l: "No" },
+          ] as { v: boolean | null; l: string }[]
+        ).map((option) => (
+          <button
+            key={option.l}
+            type="button"
+            onClick={() => onChange(option.v)}
+            className={cn(
+              "flex-1 px-2 py-1.5 text-[11.5px] font-medium transition-colors",
+              value === option.v ? "bg-neutral-900 text-white" : "bg-white text-neutral-500 hover:bg-neutral-50",
+            )}
+          >
+            {option.l}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MultiSelect({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly string[];
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{label}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((option) => {
+          const active = value.includes(option);
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() =>
+                onChange(active ? value.filter((item) => item !== option) : [...value, option])
+              }
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[11.5px] font-medium capitalize transition-colors",
+                active
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-black/[0.08] bg-white text-neutral-500 hover:border-neutral-400",
+              )}
+            >
+              {option.replace("_", " ")}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-3.5 w-3.5 rounded border-neutral-300 accent-neutral-900"
+      />
+      <span>
+        <span className="block text-[12.5px] font-medium text-neutral-800">{label}</span>
+        {hint && <span className="block text-[11px] text-neutral-400">{hint}</span>}
+      </span>
+    </label>
+  );
+}
+
+function FilterPanel({
+  filters,
+  onChange,
+}: {
+  filters: Partial<SearchFilters>;
+  onChange: (next: Partial<SearchFilters>) => void;
+}) {
+  const set = <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) =>
+    onChange({ ...filters, [key]: value });
+
+  return (
+    <div className="mt-4 space-y-4 rounded-xl border border-black/[0.06] bg-neutral-50/60 p-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Country">
+          <Input
+            value={filters.country ?? ""}
+            onChange={(e) => set("country", e.target.value || null)}
+            placeholder="India"
+          />
+        </Field>
+        <Field label="State / region">
+          <Input
+            value={filters.state ?? ""}
+            onChange={(e) => set("state", e.target.value || null)}
+            placeholder="Delhi"
+          />
+        </Field>
+        <Field label="City">
+          <Input
+            value={filters.city ?? ""}
+            onChange={(e) => set("city", e.target.value || null)}
+            placeholder="New Delhi"
+          />
+        </Field>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Field label="Min rating">
+          <Input
+            type="number"
+            min={0}
+            max={5}
+            step={0.1}
+            value={filters.min_rating ?? ""}
+            onChange={(e) => set("min_rating", e.target.value === "" ? null : Number(e.target.value))}
+            placeholder="0"
+          />
+        </Field>
+        <Field label="Max rating">
+          <Input
+            type="number"
+            min={0}
+            max={5}
+            step={0.1}
+            value={filters.max_rating ?? ""}
+            onChange={(e) => set("max_rating", e.target.value === "" ? null : Number(e.target.value))}
+            placeholder="5"
+          />
+        </Field>
+        <Field label="Min reviews">
+          <Input
+            type="number"
+            min={0}
+            value={filters.min_reviews ?? ""}
+            onChange={(e) => set("min_reviews", e.target.value === "" ? null : Number(e.target.value))}
+            placeholder="0"
+          />
+        </Field>
+        <Field label="Max reviews">
+          <Input
+            type="number"
+            min={0}
+            value={filters.max_reviews ?? ""}
+            onChange={(e) => set("max_reviews", e.target.value === "" ? null : Number(e.target.value))}
+            placeholder="any"
+          />
+        </Field>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-4">
+        <TriState label="Has website" value={filters.has_website ?? null} onChange={(v) => set("has_website", v)} />
+        <TriState label="Has phone" value={filters.has_phone ?? null} onChange={(v) => set("has_phone", v)} />
+        <TriState label="Has email" value={filters.has_email ?? null} onChange={(v) => set("has_email", v)} />
+        <TriState label="Social profile" value={filters.has_social ?? null} onChange={(v) => set("has_social", v)} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <MultiSelect
+          label="Email status"
+          options={EMAIL_STATUS_OPTIONS}
+          value={(filters.email_status ?? []) as string[]}
+          onChange={(next) => set("email_status", next as EmailStatus[])}
+        />
+        <MultiSelect
+          label="Open / closed"
+          options={OPEN_STATUS_OPTIONS}
+          value={(filters.open_status ?? []) as string[]}
+          onChange={(next) => set("open_status", next as OpenStatus[])}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Must include keywords">
+          <Input
+            value={(filters.keywords_include ?? []).join(", ")}
+            onChange={(e) =>
+              set(
+                "keywords_include",
+                e.target.value
+                  .split(",")
+                  .map((item) => item.trim())
+                  .filter(Boolean),
+              )
+            }
+            placeholder="crossfit, 24 hour"
+          />
+        </Field>
+        <Field label="Exclude keywords">
+          <Input
+            value={(filters.keywords_exclude ?? []).join(", ")}
+            onChange={(e) =>
+              set(
+                "keywords_exclude",
+                e.target.value
+                  .split(",")
+                  .map((item) => item.trim())
+                  .filter(Boolean),
+              )
+            }
+            placeholder="franchise, closed"
+          />
+        </Field>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Sort results by">
+          <Select value={filters.sort_by ?? "relevance"} onChange={(e) => set("sort_by", e.target.value as SortBy)}>
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="sm:col-span-2 grid gap-2 sm:grid-cols-2">
+          <Toggle
+            label="Only businesses with a website"
+            checked={Boolean(filters.websites_only)}
+            onChange={(v) => set("websites_only", v)}
+          />
+          <Toggle
+            label="Only businesses with public contact details"
+            hint="website or phone number"
+            checked={Boolean(filters.contactable_only)}
+            onChange={(v) => set("contactable_only", v)}
+          />
+          <Toggle
+            label="Skip businesses I already collected"
+            checked={filters.exclude_previously_collected !== false}
+            onChange={(v) => set("exclude_previously_collected", v)}
+          />
+          <Toggle
+            label="Only verified/enriched records"
+            hint="email status resolved"
+            checked={Boolean(filters.enriched_only)}
+            onChange={(v) => set("enriched_only", v)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function activeFilterCount(filters: Partial<SearchFilters>): number {
+  return Object.entries(filters).filter(([key, value]) => {
+    if (key === "exclude_previously_collected") return value === false;
+    if (key === "sort_by") return value !== undefined && value !== "relevance";
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== null && value !== undefined && value !== "" && value !== false;
+  }).length;
+}
+
+// ————————————————————————————————————————————————————————————
+// Page
+// ————————————————————————————————————————————————————————————
+
 export default function FindLeads({ userId }: { userId: string }) {
   useDb(["search_jobs", "usage"]);
   const [, tick] = useState(0);
+  // Re-render between server syncs (the shell syncs every 6s) so progress
+  // moves smoothly while a search runs.
   useEffect(() => {
-    const t = setInterval(() => tick((x) => x + 1), 500);
+    const t = setInterval(() => tick((x) => x + 1), 2000);
     return () => clearInterval(t);
   }, []);
 
@@ -82,6 +466,8 @@ export default function FindLeads({ userId }: { userId: string }) {
   const [location, setLocation] = useState("");
   const [quantity, setQuantity] = useState("25");
   const [radius, setRadius] = useState("25000");
+  const [filters, setFilters] = useState<Partial<SearchFilters>>({ sort_by: "relevance" });
+  const [showFilters, setShowFilters] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -93,6 +479,8 @@ export default function FindLeads({ userId }: { userId: string }) {
     .where<SearchJob>("search_jobs", (j) => j.user_id === userId)
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 
+  const activeCount = useMemo(() => activeFilterCount(filters), [filters]);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -103,8 +491,10 @@ export default function FindLeads({ userId }: { userId: string }) {
         location,
         quantity: Number(quantity),
         radiusMeters: Number(radius),
+        filters,
+        sortBy: filters.sort_by ?? "relevance",
       });
-      toast(`Searching for "${job.query}" in ${job.location}`);
+      toast(`Searching for “${job.query}” in ${job.location}`);
       setQuery("");
       setLocation("");
     } catch (err) {
@@ -125,7 +515,8 @@ export default function FindLeads({ userId }: { userId: string }) {
               Who are you looking for?
             </h2>
             <p className="mt-1 text-[13px] text-neutral-500">
-              Zybble finds, enriches and verifies real local businesses — then hands them to AI.
+              Zybble searches Google Maps across the whole area, deduplicates, enriches and finds published
+              emails — then hands them to AI.
             </p>
           </div>
           <div className="w-full sm:w-56">
@@ -138,14 +529,14 @@ export default function FindLeads({ userId }: { userId: string }) {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="dentists, roofers, agencies…"
+              placeholder="dentists, roofers, gyms…"
             />
           </Field>
           <Field label="Location">
             <Input
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              placeholder="Texas, Dallas, London…"
+              placeholder="Texas, Dallas, Delhi…"
             />
           </Field>
           <Field label="Radius">
@@ -179,10 +570,36 @@ export default function FindLeads({ userId }: { userId: string }) {
           </div>
         </form>
 
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-neutral-700 hover:text-neutral-950"
+          >
+            <FilterIcon className="h-3.5 w-3.5" />
+            Professional filters
+            {activeCount > 0 && (
+              <span className="rounded-full bg-neutral-900 px-1.5 py-0.5 text-[10.5px] font-semibold text-white">
+                {activeCount}
+              </span>
+            )}
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showFilters && "rotate-180")} />
+          </button>
+          {showFilters && (
+            <FilterPanel
+              filters={filters}
+              onChange={(next) => setFilters({ ...next, sort_by: next.sort_by ?? "relevance" })}
+            />
+          )}
+        </div>
+
         {error && (
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200/70 bg-amber-50/70 px-4 py-3">
             <p className="text-[12.5px] font-medium text-amber-800">{error}</p>
-            <a href="#/app/billing" className="ml-auto text-[12.5px] font-semibold text-neutral-950 hover:underline underline-offset-4">
+            <a
+              href="#/app/billing"
+              className="ml-auto text-[12.5px] font-semibold text-neutral-950 hover:underline underline-offset-4"
+            >
               Upgrade plan
             </a>
           </div>
@@ -199,7 +616,7 @@ export default function FindLeads({ userId }: { userId: string }) {
                 setLocation(s.l);
               }}
               className={cn(
-                "rounded-full border border-black/[0.07] px-2.5 py-1 text-[11.5px] font-medium text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+                "rounded-full border border-black/[0.07] px-2.5 py-1 text-[11.5px] font-medium text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900",
               )}
             >
               {s.q} · {s.l}
@@ -215,9 +632,7 @@ export default function FindLeads({ userId }: { userId: string }) {
       {/* Jobs */}
       <div>
         <div className="mb-3 flex items-center justify-between px-1">
-          <h3 className="font-display text-[14px] font-semibold text-neutral-950">
-            Searches
-          </h3>
+          <h3 className="font-display text-[14px] font-semibold text-neutral-950">Searches</h3>
           <span className="text-[11.5px] text-neutral-400">{jobs.length} total</span>
         </div>
         <Card className="divide-y divide-black/[0.05]">

@@ -29,28 +29,104 @@ const BLOCKED_DOMAIN_FRAGMENTS = [
 const BLOCKED_SUFFIXES = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js"];
 
 const CONTACT_PATHS = ["/contact", "/contact-us", "/about", "/about-us"];
+
+// Public social profiles published on the business's own pages power the
+// "has social profile" lead filter.
+const SOCIAL_RE = /https?:\/\/(?:[\w-]+\.)*(facebook\.com|instagram\.com|linkedin\.com|twitter\.com|x\.com|youtube\.com|tiktok\.com|pinterest\.com)\/[^\s<>]+/gi;
+const MAX_SOCIALS = 5;
+
+export function extractSocialProfiles(html: string): string[] {
+  if (!html) return [];
+  const found: string[] = [];
+  for (const match of html.matchAll(SOCIAL_RE)) {
+    const url = match[0].trim().replace(/[.,;)"']+$/g, "");
+    if (!found.includes(url)) found.push(url);
+    if (found.length >= MAX_SOCIALS) break;
+  }
+  return found;
+}
+
+/** Strict syntax validation. An invalid address is discarded, never stored. */
+export function normalizeEmail(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  let value = raw.trim().trim();
+  if (value.toLowerCase().startsWith("mailto:")) value = value.slice(7);
+  value = value.split("?")[0].split("#")[0].trim();
+  value = value.replace(/^[.,;:()\[\]{}<>"'\s]+|[.,;:()\[\]{}<>"'\s]+$/g, "");
+  value = value.toLowerCase();
+  if (!value || value.length > 254 || !value.includes("@")) return null;
+  const at = value.lastIndexOf("@");
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (!local || !domain || local.length > 64) return null;
+  if (value.includes("..") || local.startsWith(".") || local.endsWith(".")) return null;
+  if (domain.startsWith(".") || domain.endsWith(".") || domain.startsWith("-")) return null;
+  if (BLOCKED_LOCAL.has(local)) return null;
+  if (BLOCKED_DOMAIN_FRAGMENTS.some((fragment) => domain.includes(fragment))) return null;
+  if (BLOCKED_SUFFIXES.some((suffix) => value.endsWith(suffix))) return null;
+  if (!/^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(value)) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Make any worker payload safe to store.
+ *
+ * The previous code validated the incoming email with zod and threw
+ * "Invalid email address", which failed the whole search job. A malformed or
+ * unusable address is not a job failure: the business is kept and the address
+ * is reported as `unknown`.
+ */
+export function sanitizeEmailResult(input: {
+  email?: unknown;
+  email_status?: unknown;
+  email_source_url?: unknown;
+  social_profiles?: unknown;
+}): {
+  email: string | null;
+  email_status: EmailStatus;
+  email_source_url: string | null;
+  social_profiles: string[];
+  rejected: boolean;
+} {
+  const statusRaw = String(input.email_status ?? "").trim().toLowerCase();
+  const status: EmailStatus = (EMAIL_STATUSES_VALUES as readonly string[]).includes(statusRaw)
+    ? (statusRaw as EmailStatus)
+    : "unknown";
+  const email = normalizeEmail(input.email);
+  const source = typeof input.email_source_url === "string" ? input.email_source_url.trim() : "";
+  const socials = Array.isArray(input.social_profiles)
+    ? input.social_profiles
+        .filter((item): item is string => typeof item === "string" && /^https?:\/\//i.test(item))
+        .slice(0, MAX_SOCIALS)
+    : [];
+  return {
+    email,
+    // An address that failed validation can never be claimed as verified.
+    email_status: email ? status : "unknown",
+    email_source_url: source && /^https?:\/\//i.test(source) ? source.slice(0, 2000) : null,
+    social_profiles: socials,
+    rejected: Boolean(input.email) && !email,
+  };
+}
 const UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const MAX_BYTES = 600_000;
 const TIMEOUT_MS = 8_000;
 
 export type EmailStatus = "verified" | "risky" | "invalid" | "unknown";
+const EMAIL_STATUSES_VALUES = ["verified", "risky", "invalid", "unknown"] as const;
 
 export interface FoundEmail {
   email: string;
   status: EmailStatus;
   sourceUrl: string;
+  socialProfiles: string[];
 }
 
 function isValidAddress(raw: string): boolean {
-  const addr = raw.trim().replace(/^[.,;:()[\]<>]+|[.,;:()[\]<>]+$/g, "").toLowerCase();
-  if (!addr || addr.length > 120) return false;
-  const [local, domain] = addr.split("@");
-  if (!local || !domain || !domain.includes(".")) return false;
-  if (BLOCKED_LOCAL.has(local)) return false;
-  if (BLOCKED_SUFFIXES.some((s) => addr.endsWith(s))) return false;
-  if (BLOCKED_DOMAIN_FRAGMENTS.some((f) => domain.includes(f))) return false;
-  return true;
+  return normalizeEmail(raw) !== null;
 }
 
 function isPrivateIp(ip: string): boolean {
@@ -159,12 +235,14 @@ export async function findEmail(siteUrl: string): Promise<FoundEmail | null> {
   }
 
   const candidates: { email: string; source: string; strong: boolean }[] = [];
+  let socials: string[] = [];
 
   for (const path of ["/", ...CONTACT_PATHS]) {
     const pageUrl = new URL(path, base).toString();
     const html = await fetchPage(pageUrl);
     if (!html) continue;
     const strongPage = path !== "/";
+    socials = socials.concat(extractSocialProfiles(html));
 
     for (const match of html.matchAll(MAILTO_RE)) {
       candidates.push({ email: match[1].toLowerCase(), source: pageUrl, strong: true });
@@ -198,12 +276,16 @@ export async function findEmail(siteUrl: string): Promise<FoundEmail | null> {
   const best = ranked[0];
   const domain = best.email.split("@")[1];
   const mx = await hasMxRecords(domain);
+  const socialProfiles = socials
+    .filter((url, index) => socials.indexOf(url) === index)
+    .slice(0, MAX_SOCIALS);
   if (mx === false) {
-    return { email: best.email, status: "invalid", sourceUrl: best.source };
+    return { email: best.email, status: "invalid", sourceUrl: best.source, socialProfiles };
   }
   return {
     email: best.email,
     status: best.strong ? "verified" : "risky",
     sourceUrl: best.source,
+    socialProfiles,
   };
 }

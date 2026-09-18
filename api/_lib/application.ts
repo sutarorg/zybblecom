@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { env, HttpError, log, requireCronAuth, requireUser, sb } from "./core.ts";
 import { Router } from "./http.ts";
-import { runTick } from "./jobs.ts";
+import { runTick, SEARCH_JOB_COLUMNS, searchJobView } from "./jobs.ts";
 import { registerBilling } from "./routes-billing.ts";
 import { registerCore } from "./routes-core.ts";
 import { registerOutreach } from "./routes-outreach.ts";
@@ -31,10 +31,9 @@ router.get("/api/ready", async () => {
   const configured = {
     supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     openai: Boolean(process.env.OPENAI_API_KEY),
-    leadProvider:
-      env.leadProvider === "worker"
-        ? Boolean(process.env.SCRAPER_WORKER_SECRET)
-        : Boolean(process.env.GOOGLE_MAPS_API_KEY),
+    // The only lead-discovery engine is the GoogleMapScraper worker. No Google
+    // Maps/Places/Geocoding API key is required — or even read — anywhere.
+    scraperWorker: Boolean(process.env.SCRAPER_WORKER_SECRET),
     razorpay: Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.RAZORPAY_WEBHOOK_SECRET),
     smtpEncryption: Boolean(process.env.SMTP_ENCRYPTION_KEY),
     cronSecret: Boolean(process.env.CRON_SECRET),
@@ -56,11 +55,13 @@ router.get("/api/ready", async () => {
   }
   // Probe the exact schema used by the two most important workflows. This
   // catches unapplied migrations before a user reaches Lead Finder/Billing.
-  const [searchSchema, billingSchema, rateSchema] = await Promise.all([
+  const [searchSchema, filtersSchemaProbe, leadsSchema, billingSchema, rateSchema] = await Promise.all([
     sb
       .from("search_jobs")
       .select("provider,radius_meters,lease_token,lease_until", { head: true })
       .limit(1),
+    sb.from("search_jobs").select("filters,sort_by", { head: true }).limit(1),
+    sb.from("leads").select("dedupe_key,place_id,open_status", { head: true }).limit(1),
     sb
       .from("billing_checkouts")
       .select("razorpay_subscription_id", { head: true })
@@ -71,6 +72,10 @@ router.get("/api/ready", async () => {
     searchSchema.error
       ? `search provider schema: ${searchSchema.error.message}`
       : null,
+    filtersSchemaProbe.error
+      ? `lead filters schema (migration 008): ${filtersSchemaProbe.error.message}`
+      : null,
+    leadsSchema.error ? `lead identity schema (migration 008): ${leadsSchema.error.message}` : null,
     billingSchema.error ? `billing schema: ${billingSchema.error.message}` : null,
     rateSchema.error ? `rate-limit schema: ${rateSchema.error.message}` : null,
   ].filter((value): value is string => Boolean(value));
@@ -88,12 +93,14 @@ router.get("/api/ready", async () => {
       p_location: "probe",
       p_qty: 0,
       p_radius: 25000,
-      p_provider: "worker",
+      p_provider: "scraper",
+      p_filters: {},
+      p_sort_by: "relevance",
     });
     if (probeError) {
       const msg = probeError.message ?? "";
       if (/invalid quantity/i.test(msg)) {
-        rpcProbe = { ok: true, detail: "6-argument create_search_job resolves" };
+        rpcProbe = { ok: true, detail: "8-argument create_search_job resolves (filters supported)" };
       } else {
         // Probe 5-argument fallback
         const { error: probe5 } = await sb.rpc("create_search_job", {
@@ -103,14 +110,27 @@ router.get("/api/ready", async () => {
           p_qty: 0,
           p_radius: 25000,
         });
-        if (probe5 && /invalid quantity/i.test(probe5.message ?? "")) {
+        const { error: probe6 } = await sb.rpc("create_search_job", {
+          p_user: "00000000-0000-0000-0000-000000000000",
+          p_query: "probe",
+          p_location: "probe",
+          p_qty: 0,
+          p_radius: 25000,
+          p_provider: "scraper",
+        });
+        if (probe6 && /invalid quantity/i.test(probe6.message ?? "")) {
+          rpcProbe = {
+            ok: true,
+            detail: "6-argument create_search_job resolves (filters unavailable — run migration 008)",
+          };
+        } else if (probe5 && /invalid quantity/i.test(probe5.message ?? "")) {
           rpcProbe = { ok: true, detail: "5-argument create_search_job resolves (fallback active)" };
         } else {
           rpcProbe = {
             ok: true,
             detail: "create_search_job using resilient multi-tier fallback",
             notice: msg.slice(0, 200),
-            hint: "Run supabase/migrations/007_search_job_signature_fix.sql in the Supabase SQL Editor for canonical 6-arg RPC.",
+            hint: "Run supabase/migrations/008_lead_finder_scraper_engine.sql in the Supabase SQL Editor for the canonical 8-arg RPC (filters + counters).",
           };
         }
       }
@@ -124,25 +144,22 @@ router.get("/api/ready", async () => {
   const ageSeconds = beat
     ? Math.round((Date.now() - new Date(beat.last_seen_at).getTime()) / 1000)
     : null;
-  let providerHealth: Record<string, unknown> = {
-    provider: env.leadProvider,
+  const { data: scraperBeat } = await sb
+    .from("worker_heartbeats")
+    .select("status,last_seen_at,details")
+    .eq("service", "scraper")
+    .maybeSingle();
+  const scraperAge = scraperBeat
+    ? Math.round((Date.now() - new Date(scraperBeat.last_seen_at).getTime()) / 1000)
+    : null;
+  const providerHealth: Record<string, unknown> = {
+    provider: "scraper",
+    engine: "GoogleMapScraper (Railway worker)",
+    google_maps_api_required: false,
+    status: scraperBeat?.status ?? "offline",
+    last_seen_seconds_ago: scraperAge,
+    ready: scraperAge !== null && scraperAge < 90 && scraperBeat?.status === "healthy",
   };
-  if (env.leadProvider === "worker") {
-    const { data: scraperBeat } = await sb
-      .from("worker_heartbeats")
-      .select("status,last_seen_at,details")
-      .eq("service", "scraper")
-      .maybeSingle();
-    const scraperAge = scraperBeat
-      ? Math.round((Date.now() - new Date(scraperBeat.last_seen_at).getTime()) / 1000)
-      : null;
-    providerHealth = {
-      provider: "worker",
-      status: scraperBeat?.status ?? "offline",
-      last_seen_seconds_ago: scraperAge,
-      ready: scraperAge !== null && scraperAge < 90 && scraperBeat?.status === "healthy",
-    };
-  }
   const ok =
     missing.length === 0 &&
     schemaErrors.length === 0;
@@ -157,7 +174,7 @@ router.get("/api/ready", async () => {
       create_search_job: rpcProbe,
       hint:
         schemaErrors.length > 0
-          ? "Run supabase/migrations/007_search_job_signature_fix.sql in the Supabase SQL Editor (idempotent — it converges columns, function signatures, grants and reloads the PostgREST schema cache), then retry."
+          ? "Run supabase/migrations/008_lead_finder_scraper_engine.sql (and 007_search_job_signature_fix.sql if it was never applied) in the Supabase SQL Editor — both are idempotent: they converge columns, function signatures, grants and reload the PostgREST schema cache, then retry."
           : undefined,
     },
     background: { last_cron_seconds_ago: ageSeconds },
@@ -237,12 +254,12 @@ router.get("/api/search/:id", async ({ req, params }) => {
     throw new HttpError(400, "Invalid job id.");
   const { data } = await sb
     .from("search_jobs")
-    .select("id,query,location,quantity,radius_meters,provider,status,progress,collected,error,created_at,updated_at")
+    .select(SEARCH_JOB_COLUMNS)
     .eq("id", params.id)
     .eq("user_id", user.id)
     .maybeSingle();
   if (!data) throw new HttpError(404, "Search job not found.");
-  return data;
+  return searchJobView(data as unknown as Record<string, unknown>);
 });
 
 registerCore(router);

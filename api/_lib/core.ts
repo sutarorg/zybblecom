@@ -62,15 +62,9 @@ export const env = {
   supabaseServiceKey: optional("SUPABASE_SERVICE_ROLE_KEY") ?? "missing",
   openaiKey: optional("OPENAI_API_KEY") ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "o4-mini",
-  googleMapsKey: optional("GOOGLE_MAPS_API_KEY") ?? "",
-  leadProvider:
-    process.env.LEAD_PROVIDER === "places"
-      ? ("places" as const)
-      : process.env.LEAD_PROVIDER === "worker"
-        ? ("worker" as const)
-        : (process.env.GOOGLE_MAPS_API_KEY && !process.env.SCRAPER_WORKER_SECRET
-            ? ("places" as const)
-            : ("worker" as const)),
+  // Lead discovery runs through the GoogleMapScraper-based Railway worker.
+  // There is deliberately no Google Maps / Places / Geocoding API anywhere in
+  // this codebase: no API key, no paid endpoint, no fallback to one.
   scraperWorkerSecret: optional("SCRAPER_WORKER_SECRET") ?? "",
   razorpayKeyId: optional("RAZORPAY_KEY_ID") ?? "",
   razorpayKeySecret: optional("RAZORPAY_KEY_SECRET") ?? "",

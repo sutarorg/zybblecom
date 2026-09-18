@@ -1,26 +1,39 @@
-import { decryptSecret, env, log, sb } from "./core.ts";
-import { findEmail } from "./email-finder.ts";
-import { searchPlaces, type PlaceRecord } from "./places.ts";
+import { decryptSecret, HttpError, log, sb } from "./core.ts";
+import { findEmail, sanitizeEmailResult } from "./email-finder.ts";
+import {
+  evaluateEnrichmentFilters,
+  parseFilters,
+  sortLeads,
+  usesEnrichmentFilters,
+  type FilterableLead,
+  type SearchFilters,
+  type SortBy,
+} from "./filters.ts";
 import { logEvent, scheduleStep, unsubscribeUrl } from "./sequence.ts";
 import { sendEmail } from "./smtp.ts";
 
 // ————————————————————————————————————————————————————————————
 // Background processing for the single-app architecture.
 //
-// The old design ran two permanently-alive daemons in an infinite
-// polling loop. Here the same work is done in bounded slices:
-// every invocation claims a lease, processes as much as fits in
-// its time budget, persists progress, releases the lease, and
-// returns. Cron and the open app both drive it, and because all
-// state lives in Supabase the work is resumable and idempotent.
+// Lead *discovery* never happens in a serverless function: it needs a real
+// browser, which is exactly what the GoogleMapScraper-based Railway worker
+// runs (see worker/scraper.py). Vercel only orchestrates: it creates jobs,
+// stores the batches the worker streams back, and — if a worker dies after
+// discovery — finishes the remaining stages (enrichment, email discovery,
+// completion) here, because those are plain HTTP and DNS lookups.
 //
-//   queued → searching → collecting → enriching → finding_emails → complete
-//                                                                → failed
+// Every slice is lease-protected, bounded by a deadline and idempotent, so
+// the work is resumable and safe to run from cron and from the open app.
+//
+//   queued → searching → collecting → deduplicating → enriching
+//          → finding_emails → complete | failed
 // ————————————————————————————————————————————————————————————
 
 const LEASE_SECONDS = 120;
-const MAX_ATTEMPTS = 3;
-const COLLECT_BATCH = 25;
+/** Matches the worker's SCRAPER_MAX_ATTEMPTS: a broad search may need several
+ *  bounded browser slices to finish its coverage, and each slice resumes from
+ *  the cursor saved in the job payload. */
+export const MAX_ATTEMPTS = 6;
 const EMAIL_BATCH = 4;
 
 export interface Budget {
@@ -29,6 +42,19 @@ export interface Budget {
 }
 
 const timeLeft = (b: Budget) => b.deadline - Date.now();
+
+export interface JobCounters {
+  discovered: number;
+  unique: number;
+  duplicates: number;
+  filtered: number;
+  enriched: number;
+  email_found: number;
+  errors: number;
+  saved: number;
+  coverage_total: number;
+  coverage_done: number;
+}
 
 interface SearchJobRow {
   id: string;
@@ -41,119 +67,184 @@ interface SearchJobRow {
   progress: number;
   collected: number;
   worker_attempts: number;
-  payload: { places?: PlaceRecord[]; cursor?: number; exhausted?: boolean };
+  filters: SearchFilters | null;
+  sort_by: SortBy | null;
+  payload: { coverage?: Record<string, unknown> };
   lease_token: string;
-}
-
-function leadKey(company: string, city: string) {
-  return `${company.toLowerCase().trim()}|${(city ?? "").toLowerCase().trim()}`;
 }
 
 async function setJob(id: string, patch: Record<string, unknown>) {
   await sb.from("search_jobs").update(patch).eq("id", id);
 }
 
-/** Stage 1 — ask Google for the businesses and persist the work list. */
-async function stageSearch(job: SearchJobRow) {
-  const { places, exhausted } = await searchPlaces({
-    query: job.query,
-    location: job.location,
-    radiusMeters: job.radius_meters,
-    limit: job.quantity,
-  });
+/** Every column the Lead Finder UI shows, including the live counters. */
+export const SEARCH_JOB_COLUMNS =
+  "id,user_id,query,location,quantity,radius_meters,provider,status,progress,collected,error,message," +
+  "requested,discovered,unique_count,duplicate_count,filtered_count,enriched_count,email_found_count," +
+  "error_count,coverage_total,coverage_done,filters,sort_by,created_at,updated_at";
 
-  if (places.length === 0) {
-    await setJob(job.id, {
-      status: "complete",
-      progress: 100,
-      collected: 0,
-      lease_until: null,
-      error: "No matching businesses were found for that search.",
-    });
-    await sb.rpc("refund_search_job_quota", { p_job: job.id });
-    return;
-  }
+/** Pre-migration-008 databases: counters simply report as zero. */
+const LEGACY_SEARCH_JOB_COLUMNS =
+  "id,user_id,query,location,quantity,radius_meters,provider,status,progress,collected,error,created_at,updated_at";
 
-  await setJob(job.id, {
-    status: "collecting",
-    progress: 10,
-    payload: { places, cursor: 0, exhausted },
-  });
+/**
+ * Shape one search-job row for the browser: never leak lease tokens or worker
+ * payloads, always expose the full counter set the UI renders.
+ */
+export function searchJobView(job: Record<string, unknown>) {
+  const quantity = Number(job.quantity ?? 0);
+  const collected = Number(job.collected ?? 0);
+  return {
+    id: job.id as string,
+    user_id: job.user_id as string,
+    query: job.query as string,
+    location: job.location as string,
+    quantity,
+    requested: Number(job.requested ?? quantity),
+    radius_meters: Number(job.radius_meters ?? 25_000),
+    provider: (job.provider as string) ?? "scraper",
+    status: job.status as string,
+    progress: Number(job.progress ?? 0),
+    collected,
+    error: (job.error as string | null) ?? null,
+    message: (job.message as string | null) ?? null,
+    filters: parseFilters(job.filters),
+    sort_by: (job.sort_by as SortBy) ?? "relevance",
+    counts: {
+      requested: Number(job.requested ?? quantity),
+      discovered: Number(job.discovered ?? 0),
+      unique: Number(job.unique_count ?? 0),
+      duplicates: Number(job.duplicate_count ?? 0),
+      filtered: Number(job.filtered_count ?? 0),
+      enriched: Number(job.enriched_count ?? 0),
+      email_found: Number(job.email_found_count ?? 0),
+      errors: Number(job.error_count ?? 0),
+      coverage_total: Number(job.coverage_total ?? 0),
+      coverage_done: Number(job.coverage_done ?? 0),
+      saved: collected,
+    },
+    created_at: job.created_at as string,
+    updated_at: job.updated_at as string,
+  };
 }
 
-/** Stage 2 — persist businesses as deduplicated leads, in batches. */
-async function stageCollect(job: SearchJobRow, budget: Budget) {
-  const places = job.payload.places ?? [];
-  let cursor = job.payload.cursor ?? 0;
-  let collected = job.collected;
+/**
+ * Load a user's recent searches. Falls back to the legacy column list when
+ * migration 008 has not been applied yet, so the app keeps working.
+ */
+export async function selectSearchJobs(userId: string, limit = 25) {
+  const full = await sb
+    .from("search_jobs")
+    .select(SEARCH_JOB_COLUMNS)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
 
-  while (cursor < places.length && timeLeft(budget) > 4_000) {
-    const batch = places.slice(cursor, cursor + COLLECT_BATCH);
-    // Cross-batch and historical dedupe is enforced by the
-    // leads(user_id, company, city) unique index below; this only removes
-    // collisions inside the batch, which upsert cannot resolve itself.
-    const batchSeen = new Set<string>();
-    const rows = batch
-      .filter((p) => {
-        const key = leadKey(p.company, p.city);
-        if (batchSeen.has(key)) return false;
-        batchSeen.add(key);
-        return true;
-      })
-      .map((p) => ({
-        user_id: job.user_id,
-        job_id: job.id,
-        company: p.company,
-        category: p.category || job.query,
-        address: p.address,
-        city: p.city,
-        state: p.state,
-        country: p.country,
-        phone: p.phone,
-        website: p.website,
-        maps_url: p.mapsUrl,
-        rating: p.rating,
-        reviews: p.reviews,
-        hours: p.hours,
-        description:
-          p.rating && p.reviews
-            ? `${p.company} is a ${(p.category || job.query).toLowerCase()} in ${p.city || job.location} rated ${p.rating} across ${p.reviews} Google reviews.`
-            : null,
-      }));
+  if (!full.error) return (full.data ?? []).map((row) => searchJobView(row as unknown as Record<string, unknown>));
 
-    if (rows.length) {
-      const { data: inserted, error } = await sb
-        .from("leads")
-        .upsert(rows, { onConflict: "user_id,company,city", ignoreDuplicates: true })
-        .select("id");
-      if (error) throw new Error(`Could not store leads: ${error.message}`);
-      collected += inserted?.length ?? 0;
+  if (/42703|column .* does not exist|schema cache/i.test(full.error.message ?? "")) {
+    log.warn("search_jobs counters unavailable — run migration 008", { error: full.error.message });
+    const legacy = await sb
+      .from("search_jobs")
+      .select(LEGACY_SEARCH_JOB_COLUMNS)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (legacy.error) throw new HttpError(500, "Could not load your searches.");
+    return (legacy.data ?? []).map((row) => searchJobView(row as unknown as Record<string, unknown>));
+  }
+
+  log.error("load searches failed", { error: full.error.message });
+  throw new HttpError(500, "Could not load your searches.");
+}
+
+/**
+ * Finish a search job: apply the filters that need enrichment, keep at most the
+ * requested number of businesses in the requested order, write the final
+ * counters and refund any unused quota.
+ *
+ * Shared by the worker's /complete endpoint and by the in-app recovery path so
+ * both produce identical results.
+ */
+export async function finalizeSearchJob(opts: {
+  jobId: string;
+  userId: string;
+  quantity: number;
+  filters?: SearchFilters | null;
+  sortBy?: SortBy | null;
+}): Promise<{ collected: number; filteredOut: number; discarded: number; refunded: number }> {
+  const filters = opts.filters ?? parseFilters(null);
+  const sortBy: SortBy = opts.sortBy ?? filters.sort_by ?? "relevance";
+
+  const { data: leads } = await sb
+    .from("leads")
+    .select("id,email,email_status,social_profiles,rating,reviews,created_at")
+    .eq("job_id", opts.jobId)
+    .eq("user_id", opts.userId)
+    .limit(500);
+
+  const rows = (leads ?? []) as (FilterableLead & { id: string })[];
+
+  // Filters that can only be evaluated once email discovery has run.
+  const filteredOut: string[] = [];
+  let kept = rows;
+  if (usesEnrichmentFilters(filters)) {
+    kept = [];
+    for (const row of rows) {
+      const verdict = evaluateEnrichmentFilters(row, filters);
+      if (verdict.keep) kept.push(row);
+      else filteredOut.push(row.id);
     }
-
-    cursor += batch.length;
-    await setJob(job.id, {
-      collected,
-      progress: 10 + Math.round((cursor / places.length) * 50),
-      payload: { ...job.payload, cursor },
-    });
-    await sb.rpc("extend_search_job_lease", {
-      p_job: job.id,
-      p_lease_token: job.lease_token,
-      p_lease_seconds: LEASE_SECONDS,
-    });
   }
 
-  if (cursor >= places.length) {
-    await setJob(job.id, { status: "enriching", progress: 62 });
+  // Result limit + sort: keep the best `quantity` in the requested order.
+  const ordered = sortLeads(kept, sortBy);
+  const discard = ordered.slice(Math.max(1, opts.quantity)).map((row) => row.id);
+  const finalRows = ordered.slice(0, Math.max(1, opts.quantity));
+
+  const dropIds = [...filteredOut, ...discard];
+  if (dropIds.length) {
+    await sb.from("leads").delete().eq("job_id", opts.jobId).eq("user_id", opts.userId).in("id", dropIds);
   }
+
+  const { count } = await sb
+    .from("leads")
+    .select("id", { count: "exact", head: true })
+    .eq("job_id", opts.jobId)
+    .eq("user_id", opts.userId);
+
+  const collected = count ?? finalRows.length;
+  await setJob(opts.jobId, {
+    status: "complete",
+    progress: 100,
+    collected,
+    filtered_count: filteredOut.length,
+    enriched_count: rows.filter((row) => row.email_status !== null).length,
+    email_found_count: finalRows.filter((row) => Boolean(row.email)).length,
+    lease_until: null,
+    lease_token: null,
+    error: null,
+    message:
+      collected === 0
+        ? "No businesses matched this search."
+        : `Saved ${collected} ${collected === 1 ? "business" : "businesses"}${
+            collected < opts.quantity ? ` — the search covered the whole area and found ${collected}.` : "."
+          }`,
+  });
+
+  // Requested 50, only 31 exist? Give the difference back.
+  const { data: refunded } = await sb.rpc("refund_search_job_quota", { p_job: opts.jobId });
+  log.info("search job complete", {
+    job: opts.jobId,
+    collected,
+    filtered: filteredOut.length,
+    discarded: discard.length,
+    refunded,
+  });
+  return { collected, filteredOut: filteredOut.length, discarded: discard.length, refunded: Number(refunded ?? 0) };
 }
 
-/** Stage 3 — enrichment checkpoint (Google data already normalized). */
-async function stageEnrich(job: SearchJobRow) {
-  await setJob(job.id, { status: "finding_emails", progress: 70 });
-}
-
-/** Stage 4 — discover and verify publicly listed emails, in batches. */
+/** Stage: discover and verify publicly listed emails, in bounded batches. */
 async function stageFindEmails(job: SearchJobRow, budget: Budget) {
   const { data: pending } = await sb
     .from("leads")
@@ -164,7 +255,13 @@ async function stageFindEmails(job: SearchJobRow, budget: Budget) {
 
   const queue = pending ?? [];
   if (queue.length === 0) {
-    await finishJob(job);
+    await finalizeSearchJob({
+      jobId: job.id,
+      userId: job.user_id,
+      quantity: job.quantity,
+      filters: job.filters,
+      sortBy: job.sort_by,
+    });
     return;
   }
 
@@ -175,39 +272,47 @@ async function stageFindEmails(job: SearchJobRow, budget: Budget) {
   const totalLeads = total ?? queue.length;
 
   let index = 0;
+  let emailFound = Number((job as unknown as Record<string, unknown>).email_found_count ?? 0);
+
   while (index < queue.length && timeLeft(budget) > 12_000) {
     const batch = queue.slice(index, index + EMAIL_BATCH);
     await Promise.all(
       batch.map(async (lead) => {
         if (!lead.website) {
+          // No website: the business is kept, the address is simply unknown.
           await sb.from("leads").update({ email_status: "unknown" }).eq("id", lead.id);
           return;
         }
         try {
           const found = await findEmail(lead.website);
+          const safe = sanitizeEmailResult({
+            email: found?.email ?? null,
+            email_status: found?.status ?? "unknown",
+            email_source_url: found?.sourceUrl ?? null,
+            social_profiles: found?.socialProfiles ?? [],
+          });
+          if (safe.email) emailFound += 1;
           await sb
             .from("leads")
-            .update(
-              found
-                ? {
-                    email: found.email,
-                    email_status: found.status,
-                    email_source_url: found.sourceUrl,
-                  }
-                : { email_status: "unknown" }
-            )
+            .update({
+              email: safe.email,
+              email_status: safe.email_status,
+              email_source_url: safe.email_source_url,
+              ...(safe.social_profiles.length ? { social_profiles: safe.social_profiles } : {}),
+            })
             .eq("id", lead.id);
         } catch {
           // A single unreachable site must never fail the whole job.
           await sb.from("leads").update({ email_status: "unknown" }).eq("id", lead.id);
         }
-      })
+      }),
     );
     index += batch.length;
 
     const done = totalLeads - (queue.length - index);
     await setJob(job.id, {
-      progress: Math.min(99, 70 + Math.round((done / Math.max(1, totalLeads)) * 29)),
+      progress: Math.min(98, 78 + Math.round((done / Math.max(1, totalLeads)) * 20)),
+      email_found_count: emailFound,
     });
     await sb.rpc("extend_search_job_lease", {
       p_job: job.id,
@@ -216,73 +321,42 @@ async function stageFindEmails(job: SearchJobRow, budget: Budget) {
     });
   }
 
-  if (index >= queue.length) await finishJob(job);
-}
-
-async function finishJob(job: SearchJobRow) {
-  const { count } = await sb
-    .from("leads")
-    .select("id", { count: "exact", head: true })
-    .eq("job_id", job.id);
-  await setJob(job.id, {
-    status: "complete",
-    progress: 100,
-    collected: count ?? job.collected,
-    lease_until: null,
-  });
-  // Requested 50 but Google only had 31? Give the difference back.
-  const { data: refunded } = await sb.rpc("refund_search_job_quota", { p_job: job.id });
-  log.info("search job complete", { job: job.id, collected: count, refunded });
+  if (index >= queue.length) {
+    await finalizeSearchJob({
+      jobId: job.id,
+      userId: job.user_id,
+      quantity: job.quantity,
+      filters: job.filters,
+      sortBy: job.sort_by,
+    });
+  }
 }
 
 /**
- * Process one slice of one search job. Returns true when work was done,
- * so the caller can keep draining the queue while time remains.
+ * Process one slice of one search job. Returns true when work was done, so the
+ * caller can keep draining the queue while time remains.
+ *
+ * Only *recoverable* jobs are claimed here: discovery (searching/collecting)
+ * belongs to the scraper worker, which owns a browser. This protects jobs whose
+ * worker died after discovery and left enrichment undone.
  */
 export async function processSearchSlice(budget: Budget): Promise<boolean> {
-  // Try the configured provider first; fall back to the other provider so
-  // that jobs are never stranded when only one processing path is active.
-  // The in-app processor uses Google Maps (places), so it can only process
-  // worker jobs when a Maps key is available.
-  const canPlaces = Boolean(env.googleMapsKey);
-  const providers: string[] = [];
-  if (env.leadProvider === "places") {
-    providers.push("places");
-  } else {
-    // Worker is primary, but the in-app processor uses the places API.
-    if (canPlaces) providers.push("worker", "places");
+  const { data: claimed, error } = await sb.rpc("claim_recoverable_search_job", {
+    p_provider: "scraper",
+    p_lease_seconds: LEASE_SECONDS,
+  });
+  if (error) {
+    // Older databases without migration 008 have no recovery RPC; nothing to do.
+    log.warn("search recovery claim unavailable", { error: error.message });
+    return false;
   }
-
-  let job: SearchJobRow | null = null;
-  for (const provider of providers) {
-    const { data: claimed, error } = await sb.rpc("claim_search_job", {
-      p_provider: provider,
-      p_lease_seconds: LEASE_SECONDS,
-    });
-    if (error) {
-      log.error("search claim failed", { provider, error: error.message });
-      continue;
-    }
-    const claimedJob = (claimed as SearchJobRow[] | null)?.[0];
-    if (claimedJob) {
-      job = claimedJob;
-      break;
-    }
-  }
+  const job = (claimed as SearchJobRow[] | null)?.[0];
   if (!job) return false;
 
   try {
     switch (job.status) {
-      case "queued":
-      case "searching":
-        await stageSearch(job);
-        break;
-      case "collecting":
-        await stageCollect(job, budget);
-        break;
+      case "deduplicating":
       case "enriching":
-        await stageEnrich(job);
-        break;
       case "finding_emails":
         await stageFindEmails(job, budget);
         break;
@@ -296,27 +370,19 @@ export async function processSearchSlice(budget: Budget): Promise<boolean> {
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    log.error("search slice failed", { job: job.id, attempt: job.worker_attempts, err: message });
-
-    if (job.worker_attempts >= MAX_ATTEMPTS) {
-      await setJob(job.id, {
-        status: "failed",
-        lease_until: null,
-        error: message.slice(0, 280),
-      });
-      await sb.rpc("refund_search_job_quota", { p_job: job.id });
-    } else {
-      // Requeue for another attempt; the lease is dropped immediately.
-      await setJob(job.id, {
-        status: "queued",
-        lease_until: null,
-        error: message.slice(0, 280),
-      });
-    }
+    log.error("search recovery slice failed", { job: job.id, err: message });
+    await setJob(job.id, {
+      status: "finding_emails",
+      lease_until: null,
+      lease_token: null,
+      last_error: message.slice(0, 280),
+    });
     return true;
   }
 }
 
+// ————————————————————————————————————————————————————————————
+// Email delivery
 // ————————————————————————————————————————————————————————————
 // Email delivery
 // ————————————————————————————————————————————————————————————

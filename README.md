@@ -14,7 +14,7 @@ the Vercel app.
 | --- | --- |
 | Frontend | React 19 · Vite · Tailwind v4 (landing + app in one bundle) |
 | API | Vercel Serverless Function (`api/router.ts`), Node runtime, Zod-validated |
-| Lead discovery | Python/Selenium worker on **Railway** — GoogleMapScraper adaptation, no API key |
+| Lead discovery | Python/Selenium worker on **Railway** — vendored GoogleMapScraper engine, broad area coverage, no API key |
 | Background jobs | Database-leased queue; Vercel Cron + in-app ticks for email, Railway worker for scraping |
 | Database & Auth | Supabase (PostgreSQL + RLS + Auth) |
 | AI | OpenAI `o4-mini` (server-side only) |
@@ -28,11 +28,47 @@ zybble/
 ├─ api/
 │  ├─ router.ts         → the entire backend, one function
 │  └─ _lib/             → core, jobs, worker control plane, email-finder, smtp, openai, razorpay
-├─ worker/              → Selenium scraper (Railway worker; also runs locally)
+├─ worker/
+│  ├─ scraper.py         → discovery engine (coverage planning, dedupe, paging)
+│  ├─ vendor/            → vendored GoogleMapScraper core (MIT) + its licence
+│  └─ tests/             → offline tests against a Google Maps simulator
 ├─ supabase/migrations/ → run once in the Supabase SQL editor
 ├─ railway.json         → Railway build config for the scraper worker
 └─ vercel.json          → Vercel function config + cron schedule + rewrites
 ```
+
+---
+
+## How Lead Finder works
+
+1. **Plan the area.** The requested location is geocoded with OpenStreetMap
+   (Nominatim — no Google Geocoding API) and tiled into viewports sized to the
+   requested radius (`worker/coverage.py`). "50 gyms in Delhi" becomes a sweep
+   of the whole city, not one neighbourhood.
+2. **Discover.** `worker/scraper.py` drives real Google Maps through the
+   vendored two-phase core (smart-scroll the results feed, then read each
+   business panel) and collects businesses until the requested number of
+   *unique, filtered* results is reached or the coverage plan is exhausted.
+   Hitting the browser time budget is not a failure: the coverage cursor is
+   saved and the job resumes on its next slice.
+3. **Deduplicate.** Every business is keyed by Google place id → canonical Maps
+   URL → normalised name + address, within the job and across slices.
+4. **Filter.** The professional filters (rating, reviews, location, website,
+   phone, email status, socials, open/closed, keywords, previously collected)
+   are applied while scraping and re-applied server-side as a safety net.
+5. **Enrich and find emails.** Published addresses are discovered from each
+   business's own website and verified against DNS MX records. An address that
+   is missing or malformed is stored as `unknown` — it never fails a job and is
+   never invented.
+6. **Report.** The job reports requested → discovered → unique → enriched →
+   saved, plus duplicates, filtered, emails found, warnings and search-coverage
+   progress, live in the UI.
+
+| Component | Role |
+| --- | --- |
+| Vercel (frontend + API) | creates jobs, stores batches, enforces filters, tracks counters, orchestrates |
+| Railway worker | owns the browser; runs the GoogleMapScraper engine |
+| Supabase | auth, jobs (with a resumable coverage cursor), leads, quotas |
 
 ---
 
@@ -96,7 +132,7 @@ git push -u origin main
 1. **https://supabase.com** → **New project** → name `zybble`, generate a database
    password, pick the region closest to your users → **Create new project** (~2 min).
 
-### 2.2 Run the migrations — **all seven, in order**
+### 2.2 Run the migrations — **all eight, in order**
 1. Left sidebar → **SQL Editor** → **+ New query**.
 2. Paste the entire contents of each file and click **Run**, one at a time:
    - `supabase/migrations/001_init.sql`
@@ -106,9 +142,10 @@ git push -u origin main
    - `supabase/migrations/005_pluggable_lead_provider.sql` ← provider-scoped leases + secure worker claims
    - `supabase/migrations/006_worker_retry_bounds.sql` ← bounded retries for lease-reclaimed jobs
    - `supabase/migrations/007_search_job_signature_fix.sql` ← converges the 6-arg `create_search_job` signature + reloads the PostgREST schema cache
+   - `supabase/migrations/008_lead_finder_scraper_engine.sql` ← Lead Finder counters, filters, lead identity + the 8-arg `create_search_job`
 
 **Already have a database?** If Lead Finder ever returned `Request failed (500)`,
-run `007_search_job_signature_fix.sql` alone — it is fully idempotent and
+run `008_lead_finder_scraper_engine.sql` alone — it is fully idempotent and
 converges any prior state (missing columns, stale 4-/5-argument overloads,
 stale PostgREST schema cache) to the exact schema the application expects.
 
@@ -267,7 +304,6 @@ openssl rand -hex 32   # → SCRAPER_WORKER_SECRET (worker mode only)
 | `SUPABASE_SERVICE_ROLE_KEY` | Step 2.3 service_role key |
 | `OPENAI_API_KEY` | Step 3 |
 | `OPENAI_MODEL` | `o4-mini` |
-| `LEAD_PROVIDER` | `worker` (default; the Railway Selenium scraper) |
 | `SCRAPER_WORKER_SECRET` | Step 4 — must match the Railway worker's value |
 | `RAZORPAY_KEY_ID` | Step 5.1 |
 | `RAZORPAY_KEY_SECRET` | Step 5.1 |
@@ -453,7 +489,6 @@ email_jobs:   scheduled → processing → sent
 | `SUPABASE_SERVICE_ROLE_KEY` | server | Step 2.3 — never in Railway |
 | `OPENAI_API_KEY` | server | Step 3 |
 | `OPENAI_MODEL` | server | `o4-mini` |
-| `LEAD_PROVIDER` | server | `worker` (default) |
 | `SCRAPER_WORKER_SECRET` | server | Step 4 — must match Railway |
 | `RAZORPAY_KEY_ID` | server | Step 5.1 |
 | `RAZORPAY_KEY_SECRET` | server | Step 5.1 |
@@ -473,10 +508,18 @@ email_jobs:   scheduled → processing → sent
 | `SCRAPER_POLL_SECONDS` | no | `5` |
 | `SCRAPER_JOB_TIMEOUT_SECONDS` | no | `1200` |
 
-No Google Maps API key exists anywhere in this deployment — Lead Finder is
-powered entirely by the Selenium worker. (A `places` serverless mode remains
-in the codebase as an emergency fallback but is **not used**; it is only
-active if you explicitly set `LEAD_PROVIDER=places` and a Google key.)
+| `SCRAPER_EMAIL_BUDGET_SECONDS` | no | `600` |
+| `SCRAPER_MAX_TILES` | no | `36` — viewports swept to cover the whole location |
+| `SCRAPER_MAX_ATTEMPTS` | no | `6` — bounded slices a broad search may use |
+| `SCRAPER_BATCH_SIZE` | no | `5` — businesses stored per crash-safe batch |
+
+No Google Maps API key exists anywhere in this deployment — and none is
+needed. Lead discovery is powered entirely by the Railway scraper worker,
+which drives real Google Maps through the open-source
+[GoogleMapScraper](https://github.com/SoCloseSociety/GoogleMapScraper) engine
+vendored in `worker/vendor/`. There is no Places API, no Geocoding API and no
+`places` fallback: `npm run verify:no-google` fails the build if one ever
+reappears.
 
 ---
 
@@ -485,8 +528,9 @@ active if you explicitly set `LEAD_PROVIDER=places` and a Google key.)
 | Symptom | Fix |
 | --- | --- |
 | Entirely white page | Hard-refresh first (Ctrl/Cmd+Shift+R). If it persists, the boot overlay will now show the underlying error; check `/api/ready` — it names every missing environment variable. |
-| `/ready` says "not configured" | A required env var is unset in Vercel → Settings → Environment Variables. In worker mode, `GOOGLE_MAPS_API_KEY` is not required. Redeploy after changes. |
-| `/ready` reports a `create_search_job` RPC error, or Lead Finder returns 500 "does not match the application's 6-argument call" | Run `supabase/migrations/007_search_job_signature_fix.sql` in the SQL Editor — it drops stale 4-/5-argument overloads, converges the columns and reloads the PostgREST schema cache. Then retry the search. |
+| `/ready` says "not configured" | A required env var is unset in Vercel → Settings → Environment Variables (Lead Finder only needs `SCRAPER_WORKER_SECRET`; there is no Google Maps key). Redeploy after changes. |
+| `/ready` reports a `create_search_job` RPC error, or Lead Finder returns 500 "does not match the application's N-argument call" | Run `supabase/migrations/008_lead_finder_scraper_engine.sql` (and `007_search_job_signature_fix.sql` if it was never applied) in the SQL Editor — they drop stale 4-/5-/6-argument overloads, converge the columns and reload the PostgREST schema cache. Then retry the search. |
+| Lead Finder works but the counters stay at 0 | Migration 008 has not been applied; `search_jobs` is missing `discovered`/`unique_count`/… and `leads` is missing `dedupe_key`. Run it in the SQL Editor and retry. |
 | `SUPABASE_URL` was pasted with `/rest/v1/` | The API now strips it defensively and rejects other path-bearing URLs with a clear 503 naming the variable. Use the bare Project URL: `https://xyz.supabase.co`. |
 | `/api/*` returns the HTML page | The `/api/:path*` → `/api/router?path=:path*` rewrite must come **first** in `vercel.json`. Redeploy. |
 | API 500 on every route (`FUNCTION_INVOCATION_FAILED`, no JSON body) | The function crashed while being imported, before any route ran. Check **Vercel → Deployments → Functions logs**. Most likely cause: the emitted `api/*.js` still contains `.ts` import specifiers (`Cannot find module '.../_lib/application.ts'`) — `tsconfig.json` must keep `"rewriteRelativeImportExtensions": true`; `npm run verify:api` reproduces this locally and runs as part of `npm run build`. |
@@ -494,7 +538,8 @@ active if you explicitly set `LEAD_PROVIDER=places` and a Google key.)
 | Railway build log shows `vite build` / `react-vite-tailwind` | Railway tried to build the Node/Vite app instead of the worker. Clear any **Root Directory** setting (leave it repo root) so the root `railway.json` Dockerfile builder applies. Redeploy. |
 | Railway worker crashes or is OOM-killed | Raise the service memory to ≥ 2 GB (Settings → Resources) or lower `SCRAPER_CONCURRENCY`. Each Chromium session needs ~500–700 MB. |
 | Worker gets 401 | `SCRAPER_WORKER_SECRET` differs between Vercel and Railway. Set the same 64-hex value in both, redeploy Vercel and restart the worker. |
-| Worker gets 409 | Its job lease expired or was reclaimed — expected safe behavior; the worker drops the stale browser result and claims another job. After 3 total claims the job fails and quota is refunded. |
+| Worker gets 409 | Its job lease expired or was reclaimed — expected safe behavior; the worker drops the stale browser result and claims another job. After `SCRAPER_MAX_ATTEMPTS` (default 6) claims the job finishes with what it collected and quota is refunded. |
+| A search returns far fewer leads than requested | The location is swept in bounded slices; check that the worker is heart-beating and look at `/api/ready`. Each slice continues from the saved coverage cursor — see the job's `coverage_done/coverage_total` counters in the UI. |
 | Smoke test fails locally with a traffic challenge | Google presented a CAPTCHA for your IP. Wait, retry from a different network, or lower the limit. The worker reports this as a retryable failure — it never bypasses challenges. |
 | Smoke test fails with `SelectorChangedError` | Google changed Maps markup. Update the fallback selectors in `worker/scraper.py` (`collect_links` / `extract_place`). |
 | Search completes with 0 leads | No businesses matched. Widen the radius or use a broader location. Quota is refunded automatically. |

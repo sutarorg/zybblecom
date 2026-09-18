@@ -10,10 +10,55 @@ export type JobStatus =
   | "queued"
   | "searching"
   | "collecting"
+  | "deduplicating"
   | "enriching"
   | "finding_emails"
   | "complete"
   | "failed";
+
+export type SortBy = "relevance" | "rating" | "reviews" | "newest";
+export type OpenStatus = "open" | "closed" | "permanently_closed" | "unknown";
+
+// ——— Lead Finder filters (mirrors api/_lib/filters.ts) ———
+export interface SearchFilters {
+  category: string | null;
+  country: string | null;
+  state: string | null;
+  city: string | null;
+  min_rating: number | null;
+  max_rating: number | null;
+  min_reviews: number | null;
+  max_reviews: number | null;
+  has_website: boolean | null;
+  has_phone: boolean | null;
+  has_email: boolean | null;
+  email_status: EmailStatus[];
+  has_social: boolean | null;
+  enriched_only: boolean;
+  open_status: OpenStatus[];
+  keywords_include: string[];
+  keywords_exclude: string[];
+  exclude_previously_collected: boolean;
+  websites_only: boolean;
+  contactable_only: boolean;
+  sort_by: SortBy;
+  limit: number | null;
+}
+
+/** Live counters reported by the scraper while a search runs. */
+export interface JobCounts {
+  requested: number;
+  discovered: number;
+  unique: number;
+  duplicates: number;
+  filtered: number;
+  enriched: number;
+  email_found: number;
+  errors: number;
+  coverage_total: number;
+  coverage_done: number;
+  saved: number;
+}
 
 export type EmailStatus = "verified" | "risky" | "invalid" | "unknown";
 
@@ -75,13 +120,18 @@ export interface SearchJob {
   query: string;
   location: string;
   quantity: number;
+  requested?: number;
   radius_meters?: number;
-  provider?: "worker" | "places";
+  provider?: "worker" | "places" | "scraper";
   status: JobStatus;
   progress: number; // 0-100
   collected: number;
   candidates?: LeadCandidate[]; // legacy local-cache payload — server uses `payload` internally
   error: string | null;
+  message?: string | null;
+  filters?: SearchFilters;
+  sort_by?: SortBy;
+  counts?: JobCounts;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +143,12 @@ export interface Lead extends LeadCandidate {
   email: string | null;
   email_status: EmailStatus | null;
   email_source_url: string | null;
+  place_id?: string | null;
+  dedupe_key?: string | null;
+  open_status?: OpenStatus | null;
+  social_profiles?: string[] | null;
+  latitude?: number | null;
+  longitude?: number | null;
   ai_score: number | null;
   ai_summary: string | null;
   notes?: string | null;
