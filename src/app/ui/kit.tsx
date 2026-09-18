@@ -300,28 +300,48 @@ export function Toaster() {
 
 // ————————————————— Job progress stepper —————————————————
 
+// The Lead Finder pipeline, in the order the UI walks through it:
+// Searching → Discovering businesses → Deduplicating → Enriching
+//           → Finding emails → Complete
 const STAGE_LABELS: Record<string, string> = {
   queued: "Queued",
   searching: "Searching",
-  collecting: "Collecting",
+  collecting: "Discovering businesses",
+  deduplicating: "Deduplicating",
   enriching: "Enriching",
   finding_emails: "Finding emails",
   complete: "Complete",
   failed: "Failed",
 };
 
-const STAGE_ORDER = ["queued", "searching", "collecting", "enriching", "finding_emails", "complete"];
+const STAGE_ORDER = [
+  "queued",
+  "searching",
+  "collecting",
+  "deduplicating",
+  "enriching",
+  "finding_emails",
+  "complete",
+];
 
 export function stageLabel(s: string) {
   return STAGE_LABELS[s] ?? s;
 }
 
-export function StageStepper({ status }: { status: string }) {
+const PIPELINE_STAGES = STAGE_ORDER.slice(1, 7);
+
+export function StageStepper({
+  status,
+  labels = false,
+}: {
+  status: string;
+  labels?: boolean;
+}) {
   const failed = status === "failed";
   const idx = failed ? 1 : STAGE_ORDER.indexOf(status);
   return (
-    <div className="flex items-center gap-1">
-      {STAGE_ORDER.slice(1, 6).map((s, i) => {
+    <div className={cn("flex items-center", labels ? "gap-2" : "gap-1")}>
+      {PIPELINE_STAGES.map((s, i) => {
         const stageIdx = i + 1;
         const done = stageIdx < idx || status === "complete";
         const active = stageIdx === idx && !failed && status !== "complete";
@@ -338,7 +358,19 @@ export function StageStepper({ status }: { status: string }) {
             >
               {done ? <Check className="h-2.5 w-2.5" strokeWidth={3.5} /> : stageIdx}
             </div>
-            {i < 4 && <div className={cn("h-px w-3 sm:w-4", done ? "bg-emerald-400" : "bg-neutral-200")} />}
+            {labels && (
+              <span
+                className={cn(
+                  "hidden text-[11px] font-medium sm:inline",
+                  active ? "text-neutral-900" : done ? "text-emerald-600" : "text-neutral-400"
+                )}
+              >
+                {STAGE_LABELS[s]}
+              </span>
+            )}
+            {i < PIPELINE_STAGES.length - 1 && (
+              <div className={cn("h-px w-3 sm:w-4", done ? "bg-emerald-400" : "bg-neutral-200")} />
+            )}
           </div>
         );
       })}

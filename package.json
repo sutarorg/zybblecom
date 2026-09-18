@@ -10,8 +10,13 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "verify:api": "node scripts/verify-api-emit.mjs",
-    "test": "node --experimental-strip-types scripts/e2e-search-fix.mjs",
-    "e2e": "node scripts/e2e-production.mjs"
+    "test": "npm run test:api && npm run test:leadfinder && npm run verify:no-google && npm run test:worker && npm run verify:migrations",
+    "e2e": "node scripts/e2e-production.mjs",
+    "test:api": "node --experimental-strip-types scripts/e2e-search-fix.mjs",
+    "test:leadfinder": "node --experimental-strip-types scripts/e2e-lead-finder.mjs",
+    "test:worker": "python3 worker/run_tests.py",
+    "verify:no-google": "node scripts/verify-no-google-maps.mjs",
+    "verify:migrations": "python3 scripts/verify-migrations.py"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",

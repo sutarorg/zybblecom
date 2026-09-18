@@ -10,7 +10,9 @@ import {
   sb,
 } from "./core.ts";
 import { Raw, type Router } from "./http.ts";
+import { searchJobView, selectSearchJobs } from "./jobs.ts";
 import { aiResearch, aiScore, aiWriteEmail } from "./openai.ts";
+import { describeFilters, filtersFromInput, filtersSchema } from "./filters.ts";
 
 // ————————————————————————————————————————————————————————————
 // Bootstrap sync, lead search jobs, leads, profile, AI.
@@ -43,7 +45,7 @@ export function registerCore(r: Router) {
       sb.from("profiles").select("*").eq("id", user.id).maybeSingle(),
       sb.from("subscriptions").select("*").eq("user_id", user.id).maybeSingle(),
       sb.from("usage").select("*").eq("user_id", user.id).eq("month", month).maybeSingle(),
-      sb.from("search_jobs").select("id,user_id,query,location,quantity,radius_meters,provider,status,progress,collected,error,created_at,updated_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(25),
+      selectSearchJobs(user.id, 25),
       sb.from("leads").select("*", { count: "exact" }).eq("user_id", user.id).order("created_at", { ascending: false }).limit(1000),
       sb.from("ai_research").select("*").eq("user_id", user.id),
       sb.from("ai_scores").select("*").eq("user_id", user.id),
@@ -68,7 +70,7 @@ export function registerCore(r: Router) {
       profiles: profile.data ? [profile.data] : [],
       subscriptions: subscription.data ? [subscription.data] : [],
       usage: usage.data ? [usage.data] : [],
-      search_jobs: jobs.data ?? [],
+      search_jobs: jobs,
       leads: leads.data ?? [],
       lead_count: leads.count ?? leads.data?.length ?? 0,
       ai_research: research.data ?? [],
@@ -85,6 +87,11 @@ export function registerCore(r: Router) {
   });
 
   // ————— Lead Finder: enqueue a search job —————
+  //
+  // Discovery runs on the Railway scraper worker, which drives real Google
+  // Maps through the open-source GoogleMapScraper engine (worker/scraper.py).
+  // No Google Maps API key, Places API or Geocoding API is involved anywhere
+  // in this path — Vercel only creates the durable job and tracks it.
   r.post("/api/search", async ({ req, json }) => {
     const user = await requireUser(req);
     await enforceRateLimit(user.id, "search", 20, 60);
@@ -94,116 +101,131 @@ export function registerCore(r: Router) {
         location: z.string().trim().min(2, "Add a city, state or country.").max(80),
         quantity: z.number().int().min(1).max(200),
         radius_meters: z.number().int().min(1000).max(50000).default(25000),
-      })
+        sort_by: z.enum(["relevance", "rating", "reviews", "newest"]).nullish(),
+        filters: filtersSchema.nullish(),
+      }),
     );
 
-    // Determine provider, falling back to places if worker secret is unset but Maps key exists
-    let provider: "worker" | "places" = env.leadProvider;
-    if (provider === "worker" && !env.scraperWorkerSecret && env.googleMapsKey) {
-      provider = "places";
+    if (!env.scraperWorkerSecret) {
+      throw new HttpError(
+        503,
+        "Lead Finder is not configured: set SCRAPER_WORKER_SECRET in Vercel (and in the Railway worker) so the GoogleMapScraper worker can claim search jobs.",
+      );
     }
 
-    if (provider === "places" && !env.googleMapsKey && !env.scraperWorkerSecret) {
-      throw new HttpError(
-        503,
-        "Lead Finder is set to places mode, but GOOGLE_MAPS_API_KEY is missing in Vercel."
-      );
-    }
-    if (provider === "worker" && !env.scraperWorkerSecret && !env.googleMapsKey) {
-      throw new HttpError(
-        503,
-        "Lead Finder is set to worker mode, but SCRAPER_WORKER_SECRET is missing in Vercel."
-      );
-    }
+    const filters = filtersFromInput(input.filters ?? undefined);
+    const sortBy = input.sort_by ?? filters.sort_by;
+    filters.sort_by = sortBy;
+    filters.limit = input.quantity;
+    const provider = "scraper";
 
     // Quota reservation and queue insert with resilient fallback.
     let jobs: Array<Record<string, unknown>> | null = null;
     let rpcError: { code?: string; message?: string; details?: string | null; hint?: string | null } | null = null;
 
-    // 1. Try canonical 6-argument RPC
-    const r6 = await sb.rpc("create_search_job", {
+    // 1. Canonical 8-argument RPC (migration 008): quantity + filters + sort.
+    const r8 = await sb.rpc("create_search_job", {
       p_user: user.id,
       p_query: input.query,
       p_location: input.location,
       p_qty: input.quantity,
       p_radius: input.radius_meters,
       p_provider: provider,
+      p_filters: filters as unknown as Record<string, unknown>,
+      p_sort_by: sortBy,
     });
 
-    if (!r6.error && r6.data) {
-      jobs = r6.data as Array<Record<string, unknown>>;
-    } else if (r6.error) {
-      rpcError = r6.error;
+    if (!r8.error && r8.data) {
+      jobs = r8.data as Array<Record<string, unknown>>;
+    } else if (r8.error) {
+      rpcError = r8.error;
       const isSignatureMismatch =
         rpcError.code === "42883" ||
         rpcError.code === "PGRST202" ||
         /does not exist|Could not find the function/i.test(rpcError.message ?? "");
 
       if (isSignatureMismatch) {
-        // 2. Fallback: 5-argument RPC (migration 004)
-        const r5 = await sb.rpc("create_search_job", {
+        // 2. Fallback: 6-argument RPC (migration 005/007)
+        const r6 = await sb.rpc("create_search_job", {
           p_user: user.id,
           p_query: input.query,
           p_location: input.location,
           p_qty: input.quantity,
           p_radius: input.radius_meters,
+          p_provider: provider,
         });
-        if (!r5.error && r5.data) {
-          jobs = r5.data as Array<Record<string, unknown>>;
+        if (!r6.error && r6.data) {
+          jobs = r6.data as Array<Record<string, unknown>>;
           rpcError = null;
         } else {
-          // 3. Fallback: 4-argument RPC (migration 003)
-          const r4 = await sb.rpc("create_search_job", {
+          // 3. Fallback: 5-argument RPC (migration 004)
+          const r5 = await sb.rpc("create_search_job", {
             p_user: user.id,
             p_query: input.query,
             p_location: input.location,
             p_qty: input.quantity,
+            p_radius: input.radius_meters,
           });
-          if (!r4.error && r4.data) {
-            jobs = r4.data as Array<Record<string, unknown>>;
+          if (!r5.error && r5.data) {
+            jobs = r5.data as Array<Record<string, unknown>>;
             rpcError = null;
           } else {
-            // 4. Fallback: try_consume_leads then direct insert into search_jobs
-            const { data: allowed } = await sb.rpc("try_consume_leads", {
+            // 4. Fallback: 4-argument RPC (migration 003)
+            const r4 = await sb.rpc("create_search_job", {
               p_user: user.id,
+              p_query: input.query,
+              p_location: input.location,
               p_qty: input.quantity,
             });
-            if (allowed) {
-              const insertRes = await sb
-                .from("search_jobs")
-                .insert({
-                  user_id: user.id,
-                  query: input.query,
-                  location: input.location,
-                  quantity: input.quantity,
-                  radius_meters: input.radius_meters,
-                  provider,
-                  status: "queued",
-                })
-                .select("*");
-              if (!insertRes.error && insertRes.data?.length) {
-                jobs = insertRes.data as Array<Record<string, unknown>>;
-                rpcError = null;
-              } else if (insertRes.error) {
-                // If columns like radius_meters or provider don't exist in older table schema
-                const minRes = await sb
+            if (!r4.error && r4.data) {
+              jobs = r4.data as Array<Record<string, unknown>>;
+              rpcError = null;
+            } else {
+              // 5. Fallback: reserve quota, then insert directly.
+              const { data: allowed } = await sb.rpc("try_consume_leads", {
+                p_user: user.id,
+                p_qty: input.quantity,
+              });
+              if (allowed) {
+                const insertRes = await sb
                   .from("search_jobs")
                   .insert({
                     user_id: user.id,
                     query: input.query,
                     location: input.location,
                     quantity: input.quantity,
+                    radius_meters: input.radius_meters,
+                    provider,
                     status: "queued",
+                    requested: input.quantity,
+                    filters: filters as unknown as Record<string, unknown>,
+                    sort_by: sortBy,
                   })
                   .select("*");
-                if (!minRes.error && minRes.data?.length) {
-                  jobs = minRes.data as Array<Record<string, unknown>>;
+                if (!insertRes.error && insertRes.data?.length) {
+                  jobs = insertRes.data as Array<Record<string, unknown>>;
                   rpcError = null;
+                } else if (insertRes.error) {
+                  // Older schemas without the new columns: insert the minimum.
+                  const minRes = await sb
+                    .from("search_jobs")
+                    .insert({
+                      user_id: user.id,
+                      query: input.query,
+                      location: input.location,
+                      quantity: input.quantity,
+                      status: "queued",
+                    })
+                    .select("*");
+                  if (!minRes.error && minRes.data?.length) {
+                    jobs = minRes.data as Array<Record<string, unknown>>;
+                    rpcError = null;
+                  }
                 }
+              } else {
+                jobs = [];
+                rpcError = null;
               }
-            } else {
-              jobs = [];
-              rpcError = null;
             }
           }
         }
@@ -220,7 +242,7 @@ export function registerCore(r: Router) {
       });
       throw new HttpError(
         500,
-        `Could not create the search job. (${[rpcError.code, rpcError.message].filter(Boolean).join(": ").slice(0, 200)})`
+        `Could not create the search job. (${[rpcError.code, rpcError.message].filter(Boolean).join(": ").slice(0, 200)})`,
       );
     }
     const job = jobs?.[0];
@@ -236,26 +258,17 @@ export function registerCore(r: Router) {
         402,
         remaining <= 0
           ? `You've used all ${plan} leads for this month. Upgrade to keep finding leads.`
-          : `Only ${remaining} leads remaining on your plan this month.`
+          : `Only ${remaining} leads remaining on your plan this month.`,
       );
     }
-    log.info("search queued", { user: user.id, job: job.id, qty: input.quantity });
+    log.info("search queued", {
+      user: user.id,
+      job: job.id,
+      qty: input.quantity,
+      filters: describeFilters(filters),
+    });
     // Never expose the provider lease token or durable worker payload.
-    return {
-      id: job.id as string,
-      user_id: job.user_id as string,
-      query: job.query as string,
-      location: job.location as string,
-      quantity: job.quantity as number,
-      radius_meters: ((job.radius_meters as number) ?? input.radius_meters),
-      provider: ((job.provider as string) ?? provider),
-      status: job.status as string,
-      progress: ((job.progress as number) ?? 0),
-      collected: ((job.collected as number) ?? 0),
-      error: (job.error as string | null) ?? null,
-      created_at: job.created_at as string,
-      updated_at: job.updated_at as string,
-    };
+    return searchJobView({ ...job, filters, sort_by: sortBy });
   });
 
   // ————— Leads —————
@@ -312,9 +325,32 @@ export function registerCore(r: Router) {
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header =
-      "company,category,address,city,state,country,phone,website,google_maps_url,rating,reviews,hours,description,email,email_status,ai_score,notes,created_at";
+      "company,category,address,city,state,country,phone,website,google_maps_url,place_id,rating,reviews,hours,open_status,description,email,email_status,email_source_url,social_profiles,ai_score,notes,created_at";
     const lines = (leads ?? []).map((l) =>
-      [l.company, l.category, l.address, l.city, l.state, l.country, l.phone, l.website, l.maps_url, l.rating, l.reviews, l.hours, l.description, l.email, l.email_status, l.ai_score, l.notes, l.created_at]
+      [
+        l.company,
+        l.category,
+        l.address,
+        l.city,
+        l.state,
+        l.country,
+        l.phone,
+        l.website,
+        l.maps_url,
+        l.place_id,
+        l.rating,
+        l.reviews,
+        l.hours,
+        l.open_status,
+        l.description,
+        l.email,
+        l.email_status,
+        l.email_source_url,
+        Array.isArray(l.social_profiles) ? l.social_profiles.join(" ") : "",
+        l.ai_score,
+        l.notes,
+        l.created_at,
+      ]
         .map(esc)
         .join(",")
     );
