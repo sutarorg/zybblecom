@@ -55,7 +55,9 @@ BLOCKED_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".
 CONTACT_PATHS = ("/contact", "/contact-us", "/about", "/about-us")
 UA = "ZybbleBusinessResearch/1.0 (+https://zybble.com/about)"
 MAX_BYTES = 600_000
-TIMEOUT = 8
+TIMEOUT = 5
+# Faster per-site budget — parallel discovery at the worker level means we
+# can be less patient per host and still surface the same addresses.
 
 SOCIAL_DOMAINS = (
     "facebook.com", "instagram.com", "linkedin.com", "twitter.com", "x.com",
