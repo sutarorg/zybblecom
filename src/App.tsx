@@ -12,9 +12,9 @@ import { FeatureDetail, FeaturesIndex } from "./marketing/FeaturesPages";
 import { PrivacyPage, TermsPage } from "./marketing/LegalPages";
 import NotFound from "./marketing/NotFound";
 import PricingPage from "./marketing/PricingPage";
-import { Seo, usePathname } from "./seo/Seo";
+import { Seo, usePathname, noindexApp } from "./seo/Seo";
 import { isConfigured } from "./app/lib/remote";
-import React from "react";
+import React, { useEffect } from "react";
 
 const SHEET =
   "relative rounded-[24px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(20,18,15,0.03),0_40px_90px_-40px_rgba(23,20,15,0.14)] sm:rounded-[28px]";
@@ -28,6 +28,13 @@ function isAppRoute(route: string): boolean {
     route.startsWith("/reset") ||
     route.startsWith("/unsubscribe")
   );
+}
+
+function AppSeoGuard() {
+  useEffect(() => {
+    noindexApp();
+  }, []);
+  return null;
 }
 
 const HOME_SEO = {
@@ -97,7 +104,9 @@ export default function App() {
   if (isAppRoute(hashRoute)) {
     if (!isConfigured()) {
       return (
-        <div className="grid min-h-screen place-items-center bg-canvas px-6 text-center">
+        <>
+          <AppSeoGuard />
+          <div className="grid min-h-screen place-items-center bg-canvas px-6 text-center">
           <div className="max-w-md">
             <h1 className="font-display text-2xl font-semibold text-neutral-950">
               Zybble is temporarily unavailable
@@ -113,13 +122,17 @@ export default function App() {
               Contact support
             </a>
           </div>
-        </div>
+          </div>
+        </>
       );
     }
     return (
-      <ErrorBoundary>
-        <ZybbleApp route={hashRoute} />
-      </ErrorBoundary>
+      <>
+        <AppSeoGuard />
+        <ErrorBoundary>
+          <ZybbleApp route={hashRoute} />
+        </ErrorBoundary>
+      </>
     );
   }
 

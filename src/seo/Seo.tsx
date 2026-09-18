@@ -57,16 +57,24 @@ export function applySeo(props: SeoProps) {
   document.title = props.title;
   upsertMeta("name", "description", props.description);
   upsertMeta("name", "robots", props.robots ?? "index, follow, max-image-preview:large, max-snippet:-1");
+  upsertMeta("name", "author", "Zybble, Inc.");
   upsertLink("canonical", canonical);
 
+  upsertMeta("property", "og:site_name", "Zybble");
+  upsertMeta("property", "og:locale", "en_US");
   upsertMeta("property", "og:title", ogTitle);
   upsertMeta("property", "og:description", ogDescription);
   upsertMeta("property", "og:url", canonical);
   upsertMeta("property", "og:type", props.ogType ?? "website");
   upsertMeta("property", "og:image", ogImage);
+  upsertMeta("property", "og:image:width", "1200");
+  upsertMeta("property", "og:image:height", "630");
+  upsertMeta("property", "og:image:alt", `${ogTitle} — Zybble`);
+  upsertMeta("name", "twitter:card", "summary_large_image");
   upsertMeta("name", "twitter:title", ogTitle);
   upsertMeta("name", "twitter:description", ogDescription);
   upsertMeta("name", "twitter:image", ogImage);
+  upsertMeta("name", "twitter:image:alt", `${ogTitle} — Zybble`);
 
   // Page-level JSON-LD (previous injection removed first).
   document

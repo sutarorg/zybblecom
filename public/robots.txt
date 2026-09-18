@@ -5,5 +5,10 @@
 User-agent: *
 Allow: /
 Disallow: /app
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot
+Disallow: /reset
+Disallow: /unsubscribe
 
 Sitemap: https://zybble.com/sitemap.xml
