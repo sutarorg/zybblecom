@@ -31,8 +31,8 @@ router.get("/api/ready", async () => {
   const configured = {
     supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     openai: Boolean(process.env.OPENAI_API_KEY),
-    // The only lead-discovery engine is the GoogleMapScraper worker. No Google
-    // Maps/Places/Geocoding API key is required — or even read — anywhere.
+    // The only lead-discovery engine is the google-maps-scraper worker. No
+    // Google Maps/Places/Geocoding API key is required — or even read — anywhere.
     scraperWorker: Boolean(process.env.SCRAPER_WORKER_SECRET),
     razorpay: Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.RAZORPAY_WEBHOOK_SECRET),
     smtpEncryption: Boolean(process.env.SMTP_ENCRYPTION_KEY),
@@ -152,9 +152,15 @@ router.get("/api/ready", async () => {
   const scraperAge = scraperBeat
     ? Math.round((Date.now() - new Date(scraperBeat.last_seen_at).getTime()) / 1000)
     : null;
+  // The worker reports its own engine build in every heartbeat, so /api/ready
+  // shows which pinned google-maps-scraper version is actually deployed.
+  const scraperDetails = (scraperBeat?.details ?? {}) as Record<string, unknown>;
   const providerHealth: Record<string, unknown> = {
     provider: "scraper",
-    engine: "GoogleMapScraper (Railway worker)",
+    engine:
+      typeof scraperDetails.engine === "string" && scraperDetails.engine
+        ? scraperDetails.engine
+        : "google-maps-scraper (Railway worker)",
     google_maps_api_required: false,
     status: scraperBeat?.status ?? "offline",
     last_seen_seconds_ago: scraperAge,

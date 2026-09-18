@@ -62,7 +62,7 @@ export const env = {
   supabaseServiceKey: optional("SUPABASE_SERVICE_ROLE_KEY") ?? "missing",
   openaiKey: optional("OPENAI_API_KEY") ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "o4-mini",
-  // Lead discovery runs through the GoogleMapScraper-based Railway worker.
+  // Lead discovery runs through the google-maps-scraper-based Railway worker.
   // There is deliberately no Google Maps / Places / Geocoding API anywhere in
   // this codebase: no API key, no paid endpoint, no fallback to one.
   scraperWorkerSecret: optional("SCRAPER_WORKER_SECRET") ?? "",
@@ -167,7 +167,7 @@ export function requireCronAuth(req: Request) {
     throw new HttpError(401, "Unauthorized.");
 }
 
-/** Constant-time authentication for the optional Selenium worker. */
+/** Constant-time authentication for the Railway scraper worker. */
 export function requireWorkerAuth(req: Request) {
   checkConfig("SCRAPER_WORKER_SECRET");
   const header = req.headers.get("authorization") ?? "";

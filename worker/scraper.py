@@ -1,75 +1,66 @@
 """Zybble's Google Maps discovery engine.
 
-Built on the vendored two-phase core of **SoCloseSociety/GoogleMapScraper**
-(``worker/vendor/googlemapscraper.py``, MIT):
+Powered by the open-source **gosom/google-maps-scraper** engine
+(https://github.com/gosom/google-maps-scraper, MIT — see
+``worker/vendor/UPSTREAM.md``). The engine is a Go binary that drives a real
+Chromium browser through the public Google Maps UI with Playwright; Zybble runs
+it as a bounded child process and streams its JSONL output
+(:mod:`gmaps_engine`). **No Google Maps API key, Places API or Geocoding API is
+used anywhere.**
 
-    Phase 1  smart-scroll the Google Maps results feed and collect the unique
-             ``/maps/place/`` URLs it can reach  (``vendor.collect_links``)
-    Phase 2  visit each URL and read the public business panel
-             (``vendor.extract_details``)
-
-Zybble extends that engine so it behaves like a professional lead-generation
-platform instead of a one-shot scraper:
+Zybble wraps that engine so it behaves like a professional lead-generation
+platform instead of a one-shot CLI:
 
 * **Area coverage** — the requested location is geocoded with OpenStreetMap
   (no Google Geocoding API), tiled into viewports the size of the requested
   radius and swept centre-out, with several query formulations, so "gym in
-  Delhi" searches the whole city instead of one locality.
+  Delhi" searches the whole city instead of one locality (``coverage.py``).
+* **Batched runs** — coverage targets are handed to the engine a batch at a
+  time, so one browser session scrapes several viewports concurrently and the
+  crash-safe cursor advances after every batch.
 * **Pagination that keeps going** — when a batch returns fewer businesses than
-  requested, the engine simply moves to the next search target; a job is only
+  requested, the sweep simply moves to the next batch; a job is only
   "exhausted" when every planned search has been executed.
-* **Deduplication** — businesses are keyed by Maps place id, canonical Maps URL,
-  then normalised name + address, within the job and across resumes.
+* **Live streaming** — results are read from the engine's output file *while it
+  still runs*, so leads are stored, counters updated and progress reported per
+  business rather than at the end of a sweep.
+* **Deduplication** — businesses are keyed by Google place id, canonical Maps
+  URL, then normalised name + address, within the job and across resumes.
 * **Filtering** — :mod:`filters` evaluates every business before it is stored.
 * **Resumability** — :class:`ScrapeState` is JSON-serialisable and is persisted
-  by the worker, so a crash or redeploy continues where it left off.
-* **Bounded and clean** — one deadline for the whole session, and the browser is
-  always quit in a ``finally`` block.
-
-No Google Maps API key, Places API or Geocoding API is used anywhere.
+  by the worker, so a crash, a redeploy or a time budget continues where it
+  left off.
+* **Contract-safe records** — every field is clipped to the exact limits the
+  API's ``leadSchema`` accepts, so one unusually long Google description can
+  never fail a batch.
 """
 
 from __future__ import annotations
 
+import math
 import os
-import random
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
-from urllib.parse import quote_plus
-
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.common.exceptions import SessionNotCreatedException, WebDriverException
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-
-from vendor.googlemapscraper import (
-    canonical_place_url,
-    collect_links,
-    extract_details,
-    looks_like_challenge,
-    place_id_from_url,
-)
+from typing import Any, Callable, Optional, Sequence
+from urllib.parse import quote_plus, urlsplit, urlunsplit
 
 from coverage import (
     CoveragePlan,
     SearchTarget,
     build_coverage,
-    geocode_location,
+    iter_batches,
     plan_from_state,
 )
 from filters import LeadFilters, evaluate_discovery
-
-PAGE_TIMEOUT = 12
-SCROLL_PAUSE = 0.6
-MAX_STALLS = 5
-MAX_SEEN_LINKS = 4_000
-MAX_SEEN_KEYS = 4_000
-# Tuning: eager page-load strategy + reduced pauses shave ~35-45% off a
-# 50-lead sweep without changing coverage or result quality. Network waits
-# are the bottleneck, not CPU.
+from gmaps_engine import (
+    EngineFailure,
+    EngineRun,
+    EngineTarget,
+    EngineUnavailable,
+    GosomEngine,
+    upstream_pin,
+)
 
 # Stage boundaries (percent) — mirrors the UI stepper:
 # Searching → Discovering businesses → Deduplicating → Enriching → Finding emails → Complete
@@ -86,9 +77,43 @@ STAGE_ENRICHING = "enriching"
 STAGE_FINDING_EMAILS = "finding_emails"
 STAGE_COMPLETE = "complete"
 
+MAX_SEEN_LINKS = 4_000
+MAX_SEEN_KEYS = 4_000
+DEFAULT_TARGETS_PER_RUN = 6
+MAX_TARGETS_PER_RUN = 24
+# Google Maps yields roughly a dozen listings per scroll of the results feed,
+# so the engine's -depth is derived from how many businesses are still missing.
+LISTINGS_PER_SCROLL = 12
+# Two consecutive batches with a dead engine are a real failure, not bad luck.
+MAX_CONSECUTIVE_ENGINE_FAILURES = 2
 
-class SelectorChangedError(RuntimeError):
-    """Google Maps loaded but no known results layout was recognised."""
+# Field limits of the API's leadSchema (api/_lib/routes-worker.ts). Anything
+# longer is clipped here so a batch is never rejected for one long string.
+LIMIT_COMPANY = 300
+LIMIT_CATEGORY = 200
+LIMIT_ADDRESS = 500
+LIMIT_CITY = 160
+LIMIT_STATE = 160
+LIMIT_COUNTRY = 160
+LIMIT_PHONE = 100
+LIMIT_WEBSITE = 1_000
+LIMIT_MAPS_URL = 2_000
+LIMIT_HOURS = 2_000
+LIMIT_DESCRIPTION = 2_000
+LIMIT_SOURCE_QUERY = 300
+LIMIT_ID = 500
+LIMIT_SOCIAL = 500
+MAX_SOCIALS = 10
+MAX_EMAIL_CANDIDATES = 5
+
+DAY_ORDER = (
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+)
+
+# Google appends tracking/entry parameters to Maps links; the same business can
+# appear under several of them across tiles and query variants.
+_TRACKING_PARAMS = ("entry=", "g_ep=", "utm_", "sa=", "ved=", "source=", "hl=", "authuser=")
+_COORD_RE = re.compile(r"@(-?\d+\.?\d*),(-?\d+\.?\d*)")
 
 
 class JobTimeout(RuntimeError):
@@ -96,7 +121,7 @@ class JobTimeout(RuntimeError):
 
 
 class ChallengeError(RuntimeError):
-    """Google served a bot challenge instead of results."""
+    """Google served a bot challenge instead of results; the job is resumable."""
 
 
 # ————————————————————————————————————————————————————————————
@@ -106,7 +131,12 @@ class ChallengeError(RuntimeError):
 
 @dataclass
 class Place:
-    """One business, exactly as published on Google Maps."""
+    """One business, exactly as published on Google Maps.
+
+    ``json()`` is the payload contract with ``POST /api/worker/jobs/:id/leads``;
+    ``email_candidates`` is worker-internal (addresses the engine read on the
+    business's own website) and is never sent unverified.
+    """
 
     company: str
     category: str = ""
@@ -128,6 +158,7 @@ class Place:
     social_profiles: list[str] = field(default_factory=list)
     source_query: str = ""
     description: Optional[str] = None
+    email_candidates: list[str] = field(default_factory=list)
 
     def json(self) -> dict:
         return {
@@ -159,10 +190,37 @@ def _normalise_name(value: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def canonical_place_url(href: str) -> str:
+    """Collapse Google's tracking noise so one business has one stable URL.
+
+    The ``data=`` payload (which carries the place id) is preserved because it
+    is the strongest identifier Google exposes in a Maps link.
+    """
+    raw = (href or "").strip()
+    if not raw:
+        return ""
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return raw
+    query = parts.query
+    if query:
+        kept = [
+            segment
+            for segment in query.split("&")
+            if segment and not segment.startswith(_TRACKING_PARAMS)
+        ]
+        query = "&".join(kept)
+    if parts.scheme and parts.netloc:
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+    return urlunsplit(("", "", parts.path, query, ""))
+
+
 def place_key(place: Place) -> str:
     """Stable identity for a business.
 
     Priority: Google place id → canonical Maps URL → normalised name + address.
+    Mirrors ``dedupeKeyFor`` in ``api/_lib/routes-worker.ts`` exactly.
     """
     if place.place_id:
         return f"pid:{place.place_id}"
@@ -185,14 +243,15 @@ class ScrapeStats:
 
     # Invariants, so every number the UI shows reconciles:
     #   discovered == unique + filtered
-    #   discovered + duplicates + errors == business sightings processed
+    #   discovered + duplicates + errors == engine sightings processed
     discovered: int = 0  # distinct businesses identified on Google Maps
     unique: int = 0  # accepted after dedupe + filters
     duplicates: int = 0  # repeat sightings of an already-seen business
     filtered: int = 0  # rejected by the user's filters
-    errors: int = 0  # pages that could not be read
+    errors: int = 0  # results that could not be read
     targets_total: int = 0
     targets_done: int = 0
+    engine_runs: int = 0  # how many times the scraping engine was invoked
 
     def as_dict(self) -> dict:
         return {
@@ -203,6 +262,7 @@ class ScrapeStats:
             "errors": self.errors,
             "targets_total": self.targets_total,
             "targets_done": self.targets_done,
+            "engine_runs": self.engine_runs,
         }
 
     @classmethod
@@ -216,6 +276,7 @@ class ScrapeStats:
             errors=int(raw.get("errors", 0) or 0),
             targets_total=int(raw.get("targets_total", 0) or 0),
             targets_done=int(raw.get("targets_done", 0) or 0),
+            engine_runs=int(raw.get("engine_runs", 0) or 0),
         )
 
 
@@ -265,379 +326,203 @@ class ScrapeState:
 
 
 # ————————————————————————————————————————————————————————————
-# Browser
+# Engine entry → Zybble lead
 # ————————————————————————————————————————————————————————————
 
 
-def _driver() -> webdriver.Chrome:
-    """Create a hardened, container-safe Chrome driver.
-
-    Fixes the ``SessionNotCreatedException: DevToolsActivePort file doesn't
-    exist`` that occurs in minimal containers by:
-
-    * detecting the Chromium binary in all known locations and setting
-      ``binary_location`` explicitly;
-    * adding the full set of container flags (``--remote-debugging-port``,
-      ``--disable-setuid-sandbox``, ``--disable-software-rasterizer``, …);
-    * using ``pageLoadStrategy=eager`` so Google Maps DOM is usable without
-      waiting for every tile image;
-    * blocking images via prefs (the feed is text, not images) for ~30% fewer
-      bytes per page;
-    * retrying up to 3 times with a fresh temp profile — transient /dev/shm
-      or port conflicts are then self-healing instead of failing the job.
-    """
-    # ——— binary detection ———
-    chrome_bins = [
-        os.environ.get("CHROME_BIN"),
-        os.environ.get("CHROME_PATH"),
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/google-chrome-beta",
-    ]
-    chrome_bin = next((p for p in chrome_bins if p and os.path.exists(p)), None)
-
-    # ——— chromedriver detection ———
-    driver_candidates = [
-        os.environ.get("CHROMEDRIVER_PATH"),
-        "/usr/bin/chromedriver",
-        "/usr/lib/chromium/chromedriver",
-        "/usr/lib/chromium-browser/chromedriver",
-    ]
-    driver_bin = next((p for p in driver_candidates if p and os.path.exists(p)), None)
-
-    last_exc: Optional[Exception] = None
-    for attempt in range(3):
-        options = Options()
-        # Core stability in Docker / Railway
-        for arg in (
-            "--headless=new",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-setuid-sandbox",
-            "--disable-gpu",
-            "--disable-software-rasterizer",
-            "--window-size=1440,1000",
-            "--lang=en-US",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-background-networking",
-            "--disable-extensions",
-            "--disable-infobars",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-background-timer-throttling",
-            "--disable-backgrounding-occluded-windows",
-            "--disable-renderer-backgrounding",
-            "--disable-features=VizDisplayCompositor,VizServiceDisplayCompositor",
-            "--disable-ipc-flooding-protection",
-            "--disable-hang-monitor",
-            "--metrics-recording-only",
-            "--safebrowsing-disable-auto-update",
-            "--disable-sync",
-            "--mute-audio",
-            "--force-device-scale-factor=1",
-            "--hide-scrollbars",
-            "--ignore-certificate-errors",
-            f"--remote-debugging-port={9222 + attempt}",
-        ):
-            options.add_argument(arg)
-
-        if chrome_bin:
-            options.binary_location = chrome_bin
-
-        # Performance: don't fetch images / tiles we never parse — the feed
-        # and business panel are pure DOM/text.
-        # Keep it conservative: if Maps ever needs images to render the feed,
-        # the fallback page-load timeout will catch it and the job retries.
-        options.add_experimental_option(
-            "prefs",
-            {
-                "profile.managed_default_content_settings.images": 2,
-                "profile.default_content_setting_values.notifications": 2,
-                "profile.managed_default_content_settings.geolocation": 2,
-            },
-        )
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option("useAutomationExtension", False)
-        # Eager = DOMContentLoaded is enough for Google Maps selectors; cuts
-        # ~1.5 s per navigation vs. 'normal' (full load).
-        options.page_load_strategy = "eager"
-        options.add_argument(
-            "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-        )
-
-        service = None
-        if driver_bin:
-            service = Service(driver_bin, log_output=os.devnull)
-        elif os.environ.get("CHROMEDRIVER_PATH"):
-            service = Service(os.environ["CHROMEDRIVER_PATH"], log_output=os.devnull)
-
-        try:
-            if service:
-                driver = webdriver.Chrome(service=service, options=options)
-            else:
-                # Selenium Manager will download a matching driver for the
-                # detected binary — works on dev machines without a system
-                # chromedriver.
-                driver = webdriver.Chrome(options=options)
-            driver.set_page_load_timeout(PAGE_TIMEOUT + 10)
-            # A tiny implicit wait keeps feed detection stable on eager strategy.
-            try:
-                driver.implicitly_wait(0)
-            except Exception:
-                pass
-            return driver
-        except SessionNotCreatedException as exc:
-            last_exc = exc
-            # Known docker /dev/shm race — back off and retry with a new port.
-            time.sleep(0.8 * (attempt + 1))
-            continue
-        except WebDriverException as exc:
-            # Message contains DevToolsActivePort? treat as retryable.
-            msg = str(exc).lower()
-            if "devtoolsactiveport" in msg or "session not created" in msg:
-                last_exc = exc
-                time.sleep(0.8 * (attempt + 1))
-                continue
-            raise
-    # All retries exhausted — surface the last driver error so the worker can
-    # mark the job retryable and hand it back to the queue.
-    assert last_exc is not None
-    raise last_exc
+def _clip(value: Any, limit: int) -> str:
+    """Trim/collapse a Google-supplied string to the API's column limit."""
+    if value is None:
+        return ""
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    return text[:limit].rstrip()
 
 
-def _dismiss_consent(driver) -> None:
-    """Best-effort click through Google's cookie/consent interstitial."""
-    from selenium.webdriver.common.by import By  # local import: keeps module import cheap
-
-    for selector in (
-        "button[aria-label*='Accept all']",
-        "button[aria-label*='Reject all']",
-        "form[action*='consent'] button",
-        "button[jsname='b3VHJd']",
-    ):
-        try:
-            driver.find_element(By.CSS_SELECTOR, selector).click()
-            time.sleep(random.uniform(0.3, 0.7))
-            return
-        except Exception:  # noqa: BLE001 - consent UI differs by region
-            continue
+def site_key(website: str) -> str:
+    """Host-only key for a website, used to attach engine-found email candidates."""
+    return (website or "").strip().lower().split("//")[-1].split("/")[0].split("?")[0]
 
 
-# ————————————————————————————————————————————————————————————
-# Phase 2 extras (Zybble fields beyond the upstream panel)
-# ————————————————————————————————————————————————————————————
-
-_COORD_RE = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+)")
-_REVIEWS_RE = re.compile(r"([\d,\.]+)\s*(?:reviews?|Google reviews?)", re.I)
-_RATING_RE = re.compile(r"([0-5](?:[.,]\d)?)")
-_CLOSED_WORDS = ("permanently closed", "temporarily closed", "closed permanently")
-_OPEN_RE = re.compile(r"\b(open|closed)\s*(?:⋅|·|-|\|)?\s*(?:\w[\w\s:]*)$", re.I)
+def _optional(value: Any, limit: int) -> Optional[str]:
+    text = _clip(value, limit)
+    return text or None
 
 
-def _address_parts(full: str, fallback_location: str = "") -> tuple[str, str, str, str]:
-    """Split a Google-formatted address into street / city / state / country."""
+def _optional_number(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(number) or math.isinf(number):
+        return None
+    return number
+
+
+def split_address(full: str) -> tuple[str, str, str, str]:
+    """Fallback street/city/state/country split for a formatted address."""
     parts = [item.strip() for item in (full or "").split(",") if item.strip()]
     if not parts:
-        parts = [item.strip() for item in fallback_location.split(",") if item.strip()]
-    if not parts:
         return "", "", "", ""
-
     street = parts[0]
-    city = ""
-    state = ""
-    country = ""
-
     tail = parts[1:]
-    if len(parts) == 1:
+    if not tail:
         return street, "", "", ""
     if len(tail) == 1:
-        city = tail[0]
-    else:
-        # Common Google shapes:
-        #   street, city, state postal, country
-        #   street, area, city, state postal, country
-        country = tail[-1]
-        state_raw = tail[-2]
-        state = re.sub(r"\s+\d[\d\s-]*$", "", state_raw).strip()
-        city_candidates = tail[:-2]
-        city = city_candidates[-1] if city_candidates else ""
-        # Drop a postal code that ended up in the city slot.
-        if re.fullmatch(r"\d{4,8}", city):
-            city = city_candidates[-2] if len(city_candidates) > 1 else ""
+        return street, tail[0], "", ""
+    country = tail[-1]
+    state = re.sub(r"\s+\d[\d\s-]*$", "", tail[-2]).strip()
+    city_candidates = tail[:-2]
+    city = city_candidates[-1] if city_candidates else ""
+    if re.fullmatch(r"\d{4,8}", city or ""):
+        city = city_candidates[-2] if len(city_candidates) > 1 else ""
     return street, city, state, country
 
 
-def _soup_extras(soup: BeautifulSoup) -> dict:
-    """Read rating, reviews, category, hours and opening status from the panel."""
-    extras: dict[str, Any] = {
-        "rating": None,
-        "reviews": None,
-        "category": "",
-        "hours": None,
-        "open_status": "unknown",
-        "phone": None,
-        "address": None,
-        "website": None,
-    }
-
-    text_blob = soup.get_text(" ", strip=True)
-
-    # — rating —
-    for class_name in ("F7nice", "-fdtn5c", "jANrlb"):
-        node = soup.find("div", class_=class_name)
-        if node:
-            match = _RATING_RE.search(node.get_text(" ", strip=True))
-            if match:
-                try:
-                    value = float(match.group(1).replace(",", "."))
-                    if 0.0 <= value <= 5.0:
-                        extras["rating"] = round(value, 1)
-                        break
-                except ValueError:
-                    pass
-
-    # — review count —
-    for node in soup.find_all(["button", "span", "div"], attrs={"aria-label": True}):
-        label = node.get("aria-label", "")
-        if "review" in label.lower():
-            match = _REVIEWS_RE.search(label)
-            if match:
-                try:
-                    extras["reviews"] = int(float(match.group(1).replace(",", "")))
-                    break
-                except ValueError:
-                    continue
-    if extras["reviews"] is None:
-        match = re.search(r"\(([\d,]{1,12})\)", text_blob)
-        if match:
-            try:
-                extras["reviews"] = int(match.group(1).replace(",", ""))
-            except ValueError:
-                pass
-
-    # — category —
-    for node in soup.find_all("button", attrs={"jsaction": True}):
-        if "category" in node.get("jsaction", ""):
-            value = node.get_text(" ", strip=True)
-            if value:
-                extras["category"] = value
-                break
-    if not extras["category"]:
-        for node in soup.find_all("button", class_="DkEaL"):
-            value = node.get_text(" ", strip=True)
-            if value:
-                extras["category"] = value
-                break
-
-    # — hours —
-    for node in soup.find_all("button", attrs={"data-item-id": True}):
-        if node.get("data-item-id", "").startswith("oh"):
-            label = node.get("aria-label") or node.get_text(" ", strip=True)
-            if label:
-                extras["hours"] = re.sub(r"\s+", " ", str(label))[:2000]
-                break
-    if not extras["hours"]:
-        for node in soup.find_all("div", attrs={"aria-label": True}):
-            label = node.get("aria-label", "")
-            if "opening hours" in label.lower() or "open hours" in label.lower():
-                extras["hours"] = label.split(".")[0].replace(",", " -> ")[:2000]
-                break
-
-    # — opening status —
-    lowered = text_blob.lower()
-    if any(phrase in lowered for phrase in _CLOSED_WORDS):
-        extras["open_status"] = "permanently_closed"
-    else:
-        for node in soup.find_all(["span", "div"], class_=re.compile(r"ZDu9vd|o0Svhf|dpxINe|WgFkxc")):
-            value = node.get_text(" ", strip=True)
-            if not value:
-                continue
-            head = value.split("⋅")[0].split("·")[0].strip().lower()
-            if head.startswith("open"):
-                extras["open_status"] = "open"
-                break
-            if head.startswith("closed") or head.startswith("temporarily closed"):
-                extras["open_status"] = "closed"
-                break
-        if extras["open_status"] == "unknown":
-            match = re.search(r"\b(Open|Closed)\b\s*(?:⋅|·)?\s*(?:Closes|Opens|24 hours)?", text_blob)
-            if match:
-                extras["open_status"] = "open" if match.group(1).lower() == "open" else "closed"
-
-    # — fallbacks for phone / address / website —
-    for node in soup.find_all("button", attrs={"aria-label": True}):
-        label = node.get("aria-label", "")
-        if label.startswith("Phone:") and not extras["phone"]:
-            extras["phone"] = label.replace("Phone:", "", 1).strip()
-        if label.startswith("Address:") and not extras["address"]:
-            extras["address"] = label.replace("Address:", "", 1).strip()
-    for node in soup.find_all("a", attrs={"aria-label": True}):
-        label = node.get("aria-label", "")
-        if label.startswith("Website:") and node.get("href"):
-            extras["website"] = node.get("href")
-
-    return extras
+def format_hours(open_hours: Any) -> Optional[str]:
+    """Render the engine's ``open_hours`` map as one stable, readable string."""
+    if not isinstance(open_hours, dict) or not open_hours:
+        return None
+    days = [day for day in DAY_ORDER if day in open_hours]
+    days += [day for day in open_hours if day not in DAY_ORDER]
+    parts: list[str] = []
+    for day in days:
+        slots = open_hours.get(day)
+        if isinstance(slots, str):
+            slots = [slots]
+        if not isinstance(slots, (list, tuple)) or not slots:
+            continue
+        rendered = ", ".join(_clip(slot, 120) for slot in slots if _clip(slot, 120))
+        if rendered:
+            parts.append(f"{_clip(day, 20)}: {rendered}")
+    return _clip("; ".join(parts), LIMIT_HOURS) or None
 
 
-def extract_place(
-    driver,
-    url: str,
-    source_query: str = "",
-    fallback_location: str = "",
-    timeout: int = PAGE_TIMEOUT,
-    sleep: Callable[[float], None] = time.sleep,
-) -> Optional[Place]:
-    """Phase 2 for one business: upstream panel + Zybble extras."""
-    details = extract_details(driver, url, wait_timeout=timeout)
-    company = (details.get("name") or "").strip()
+def map_open_status(status: Any) -> str:
+    """Google's free-text status → the four values the lead schema allows."""
+    text = _clip(status, 200).lower()
+    if not text:
+        return "unknown"
+    if "permanently closed" in text or text == "closed_permanently":
+        return "permanently_closed"
+    if "temporarily closed" in text:
+        return "closed"
+    if text.startswith("open") or "open ⋅" in text or "· open" in text or text == "open":
+        return "open"
+    if text.startswith("closed") or text == "closed":
+        return "closed"
+    return "unknown"
+
+
+def _coordinates(entry: dict) -> tuple[Optional[float], Optional[float]]:
+    latitude = _optional_number(entry.get("latitude"))
+    # Upstream emits the misspelled legacy key "longtitude" *and* "longitude".
+    longitude = _optional_number(entry.get("longitude"))
+    if longitude is None:
+        longitude = _optional_number(entry.get("longtitude"))
+    if latitude is not None and not -90.0 <= latitude <= 90.0:
+        latitude = None
+    if longitude is not None and not -180.0 <= longitude <= 180.0:
+        longitude = None
+    return (None if latitude in (None, 0.0) else round(latitude, 7),
+            None if longitude in (None, 0.0) else round(longitude, 7))
+
+
+def _rating(entry: dict) -> Optional[float]:
+    value = _optional_number(entry.get("review_rating"))
+    if value is None or value <= 0.0:
+        return None
+    return round(min(5.0, value), 1)
+
+
+def _reviews(entry: dict) -> Optional[int]:
+    value = _optional_number(entry.get("review_count"))
+    if value is None or value <= 0:
+        return None
+    return int(value)
+
+
+def _address_fields(entry: dict) -> tuple[str, str, str, str]:
+    complete = entry.get("complete_address")
+    if isinstance(complete, dict):
+        street = _clip(complete.get("street"), LIMIT_ADDRESS)
+        borough = _clip(complete.get("borough"), LIMIT_CITY)
+        city = _clip(complete.get("city"), LIMIT_CITY) or borough
+        state = _clip(complete.get("state"), LIMIT_STATE)
+        country = _clip(complete.get("country"), LIMIT_COUNTRY)
+        if street or city or state or country:
+            if not street:
+                street = _clip(entry.get("address"), LIMIT_ADDRESS)
+            return street, city, state, country
+    return split_address(_clip(entry.get("address"), LIMIT_ADDRESS))
+
+
+def entry_to_place(entry: dict, source_query: str = "") -> Optional[Place]:
+    """Map one `gosom/google-maps-scraper` entry onto Zybble's lead record.
+
+    Returns ``None`` for an entry without a business name — the engine already
+    skips those, and Zybble never invents a company name.
+    """
+    if not isinstance(entry, dict):
+        return None
+    company = _clip(entry.get("title"), LIMIT_COMPANY)
     if not company:
         return None
 
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    extras = _soup_extras(soup)
+    categories = entry.get("categories")
+    category = _clip(entry.get("category"), LIMIT_CATEGORY)
+    if not category and isinstance(categories, (list, tuple)) and categories:
+        category = _clip(categories[0], LIMIT_CATEGORY)
 
-    current = getattr(driver, "current_url", "") or url
-    place_id = place_id_from_url(current) or place_id_from_url(url)
-    maps_url = current.split("?authuser=")[0] or url
+    address, city, state, country = _address_fields(entry)
+    latitude, longitude = _coordinates(entry)
 
-    address = details.get("address") or extras.get("address") or ""
-    street, city, state, country = _address_parts(address, fallback_location)
+    place_id = _optional(entry.get("place_id"), LIMIT_ID)
+    cid = _optional(entry.get("cid"), LIMIT_ID)
+    data_id = _optional(entry.get("data_id"), LIMIT_ID)
 
-    latitude = longitude = None
-    match = _COORD_RE.search(current)
-    if match:
-        try:
-            latitude = float(match.group(1))
-            longitude = float(match.group(2))
-        except ValueError:
-            latitude = longitude = None
+    maps_url = _clip(entry.get("link"), LIMIT_MAPS_URL)
+    if not maps_url and place_id:
+        maps_url = _clip(f"https://www.google.com/maps/place/?q=place_id:{place_id}", LIMIT_MAPS_URL)
 
-    phone = details.get("phone") or extras.get("phone")
-    website = details.get("website") or extras.get("website")
-    hours = extras.get("hours") or details.get("schedule")
+    emails: list[str] = []
+    raw_emails = entry.get("emails")
+    if isinstance(raw_emails, (list, tuple)):
+        for raw in raw_emails:
+            text = _clip(raw, 320).lower()
+            if text and "@" in text and text not in emails:
+                emails.append(text)
+            if len(emails) >= MAX_EMAIL_CANDIDATES:
+                break
+    elif isinstance(raw_emails, str) and "@" in raw_emails:
+        emails = [_clip(raw_emails, 320).lower()]
+
+    if not latitude and not longitude:
+        match = _COORD_RE.search(maps_url or "")
+        if match:
+            latitude, longitude = _coordinates({"latitude": match.group(1), "longitude": match.group(2)})
 
     return Place(
         company=company,
-        category=(extras.get("category") or "").strip(),
-        address=street,
+        category=category,
+        address=address,
         city=city,
         state=state,
         country=country,
-        phone=(phone or None),
-        website=(website or None),
+        phone=_optional(entry.get("phone"), LIMIT_PHONE),
+        website=_optional(entry.get("web_site") or entry.get("website"), LIMIT_WEBSITE),
         maps_url=maps_url,
-        rating=extras.get("rating"),
-        reviews=extras.get("reviews"),
-        hours=hours,
-        open_status=extras.get("open_status") or "unknown",
-        place_id=place_id,
-        external_id=place_id,
+        rating=_rating(entry),
+        reviews=_reviews(entry),
+        hours=format_hours(entry.get("open_hours")),
+        open_status=map_open_status(entry.get("status")),
+        place_id=place_id or cid or data_id,
+        external_id=cid or data_id or place_id,
         latitude=latitude,
         longitude=longitude,
-        source_query=source_query,
+        social_profiles=[],
+        source_query=_clip(source_query, LIMIT_SOURCE_QUERY),
+        description=_optional(entry.get("description"), LIMIT_DESCRIPTION),
+        email_candidates=emails[:MAX_EMAIL_CANDIDATES],
     )
 
 
@@ -650,13 +535,44 @@ def _trim(values: list[str], maximum: int) -> list[str]:
     return values[-maximum:] if len(values) > maximum else values
 
 
-def _sleep(low: float = 0.35, high: float = 0.85) -> None:
-    time.sleep(random.uniform(low, high))
-
-
 def _check(deadline: float) -> None:
     if time.monotonic() >= deadline:
         raise JobTimeout("The scrape exceeded its job time budget; it will resume from the saved cursor.")
+
+
+def targets_per_run(configured: Optional[int] = None) -> int:
+    """How many coverage targets one engine invocation receives."""
+    raw = configured if configured is not None else os.environ.get("SCRAPER_TARGETS_PER_RUN")
+    try:
+        value = int(str(raw if raw is not None else DEFAULT_TARGETS_PER_RUN).strip())
+    except (TypeError, ValueError):
+        value = DEFAULT_TARGETS_PER_RUN
+    return max(1, min(MAX_TARGETS_PER_RUN, value))
+
+
+def depth_for(remaining: int, batch_size: int, maximum: int) -> int:
+    """Scroll depth per target: enough for what is missing, never more."""
+    needed = math.ceil(max(1, remaining) * 1.5 / max(1, batch_size))
+    depth = math.ceil(needed / LISTINGS_PER_SCROLL)
+    return max(1, min(max(1, maximum), depth))
+
+
+def _batch_note(batch: Sequence[SearchTarget]) -> str:
+    if len(batch) == 1:
+        return f"Searching {batch[0].label}"
+    return f"Searching {len(batch)} viewports · {batch[0].label}"
+
+
+def collect_percent(unique: int, wanted: int, targets_done: int, targets_total: int) -> float:
+    """Overall sweep progress: whichever of leads/coverage advanced furthest.
+
+    Both inputs only ever grow, so the reported percentage is monotonic — the
+    UI stepper never moves backwards.
+    """
+    span = P_COLLECT_END - P_SEARCH_START
+    lead_frac = min(1.0, max(0, unique) / max(1, wanted))
+    coverage_frac = min(1.0, max(0, targets_done) / max(1, targets_total))
+    return P_SEARCH_START + span * max(lead_frac, coverage_frac)
 
 
 @dataclass
@@ -665,6 +581,10 @@ class ScrapeResult:
     places: list[Place] = field(default_factory=list)
     exhausted: bool = False
     message: str = ""
+    runs: list[EngineRun] = field(default_factory=list)
+    #: website host → addresses the engine read on that site (only when the
+    #: engine's own email extraction is enabled). Verified before use.
+    email_candidates: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def stats(self) -> ScrapeStats:
@@ -682,23 +602,26 @@ def run_scrape(
     on_stage: Optional[Callable[[str, float, ScrapeStats, str], None]] = None,
     on_place: Optional[Callable[[Place, int, int], None]] = None,
     on_state: Optional[Callable[[ScrapeState], None]] = None,
-    driver_factory: Callable[[], Any] = _driver,
+    engine: Optional[GosomEngine] = None,
     geocoder: Optional[Callable[[str], Any]] = None,
     max_tiles: Optional[int] = None,
-    page_timeout: int = PAGE_TIMEOUT,
+    targets_per_batch: Optional[int] = None,
     sleep: Callable[[float], None] = time.sleep,
-    driver: Any = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> ScrapeResult:
-    """Run one bounded Google Maps session and return the businesses found.
+    """Run one bounded Google Maps sweep and return the businesses found.
 
-    Never raises for an individual business: unreadable pages increment
+    Never raises for an individual business: unusable results increment
     ``stats.errors`` and the sweep continues. Only a hard deadline
-    (:class:`JobTimeout`) or a Google challenge (:class:`ChallengeError`)
-    aborts the session — both are resumable via :class:`ScrapeState`.
+    (:class:`JobTimeout`), a Google challenge (:class:`ChallengeError`) or a
+    repeatedly failing engine (:class:`EngineFailure`) aborts the slice — all of
+    them resumable through :class:`ScrapeState`.
     """
     filters = filters or LeadFilters()
     state = state or ScrapeState()
+    engine = engine or GosomEngine.from_env(sleep=sleep)
     deadline = time.monotonic() + max(60, timeout_seconds)
+    wanted = max(1, limit)
 
     plan = state.plan
     if plan is None or not plan.targets:
@@ -720,14 +643,23 @@ def run_scrape(
     filtered_keys = set(state.filtered_keys)
 
     collected: list[Place] = []
+    email_candidates: dict[str, list[str]] = {}
+    runs: list[EngineRun] = []
+    batch_size = targets_per_run(targets_per_batch)
+    last_percent = [0.0]
 
     def emit(stage: str, percent: float, message: str) -> None:
-        if on_stage:
-            on_stage(stage, max(1.0, min(99.0, percent)), stats, message)
+        if not on_stage:
+            return
+        # Progress only ever moves forward, whichever stage reports it.
+        value = max(last_percent[0], max(1.0, min(99.0, percent)))
+        last_percent[0] = value
+        on_stage(stage, value, stats, message)
 
     def persist(index: int) -> None:
         state.target_index = index
-        state.seen_links = _trim(sorted(seen_links), MAX_SEEN_LINKS)
+        stats.targets_done = min(plan.total, index)
+        state.seen_links = _trim(sorted(link for link in seen_links if link), MAX_SEEN_LINKS)
         state.seen_keys = _trim(sorted(seen_keys), MAX_SEEN_KEYS)
         state.filtered_keys = _trim(sorted(filtered_keys), MAX_SEEN_KEYS)
         if on_state:
@@ -738,163 +670,160 @@ def run_scrape(
 
     if state.target_index >= plan.total:
         state.exhausted = True
-        return ScrapeResult(state=state, places=[], exhausted=True, message="Search coverage already exhausted.")
-
-    own_driver = driver is None
-    if own_driver:
-        # Retry driver creation — transient DevToolsActivePort / port races
-        # are container-specific and should not fail the job.
-        last_exc: Optional[Exception] = None
-        for attempt in range(3):
-            try:
-                driver = driver_factory()
-                last_exc = None
-                break
-            except SessionNotCreatedException as exc:
-                last_exc = exc
-                time.sleep(0.9 * (attempt + 1))
-                continue
-            except WebDriverException as exc:
-                if "devtoolsactiveport" in str(exc).lower() or "session not created" in str(exc).lower():
-                    last_exc = exc
-                    time.sleep(0.9 * (attempt + 1))
-                    continue
-                raise
-        if last_exc is not None:
-            # Surface as a resumable challenge so the worker re-queues instead of hard-failing.
-            raise ChallengeError(f"Chrome failed to start after 3 attempts: {last_exc}") from last_exc
-    try:
-        # Google sometimes shows a consent interstitial on the first search;
-        # clicking it once keeps the results feed reachable.
-        try:
-            _dismiss_consent(driver)
-        except Exception:  # noqa: BLE001 - consent UI is region-specific
-            pass
-
-        for index in range(state.target_index, plan.total):
-            if stats.unique >= max(1, limit):
-                break
-            _check(deadline)
-            target: SearchTarget = plan.targets[index]
-            stats.targets_done = index
-            emit(STAGE_SEARCHING, P_SEARCH_START + (index / max(1, plan.total)) * (P_SEARCH_END - P_SEARCH_START),
-                 f"Searching {target.label}")
-
-            # — Phase 1: collect this viewport's result links —
-            per_target_cap = max(20, min(150, max(1, limit) * 4))
-            try:
-                links = collect_links(
-                    driver,
-                    target.url,
-                    max_links=per_target_cap,
-                    deadline=deadline,
-                    pause=SCROLL_PAUSE,
-                    max_stalls=MAX_STALLS,
-                    wait_timeout=page_timeout,
-                    sleep=sleep,
-                )
-            except WebDriverException as err:
-                stats.errors += 1
-                state.note(f"Result page unavailable for {target.label}: {err.__class__.__name__}")
-                persist(index + 1)
-                continue
-
-            if not links and looks_like_challenge(getattr(driver, "page_source", "") or ""):
-                stats.errors += 1
-                state.note("Google presented a traffic challenge; retrying with a clean session.")
-                raise ChallengeError("Google Maps presented a traffic challenge; the job will retry.")
-
-            # A business already returned by an earlier viewport is a repeat
-            # sighting, not a new discovery: skip it and count it once.
-            repeat_links = [link for link in links if link in seen_links]
-            stats.duplicates += len(repeat_links)
-            new_links = [link for link in links if link not in seen_links]
-            for link in new_links:
-                seen_links.add(link)
-
-            # — Phase 2: visit each new business —
-            total_new = len(new_links)
-            for position, link in enumerate(new_links, start=1):
-                if stats.unique >= max(1, limit):
-                    break
-                try:
-                    _check(deadline)
-                    # Small jitter between business pages: 0.25-0.55 s is
-                    # enough to let Maps render on eager strategy and
-                    # avoids any rate-limit, but is ~2.5× faster than the
-                    # previous 0.8-2.0 s. The feed already throttles via
-                    # SCROLL_PAUSE, so per-place delay can be minimal.
-                    sleep(random.uniform(0.25, 0.55))
-                    place = extract_place(
-                        driver,
-                        link,
-                        source_query=target.label,
-                        fallback_location=location,
-                        timeout=page_timeout,
-                    )
-                except JobTimeout:
-                    raise
-                except Exception as err:  # noqa: BLE001 - one bad page must not stop the sweep
-                    stats.errors += 1
-                    state.note(f"Could not read a business page: {err.__class__.__name__}")
-                    continue
-
-                if place is None or not place.company:
-                    stats.errors += 1
-                    continue
-
-                key = place_key(place)
-                if key in seen_keys or key in filtered_keys:
-                    # Same business under a different URL (maps tracking
-                    # parameters, or a second viewport) — count it once.
-                    stats.duplicates += 1
-                    emit(STAGE_COLLECTING, _percent(index, plan.total, position, total_new),
-                         f"Deduplicating · {stats.unique} unique so far")
-                    continue
-
-                # First time this business has been identified.
-                stats.discovered += 1
-
-                keep, reason = evaluate_discovery(place, filters)
-                if not keep:
-                    stats.filtered += 1
-                    filtered_keys.add(key)
-                    continue
-
-                seen_keys.add(key)
-                stats.unique += 1
-                collected.append(place)
-                if on_place:
-                    on_place(place, stats.unique, max(1, limit))
-
-                emit(STAGE_COLLECTING, _percent(index, plan.total, position, total_new),
-                     f"Discovering businesses · {stats.unique}/{limit}")
-
-            persist(index + 1)
-
-        state.exhausted = state.target_index >= plan.total or stats.unique >= max(1, limit)
-        stats.targets_done = min(plan.total, state.target_index)
-        message = (
-            f"Coverage complete: {stats.targets_done}/{plan.total} searches"
-            if state.target_index >= plan.total
-            else f"Collected {stats.unique} unique businesses"
+        return ScrapeResult(
+            state=state, places=[], exhausted=True,
+            message="Search coverage already exhausted.", runs=runs,
         )
-        emit(STAGE_DEDUPLICATING, P_DEDUPE, message)
-        return ScrapeResult(state=state, places=collected, exhausted=bool(state.target_index >= plan.total), message=message)
-    finally:
-        if own_driver:
-            try:
-                driver.quit()
-            except Exception:  # noqa: BLE001
-                pass
+
+    consecutive_failures = 0
+    remaining_targets = plan.targets[state.target_index:]
+
+    for batch in iter_batches(remaining_targets, batch_size):
+        if stats.unique >= wanted:
+            break
+        if should_stop is not None and should_stop():
+            persist(state.target_index)
+            raise JobTimeout("Worker received a shutdown signal; the job will resume from the saved cursor.")
+        _check(deadline)
+
+        index = state.target_index
+        remaining = wanted - stats.unique
+        depth = depth_for(remaining, len(batch), engine.depth)
+
+        stats.targets_done = index
+        emit(
+            STAGE_SEARCHING,
+            P_SEARCH_START + (index / max(1, plan.total)) * (P_SEARCH_END - P_SEARCH_START),
+            _batch_note(batch),
+        )
+
+        def on_entry(entry: dict, label: str) -> Any:
+            place = entry_to_place(entry, source_query=label or batch[0].label)
+            if place is None:
+                stats.errors += 1
+                return True
+
+            key = place_key(place)
+            if key in seen_keys or key in filtered_keys:
+                # Same business under another viewport or query wording.
+                stats.duplicates += 1
+                emit(
+                    STAGE_COLLECTING,
+                    collect_percent(stats.unique, wanted, index, plan.total),
+                    f"Deduplicating · {stats.unique} unique so far",
+                )
+                return True
+
+            stats.discovered += 1
+            keep, _reason = evaluate_discovery(place, filters)
+            if not keep:
+                stats.filtered += 1
+                filtered_keys.add(key)
+                return True
+
+            seen_keys.add(key)
+            canonical = canonical_place_url(place.maps_url)
+            if canonical:
+                seen_links.add(canonical)
+            stats.unique += 1
+            collected.append(place)
+            if place.email_candidates and place.website:
+                site = site_key(place.website)
+                bucket = email_candidates.setdefault(site, [])
+                for address in place.email_candidates:
+                    if address not in bucket:
+                        bucket.append(address)
+            if on_place:
+                on_place(place, stats.unique, wanted)
+            emit(
+                STAGE_COLLECTING,
+                collect_percent(stats.unique, wanted, index, plan.total),
+                f"Discovering businesses · {stats.unique}/{wanted}",
+            )
+            # Asking the engine to stop early keeps a big sweep from scraping
+            # viewports whose results would be thrown away.
+            return stats.unique < wanted
+
+        run = engine.scrape(
+            [EngineTarget.from_search_target(target, f"t{position}") for position, target in enumerate(batch)],
+            deadline=deadline,
+            on_entry=on_entry,
+            on_note=state.note,
+            should_stop=should_stop,
+            depth=depth,
+        )
+        runs.append(run)
+        stats.engine_runs += 1
+        stats.errors += run.malformed + run.skipped
+
+        if run.timed_out or run.interrupted:
+            # Keep the cursor at the start of this batch: it is re-run on the
+            # next slice, and dedupe makes the overlap free.
+            persist(index)
+            reason = "shutdown signal" if run.interrupted else "job time budget"
+            raise JobTimeout(f"The scrape reached its {reason}; it will resume from the saved cursor.")
+
+        if run.challenge and run.emitted == 0:
+            persist(index)
+            raise ChallengeError("Google Maps presented a traffic challenge; the job will retry with a fresh session.")
+
+        if run.failed:
+            consecutive_failures += 1
+            stats.errors += 1
+            state.note(
+                f"The scraping engine exited with code {run.exit_code} for {len(batch)} viewport(s); "
+                "the batch will be retried."
+            )
+            persist(index)
+            if consecutive_failures >= MAX_CONSECUTIVE_ENGINE_FAILURES:
+                raise EngineFailure(
+                    f"The scraping engine failed {consecutive_failures} batches in a row "
+                    f"(last exit code {run.exit_code})."
+                )
+            continue
+
+        consecutive_failures = 0
+        persist(index + len(batch))
+
+    state.exhausted = state.target_index >= plan.total or stats.unique >= wanted
+    stats.targets_done = min(plan.total, state.target_index)
+    message = (
+        f"Coverage complete: {stats.targets_done}/{plan.total} searches"
+        if state.target_index >= plan.total
+        else f"Collected {stats.unique} unique businesses"
+    )
+    emit(STAGE_DEDUPLICATING, P_DEDUPE, message)
+    return ScrapeResult(
+        state=state,
+        places=collected,
+        exhausted=bool(state.target_index >= plan.total or stats.unique >= wanted),
+        message=message,
+        runs=runs,
+        email_candidates=email_candidates,
+    )
 
 
-def _percent(target_index: int, total_targets: int, position: int, total_positions: int) -> float:
-    """Blend target progress and within-target progress into one percentage."""
-    span = P_COLLECT_END - P_SEARCH_START
-    target_frac = (target_index / max(1, total_targets)) * span
-    inner_frac = (position / max(1, total_positions)) * (span / max(1, total_targets))
-    return P_SEARCH_START + min(span, target_frac + inner_frac)
+def engine_summary(engine: Optional[GosomEngine] = None) -> dict:
+    """What the worker logs at boot: which engine, which version, which pin."""
+    engine = engine or GosomEngine.from_env()
+    pin = upstream_pin()
+    try:
+        binary = engine.resolve_binary()
+    except EngineUnavailable as err:
+        return {"available": False, "error": str(err), "upstream": pin.get("upstream", "")}
+    return {
+        "available": True,
+        "binary": binary,
+        "version": engine.version(),
+        "upstream": pin.get("upstream", ""),
+        "engine_version": pin.get("version", ""),
+        "engine_commit": pin.get("commit", ""),
+        "concurrency": engine.concurrency,
+        "browser_pool_size": engine.browser_pool_size,
+        "pages_per_browser": engine.pages_per_browser,
+        "depth": engine.depth,
+        "extract_email": engine.extract_email,
+    }
 
 
 def build_search_url(query: str, location: str) -> str:
@@ -905,6 +834,11 @@ def build_search_url(query: str, location: str) -> str:
 __all__ = [
     "ChallengeError",
     "CoveragePlan",
+    "EngineFailure",
+    "EngineRun",
+    "EngineTarget",
+    "EngineUnavailable",
+    "GosomEngine",
     "JobTimeout",
     "LeadFilters",
     "Place",
@@ -912,13 +846,19 @@ __all__ = [
     "ScrapeState",
     "ScrapeStats",
     "SearchTarget",
-    "SelectorChangedError",
     "build_coverage",
     "build_search_url",
     "canonical_place_url",
+    "collect_percent",
+    "depth_for",
+    "engine_summary",
+    "entry_to_place",
     "evaluate_discovery",
-    "extract_place",
-    "geocode_location",
+    "format_hours",
+    "map_open_status",
     "place_key",
     "run_scrape",
+    "site_key",
+    "split_address",
+    "targets_per_run",
 ]

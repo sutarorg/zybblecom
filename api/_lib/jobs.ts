@@ -16,8 +16,8 @@ import { sendEmail } from "./smtp.ts";
 // Background processing for the single-app architecture.
 //
 // Lead *discovery* never happens in a serverless function: it needs a real
-// browser, which is exactly what the GoogleMapScraper-based Railway worker
-// runs (see worker/scraper.py). Vercel only orchestrates: it creates jobs,
+// browser, which is exactly what the google-maps-scraper-based Railway worker
+// runs (see worker/gmaps_engine.py and worker/scraper.py). Vercel only orchestrates: it creates jobs,
 // stores the batches the worker streams back, and — if a worker dies after
 // discovery — finishes the remaining stages (enrichment, email discovery,
 // completion) here, because those are plain HTTP and DNS lookups.

@@ -5,16 +5,16 @@ AI-powered lead generation and outreach — find, enrich, research, score, write
 
 Zybble has one frontend/API application on Vercel and one **Railway worker**
 that powers Lead Finder with the open-source
-[SoCloseSociety/GoogleMapScraper](https://github.com/SoCloseSociety/GoogleMapScraper)
-(MIT) — real Google Maps data via Selenium, **no Google Maps API key**. The
-frontend, auth, AI, billing, SMTP delivery and campaign job engine stay inside
-the Vercel app.
+[gosom/google-maps-scraper](https://github.com/gosom/google-maps-scraper)
+engine (MIT) — real Google Maps data from a headless Go/Playwright binary,
+**no Google Maps API key**. The frontend, auth, AI, billing, SMTP delivery and
+campaign job engine stay inside the Vercel app.
 
 | Layer | Implementation |
 | --- | --- |
 | Frontend | React 19 · Vite · Tailwind v4 (landing + app in one bundle) |
 | API | Vercel Serverless Function (`api/router.ts`), Node runtime, Zod-validated |
-| Lead discovery | Python/Selenium worker on **Railway** — vendored GoogleMapScraper engine, broad area coverage, no API key |
+| Lead discovery | Python worker on **Railway** running the pinned `google-maps-scraper` Go engine, broad area coverage, no API key |
 | Background jobs | Database-leased queue; Vercel Cron + in-app ticks for email, Railway worker for scraping |
 | Database & Auth | Supabase (PostgreSQL + RLS + Auth) |
 | AI | OpenAI `o4-mini` (server-side only) |
@@ -29,9 +29,11 @@ zybble/
 │  ├─ router.ts         → the entire backend, one function
 │  └─ _lib/             → core, jobs, worker control plane, email-finder, smtp, openai, razorpay
 ├─ worker/
-│  ├─ scraper.py         → discovery engine (coverage planning, dedupe, paging)
-│  ├─ vendor/            → vendored GoogleMapScraper core (MIT) + its licence
-│  └─ tests/             → offline tests against a Google Maps simulator
+│  ├─ scraper.py         → discovery orchestration (coverage planning, dedupe, filters, progress)
+│  ├─ gmaps_engine.py    → adapter that runs the google-maps-scraper binary as a child process
+│  ├─ vendor/            → the engine pin (engine.json), upstream notes and its MIT licence
+│  ├─ smoke_test.py      → local end-to-end test (live engine, or --simulate offline)
+│  └─ tests/             → offline tests against a google-maps-scraper CLI simulator
 ├─ supabase/migrations/ → run once in the Supabase SQL editor
 ├─ railway.json         → Railway build config for the scraper worker
 └─ vercel.json          → Vercel function config + cron schedule + rewrites
@@ -45,12 +47,13 @@ zybble/
    (Nominatim — no Google Geocoding API) and tiled into viewports sized to the
    requested radius (`worker/coverage.py`). "50 gyms in Delhi" becomes a sweep
    of the whole city, not one neighbourhood.
-2. **Discover.** `worker/scraper.py` drives real Google Maps through the
-   vendored two-phase core (smart-scroll the results feed, then read each
-   business panel) and collects businesses until the requested number of
-   *unique, filtered* results is reached or the coverage plan is exhausted.
-   Hitting the browser time budget is not a failure: the coverage cursor is
-   saved and the job resumes on its next slice.
+2. **Discover.** `worker/scraper.py` hands each batch of viewports to the
+   `google-maps-scraper` engine (`worker/gmaps_engine.py`), which scrolls real
+   Google Maps in headless Chromium and streams businesses back as JSONL while
+   it works. The sweep collects until the requested number of *unique,
+   filtered* results is reached or the coverage plan is exhausted, and asks the
+   engine to stop early once the quota is met. Hitting the time budget is not a
+   failure: the coverage cursor is saved and the job resumes on its next slice.
 3. **Deduplicate.** Every business is keyed by Google place id → canonical Maps
    URL → normalised name + address, within the job and across slices.
 4. **Filter.** The professional filters (rating, reviews, location, website,
@@ -67,7 +70,7 @@ zybble/
 | Component | Role |
 | --- | --- |
 | Vercel (frontend + API) | creates jobs, stores batches, enforces filters, tracks counters, orchestrates |
-| Railway worker | owns the browser; runs the GoogleMapScraper engine |
+| Railway worker | owns the engine and the browser; batches viewports, dedupes, enriches |
 | Supabase | auth, jobs (with a resumable coverage cursor), leads, quotas |
 
 ---
@@ -100,7 +103,7 @@ zybble/
 | Vercel | https://vercel.com | **the only host** (sign up with GitHub) |
 | Supabase | https://supabase.com | database + auth |
 | OpenAI | https://platform.openai.com | AI research / scoring / writer |
-| Docker runtime (worker mode only) | any container runtime you control | Python/Selenium Lead Finder |
+| Docker runtime (worker mode only) | any container runtime you control | local Lead Finder smoke test (optional — Railway builds the image itself) |
 | Razorpay | https://dashboard.razorpay.com | subscriptions |
 
 You also need Git and a terminal for two `openssl` commands.
@@ -174,12 +177,16 @@ Left sidebar → **gear icon** → **API**:
 
 # Step 4 · Lead Finder scraper
 
-Lead Finder runs on an adaptation of
-[SoCloseSociety/GoogleMapScraper](https://github.com/SoCloseSociety/GoogleMapScraper)
-(MIT — see `worker/THIRD_PARTY_LICENSES.md`). It drives a real Chromium browser
-through Google Maps, extracts public business details, verifies publicly listed
-emails, and streams everything into your Supabase leads database. **No Google
-Maps API key is used or required.**
+Lead Finder runs on
+[gosom/google-maps-scraper](https://github.com/gosom/google-maps-scraper)
+(MIT — see `worker/THIRD_PARTY_LICENSES.md`), a Go engine that drives a real
+headless Chromium through Google Maps with Playwright. `worker/Dockerfile`
+builds the **pinned** tag and commit from source (the pin lives in
+`worker/vendor/engine.json`, verified in CI by `npm run verify:engine`), and
+`worker/gmaps_engine.py` runs it as a bounded child process that streams
+businesses back as JSONL. From there the worker dedupes, filters, verifies
+publicly listed emails and streams everything into your Supabase leads
+database. **No Google Maps API key is used or required.**
 
 Generate the shared secret now — Vercel and the worker must hold the same value:
 
@@ -187,31 +194,58 @@ Generate the shared secret now — Vercel and the worker must hold the same valu
 openssl rand -hex 32   # → SCRAPER_WORKER_SECRET
 ```
 
-## 4.1 Test the scraper locally with a real search (before deploying)
+## 4.1 Test the scraper locally before deploying
 
-On your own machine (needs Python 3.11+ and Chrome installed):
+**A. Offline simulation (no Go, no Docker, no Google — run this first).** The
+worker ships a CLI double that speaks the upstream engine's exact flag and
+JSONL contract, so the whole integration can be exercised on any machine with
+Python 3.11+:
 
 ```bash
-pip install -r worker/requirements.txt
-python worker/smoke_test.py "dentists" "Austin, Texas" 5
+python3 -m venv .venv && .venv/bin/pip install -r worker/requirements.txt
+.venv/bin/python worker/smoke_test.py --simulate "gym" "Delhi" 50
+.venv/bin/python worker/run_tests.py          # the full offline suite
 ```
 
-Expected output: phase-1 link collection progress, then one line per real
-business (name, city, rating, review count, website), then a JSON dump and
-`SMOKE TEST PASSED`. This runs the exact production code path — the same
-`run_scrape()` the Railway worker calls — against live Google Maps.
+Expected output: an engine banner (binary, version, pin, concurrency), one line
+per business, every counter the UI reports, a lead-contract check against the
+API's column limits and `SIMULATION PASSED`. This proves the subprocess
+plumbing, streaming reader, dedupe, filters, progress reporting and resume
+cursor — it cannot prove that Google still serves the markup the engine
+expects, which is what step B is for.
 
-If you prefer Docker (matches Railway exactly):
+**B. Real engine against live Google Maps (required before a deploy).** The
+Docker image is the only supported way to get the engine and its Chromium: it
+builds the pinned Go binary and installs Playwright's browser exactly as
+Railway will.
 
 ```bash
 docker build -f worker/Dockerfile -t zybble-scraper .
 docker run --rm --shm-size=2g \
   -e ZYBBLE_APP_URL=http://localhost:3000 \
   -e SCRAPER_WORKER_SECRET=dummy \
-  zybble-scraper python -c "from smoke_test import main; exit(main())"
+  zybble-scraper python smoke_test.py "dentists" "Austin, Texas" 5
 ```
 
-Do not deploy to Railway until the smoke test passes locally.
+Expected output: the engine version banner, one line per real business (name,
+city, rating, review count, website), then a JSON dump and `SMOKE TEST PASSED`.
+This runs the exact production code path — the same `run_scrape()` the Railway
+worker calls — against live Google Maps. The build itself ends with the same
+smoke test in `--simulate` mode, so a broken engine or a missing browser
+library fails the image build rather than the first customer search.
+
+Prefer the engine on your own machine instead? Install Go 1.27+, then:
+
+```bash
+git clone --branch v1.18.0 https://github.com/gosom/google-maps-scraper
+cd google-maps-scraper && go build -o /usr/local/bin/google-maps-scraper .
+go install github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0
+playwright install chromium --with-deps
+cd .. && python worker/smoke_test.py "dentists" "Austin, Texas" 5
+```
+
+(Use the exact version and commit from `worker/vendor/engine.json`; other
+releases are untested.) Do not deploy to Railway until step B passes locally.
 
 ## 4.2 Deploy the worker to Railway
 
@@ -221,22 +255,36 @@ Do not deploy to Railway until the smoke test passes locally.
 3. Railway creates a service. Click it → **Settings** tab.
 4. **Leave Root Directory empty** (repo root). The root `railway.json` takes
    over: it forces the **Dockerfile builder** on `worker/Dockerfile`, so
-   Railway builds the Python/Selenium image and never mistakes the repo for a
-   Node/Vite project. If you ever see `react-vite-tailwind` or `vite build` in
-   the build log, the Root Directory is wrong — clear it and redeploy.
+   Railway builds the worker image and never mistakes the repo for a Node/Vite
+   project. If you ever see `react-vite-tailwind` or `vite build` in the build
+   log, the Root Directory is wrong — clear it and redeploy. The build is
+   multi-stage (compile the pinned Go engine → install Playwright Chromium →
+   install the Python worker, then run the offline smoke test inside the
+   image), so the **first build takes several minutes** and needs no
+   build-time secrets.
 5. Open the **Variables** tab → **+ New Variable** and add:
 
    | Variable | Value |
    | --- | --- |
    | `ZYBBLE_APP_URL` | `https://<project>.vercel.app` (your Vercel domain from Step 7) |
    | `SCRAPER_WORKER_SECRET` | the exact value you set in Vercel |
-   | `SCRAPER_CONCURRENCY` | `2` (optional; 1–4) |
+   | `SCRAPER_CONCURRENCY` | `2` (optional; job slices in parallel, 1–4) |
    | `SCRAPER_POLL_SECONDS` | `5` (optional) |
    | `SCRAPER_JOB_TIMEOUT_SECONDS` | `1200` (optional) |
+   | `SCRAPER_TARGETS_PER_RUN` | `6` (optional; viewports per engine run — lower gives finer resume points, higher is faster) |
+   | `SCRAPER_ENGINE_CONCURRENCY` | `2` (optional; searches the engine runs at once) |
+   | `SCRAPER_ENGINE_BROWSER_POOL` | `1` (optional; Chromium contexts) |
+   | `SCRAPER_ENGINE_PAGES_PER_BROWSER` | `2` (optional; tabs per context) |
+   | `SCRAPER_ENGINE_EXTRACT_EMAIL` | `0` (optional; `1` also reads addresses off each business website — Zybble still verifies syntax and DNS MX) |
 
+   Every engine knob and its default is listed in `.env.example`; the engine's
+   own flags are documented in `worker/vendor/UPSTREAM.md`.
 6. **Settings → Resources / Memory**: allocate at least **2 GB RAM** — each
-   Chromium session uses ~500–700 MB. The Dockerfile sets
-   `--disable-dev-shm-usage` so `/dev/shm` size is not a constraint.
+   Chromium context with its tabs uses ~500–700 MB, so
+   `SCRAPER_ENGINE_BROWSER_POOL × SCRAPER_ENGINE_PAGES_PER_BROWSER` (times
+   `SCRAPER_CONCURRENCY`) must fit in it. The engine launches Chromium with
+   `--no-sandbox` and `--disable-dev-shm-usage`, so `/dev/shm` size is not a
+   constraint inside the container.
 7. **No public domain is needed** — the worker only makes outbound HTTPS calls
    to your app's `/api/worker/*` endpoints.
 8. Deploy. The log should show `worker online` and, every ~20s, a heartbeat.
@@ -248,10 +296,15 @@ Do not deploy to Railway until the smoke test passes locally.
 shared secret (constant-time compared); every claimed job also gets a unique,
 expiring lease token that authorizes all writes for that job. Multiple worker
 replicas can run concurrently without claiming the same job — provider-scoped
-`FOR UPDATE SKIP LOCKED` leasing in Postgres guarantees it. Each job runs in
-its own Chromium session, always closed in `finally`. Jobs that die mid-run
-are reclaimed after the lease expires, retried up to 3 times total, then
-failed with **unused quota automatically refunded**.
+`FOR UPDATE SKIP LOCKED` leasing in Postgres guarantees it. Every engine run is
+a child process in its own process group: on a time budget, a shutdown signal
+or a stop request the worker SIGTERMs the group (engine + all Chromium
+processes), waits `SCRAPER_ENGINE_STOP_GRACE` seconds and SIGKILLs whatever is
+left, so a wedged browser can never outlive its job slice. Upstream telemetry
+is disabled (`DISABLE_TELEMETRY=1`) — nothing about your searches leaves the
+container. Jobs that die mid-run are reclaimed after the lease expires, retried
+up to `SCRAPER_MAX_ATTEMPTS` slices total, then failed with **unused quota
+automatically refunded**.
 
 ---
 
@@ -403,7 +456,8 @@ npm test              # API tests + Lead Finder tests + scraper worker tests
 | `test:api` | API behaviour, validation and auth |
 | `test:leadfinder` | lead filters, email safety, dedupe keys, job counters |
 | `verify:no-google` | no Google Maps API dependency anywhere in the lead path |
-| `test:worker` | the scraper engine against an offline Google Maps simulator (98% of it runs without a browser) |
+| `verify:engine` | the engine pin agrees with `worker/Dockerfile`, the adapter's flags, the licence and the docs |
+| `test:worker` | the whole worker — coverage planning, the engine adapter (real subprocess + JSONL streaming), dedupe, filters, emails and the job pipeline — against an offline `google-maps-scraper` CLI double. No browser, no network |
 | `verify:migrations` | every migration parses (`pip install pglast` to enable; skipped otherwise) |
 
 To run the **full app** (frontend + serverless API + cron routes) locally you
@@ -419,12 +473,13 @@ npm run dev           # = vercel dev → http://localhost:3000
 `npm run dev:web` starts Vite alone (UI only, no API) if you are just doing
 visual work.
 
-**Scraping locally** — first verify the engine with a real search
-(see [Step 4.1](#41-test-the-scraper-locally-with-a-real-search-before-deploying)):
+**Scraping locally** — verify the integration offline first, then against live
+Google Maps (see [Step 4.1](#41-test-the-scraper-locally-before-deploying)):
 
 ```bash
-pip install -r worker/requirements.txt
-python worker/smoke_test.py "dentists" "Austin, Texas" 5
+python3 -m venv .venv && .venv/bin/pip install -r worker/requirements.txt
+.venv/bin/python worker/smoke_test.py --simulate "gym" "Delhi" 50   # no browser, no network
+python worker/smoke_test.py "dentists" "Austin, Texas" 5            # needs the engine binary
 ```
 
 Then run the full worker against your local app (second terminal, Docker
@@ -449,9 +504,9 @@ curl -X POST localhost:3000/api/cron/tick -H "x-cron-secret: $CRON_SECRET"
 
 # How background jobs work
 
-Work is stored in Supabase. Email jobs and the optional Places provider run in
-bounded serverless slices. In Selenium mode, the Python worker claims only
-`provider='worker'` jobs through the app's secure control plane.
+Work is stored in Supabase. Email jobs run in bounded serverless slices. Lead
+discovery does not: the Python worker claims only `provider='scraper'` jobs
+through the app's secure control plane and runs the scraping engine itself.
 
 **Lifecycle**
 
@@ -468,7 +523,7 @@ email_jobs:   scheduled → processing → sent
 | --- | --- | --- |
 | Vercel Cron → `/api/cron/tick` | daily (midnight, Hobby limit) | scheduled follow-ups, stale recovery, rollovers |
 | App → `/api/jobs/tick` | while a signed-in user has pending work | instant start, no waiting for cron |
-| Selenium worker → `/api/worker/claim` | continuously, worker mode | real no-key Google Maps extraction |
+| Scraper worker → `/api/worker/claim` | continuously, worker mode | real no-key Google Maps extraction |
 
 **Safety properties**
 
@@ -516,22 +571,37 @@ email_jobs:   scheduled → processing → sent
 | --- | --- | --- |
 | `ZYBBLE_APP_URL` | yes | your Vercel app URL |
 | `SCRAPER_WORKER_SECRET` | yes | same value as Vercel |
-| `SCRAPER_CONCURRENCY` | no | `2` (1–4; ~600 MB RAM per browser) |
+| `SCRAPER_CONCURRENCY` | no | `2` — job slices in parallel (1–4) |
 | `SCRAPER_POLL_SECONDS` | no | `5` |
-| `SCRAPER_JOB_TIMEOUT_SECONDS` | no | `1200` |
-
+| `SCRAPER_JOB_TIMEOUT_SECONDS` | no | `1200` — engine budget per slice; the job resumes afterwards |
 | `SCRAPER_EMAIL_BUDGET_SECONDS` | no | `600` |
 | `SCRAPER_MAX_TILES` | no | `36` — viewports swept to cover the whole location |
 | `SCRAPER_MAX_ATTEMPTS` | no | `6` — bounded slices a broad search may use |
 | `SCRAPER_BATCH_SIZE` | no | `5` — businesses stored per crash-safe batch |
+| `SCRAPER_TARGETS_PER_RUN` | no | `6` — viewports handed to one engine run |
+| `SCRAPER_ENGINE_CONCURRENCY` | no | `2` — `-c`, searches the engine runs at once |
+| `SCRAPER_ENGINE_BROWSER_POOL` | no | `1` — Chromium contexts (~500–700 MB each with their tabs) |
+| `SCRAPER_ENGINE_PAGES_PER_BROWSER` | no | `2` — tabs per Chromium context |
+| `SCRAPER_ENGINE_DEPTH` | no | `10` — `-depth`, scroll depth per viewport (raised automatically when a slice needs more) |
+| `SCRAPER_ENGINE_LANG` | no | `en` — Google interface language |
+| `SCRAPER_ENGINE_INACTIVITY` | no | `3m` — abandon a wedged browser session after this idle time |
+| `SCRAPER_ENGINE_EXTRACT_EMAIL` | no | `0` — `1` lets the engine read addresses off business websites (still verified here) |
+| `SCRAPER_ENGINE_PROXIES_FILE` | no | empty — one proxy URL per line, if you route the engine through proxies |
+| `GOOGLE_MAPS_SCRAPER_BIN` | no | empty — auto-detected on `PATH` and in `/usr/local/bin` |
+
+`.env.example` documents every knob, including the low-level ones
+(`SCRAPER_ENGINE_STOP_GRACE`, `SCRAPER_ENGINE_POLL_INTERVAL`,
+`SCRAPER_ENGINE_WORKDIR`, `SCRAPER_ENGINE_EXTRA_ARGS`, …).
 
 No Google Maps API key exists anywhere in this deployment — and none is
 needed. Lead discovery is powered entirely by the Railway scraper worker,
 which drives real Google Maps through the open-source
-[GoogleMapScraper](https://github.com/SoCloseSociety/GoogleMapScraper) engine
-vendored in `worker/vendor/`. There is no Places API, no Geocoding API and no
+[gosom/google-maps-scraper](https://github.com/gosom/google-maps-scraper)
+engine (MIT), built from the tag and commit pinned in
+`worker/vendor/engine.json`. There is no Places API, no Geocoding API and no
 `places` fallback: `npm run verify:no-google` fails the build if one ever
-reappears.
+reappears, and `npm run verify:engine` fails it if the engine pin, the
+Dockerfile and the adapter drift apart.
 
 ---
 
@@ -546,14 +616,19 @@ reappears.
 | `SUPABASE_URL` was pasted with `/rest/v1/` | The API now strips it defensively and rejects other path-bearing URLs with a clear 503 naming the variable. Use the bare Project URL: `https://xyz.supabase.co`. |
 | `/api/*` returns the HTML page | The `/api/:path*` → `/api/router?path=:path*` rewrite must come **first** in `vercel.json`. Redeploy. |
 | API 500 on every route (`FUNCTION_INVOCATION_FAILED`, no JSON body) | The function crashed while being imported, before any route ran. Check **Vercel → Deployments → Functions logs**. Most likely cause: the emitted `api/*.js` still contains `.ts` import specifiers (`Cannot find module '.../_lib/application.ts'`) — `tsconfig.json` must keep `"rewriteRelativeImportExtensions": true`; `npm run verify:api` reproduces this locally and runs as part of `npm run build`. |
-| Search fails with "Selenium lead worker is offline" | The Railway worker is not running or not heart-beating. Check Railway → service → **Deployments/Logs** for `worker online`; verify `ZYBBLE_APP_URL` and `SCRAPER_WORKER_SECRET`. `/api/ready` shows the heartbeat age. |
+| `/api/ready` shows `providerHealth.status: "offline"` or searches never start | The Railway worker is not running or not heart-beating. Check Railway → service → **Deployments/Logs** for `worker online` (it prints the engine binary, version and pin); verify `ZYBBLE_APP_URL` and `SCRAPER_WORKER_SECRET`. `/api/ready` shows the heartbeat age and the engine build the worker reported. |
 | Railway build log shows `vite build` / `react-vite-tailwind` | Railway tried to build the Node/Vite app instead of the worker. Clear any **Root Directory** setting (leave it repo root) so the root `railway.json` Dockerfile builder applies. Redeploy. |
-| Railway worker crashes or is OOM-killed | Raise the service memory to ≥ 2 GB (Settings → Resources) or lower `SCRAPER_CONCURRENCY`. Each Chromium session needs ~500–700 MB. |
+| Railway worker crashes or is OOM-killed | Raise the service memory to ≥ 2 GB (Settings → Resources), or lower `SCRAPER_CONCURRENCY`, `SCRAPER_ENGINE_BROWSER_POOL` and `SCRAPER_ENGINE_PAGES_PER_BROWSER`. Each Chromium context needs ~500–700 MB for its tabs. |
+| Worker log says `scraping engine unavailable` | The engine binary is missing from the image or `GOOGLE_MAPS_SCRAPER_BIN` points nowhere. Redeploy so `worker/Dockerfile` rebuilds it, and check the build log for the `engine pin mismatch` / `google-maps-scraper -version` steps. The job fails fast and is **not** retried, because a missing binary cannot fix itself. |
+| Worker log says `engine failed (exit code N)` | The engine or its browser died mid-sweep. The slice is retried from the saved cursor with a fresh browser session. If it repeats, lower `SCRAPER_ENGINE_CONCURRENCY` / `SCRAPER_ENGINE_PAGES_PER_BROWSER`, raise memory, or route through proxies with `SCRAPER_ENGINE_PROXIES_FILE`. The last ~16 KB of the engine's stderr is in the worker log. |
+| Searches are slower than before | The engine scrolls each viewport only as deep as the slice needs (`-depth`), and stops the moment the quota is met. Raise `SCRAPER_TARGETS_PER_RUN` for fewer engine restarts, or `SCRAPER_ENGINE_CONCURRENCY` if CPU and RAM allow. |
 | Worker gets 401 | `SCRAPER_WORKER_SECRET` differs between Vercel and Railway. Set the same 64-hex value in both, redeploy Vercel and restart the worker. |
 | Worker gets 409 | Its job lease expired or was reclaimed — expected safe behavior; the worker drops the stale browser result and claims another job. After `SCRAPER_MAX_ATTEMPTS` (default 6) claims the job finishes with what it collected and quota is refunded. |
 | A search returns far fewer leads than requested | The location is swept in bounded slices; check that the worker is heart-beating and look at `/api/ready`. Each slice continues from the saved coverage cursor — see the job's `coverage_done/coverage_total` counters in the UI. |
-| Smoke test fails locally with a traffic challenge | Google presented a CAPTCHA for your IP. Wait, retry from a different network, or lower the limit. The worker reports this as a retryable failure — it never bypasses challenges. |
-| Smoke test fails with `SelectorChangedError` | Google changed Maps markup. Update the fallback selectors in `worker/scraper.py` (`collect_links` / `extract_place`). |
+| Smoke test fails locally with a traffic challenge | Google presented a CAPTCHA for your IP. Wait, retry from a different network, or lower the limit. The worker reports this as a retryable failure (`ChallengeError`) and resumes from its cursor — it never bypasses challenges. |
+| Engine exits immediately with `flag provided but not defined` | The pinned engine and the adapter disagree about a flag. Run `npm run verify:engine`: it compares every flag in `worker/vendor/engine.json` with the ones `worker/gmaps_engine.py` sends. |
+| Engine works in Docker but not on your laptop | Playwright's Chromium and its system libraries are missing. Install them the way the image does (`playwright install chromium --with-deps`), or just use the Docker image — it is what Railway runs. |
+| `python worker/run_tests.py` fails with `ModuleNotFoundError: requests` | Install the worker's two runtime dependencies first: `pip install -r worker/requirements.txt`. The offline suite needs no browser and no engine binary. |
 | Search completes with 0 leads | No businesses matched. Widen the radius or use a broader location. Quota is refunded automatically. |
 | Job stuck in `collecting` | Wait one cron cycle — the lease expires after 2 minutes and the job resumes from its cursor. Check `/api/internal/metrics` with the cron secret. |
 | Emails scheduled but not sending | Confirm **Settings → Cron Jobs** shows `/api/cron/tick`, and that the campaign has a connected SMTP sender. Opening the app also drives a tick. |
@@ -568,21 +643,28 @@ reappears.
 
 These are real constraints, stated plainly rather than hidden:
 
-1. **Selenium layout changes are an operational risk.** The worker uses several
-   selector fallbacks and reports a precise `SelectorChangedError`, but Google
-   can change Maps markup. Monitor worker logs and `/api/ready`.
+1. **Google Maps markup changes are an operational risk.** The engine is pinned
+   to a released upstream tag, so a markup change is fixed by bumping the pin in
+   `worker/vendor/engine.json` (and `ARG GMS_VERSION` / `ARG GMS_COMMIT` in
+   `worker/Dockerfile`) to a newer upstream release, then re-running the smoke
+   test — not by patching selectors in this repository. Between bumps, a markup
+   change shows up as fewer results or `engine failed`, so monitor the worker
+   logs and `/api/ready`.
 2. **The scraper runs on Railway.** Chromium cannot run reliably in Vercel's
    serverless functions, so the worker is a separate Railway service — the only
    second deployment in this architecture, dedicated entirely to Lead Finder.
 3. **Worker radius is viewport-based.** The worker geocodes the location with
-   Nominatim and sets Google Maps' center/zoom to the requested radius. Maps may
-   still return edge results; it is not a contractual geo-fence.
+   Nominatim and turns the requested radius into a grid of Google Maps
+   viewports at a matching zoom. Maps may still return edge results; it is not
+   a contractual geo-fence.
 4. **Scraping Google Maps may conflict with Google's Terms of Service.** The
    upstream project carries the same warning. Use lawful public-business
    research practices, do not bypass CAPTCHAs/access controls, and obtain legal
    advice for your jurisdiction and scale.
-5. **Places fallback caps results** at roughly 60 per text query and is metered
-   by Google; it is not used in worker mode.
+5. **One viewport yields roughly 20 results per scroll depth.** Coverage
+   therefore comes from sweeping many viewports across the location
+   (`SCRAPER_MAX_TILES`), not from one deep scroll — which is also why a very
+   small location honestly returns fewer leads than requested.
 6. **Hobby cron runs once per day.** Vercel Hobby allows a single daily cron
    run (configured at `0 0 * * *`; sub-daily schedules require **Pro**). The
    in-app tick compensates by draining the queue every few seconds while anyone
@@ -590,7 +672,8 @@ These are real constraints, stated plainly rather than hidden:
    use — only fully unattended workloads (e.g., a follow-up due overnight while
    nobody is online) would wait for the daily run. You can also drain the queue
    manually at any time: `curl -X POST https://<domain>/api/cron/tick -H "x-cron-secret: <CRON_SECRET>"` (see Local development).
-7. **Function timeout is 60s**, so email delivery and Places fallback are chunked.
+7. **Function timeout is 60s**, so email delivery and post-discovery
+   enrichment are chunked; discovery itself never runs in a function.
 8. **Email verification is DNS-level** (MX + published-address provenance). It
    does not perform SMTP recipient probing, which providers widely block and
    which harms sender reputation.

@@ -1,13 +1,16 @@
 """Full worker pipeline: claim → discover → dedupe → enrich → emails → complete.
 
-The API is replaced by an in-memory double with the same method surface as
-``worker.WorkerApi``, and the browser by :class:`tests.fake_maps.FakeDriver`.
-The job orchestration code under test is the real production code path.
+The Zybble API is replaced by an in-memory double with the same method surface
+as ``worker.WorkerApi``, and `gosom/google-maps-scraper` by the offline CLI
+double in :mod:`tests.fake_gms`. Everything between them — job orchestration,
+coverage planning, the real subprocess/JSONL transport, streaming, dedupe,
+filters, enrichment, email discovery and progress reporting — is production code.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 import unittest
 
 os.environ.setdefault("ZYBBLE_APP_URL", "https://zybble.test")
@@ -18,7 +21,7 @@ from email_finder import SiteIntel  # noqa: E402
 from filters import LeadFilters, evaluate_discovery  # noqa: E402
 from scraper import JobTimeout, ScrapeState, place_key  # noqa: E402
 import worker as worker_module  # noqa: E402
-from tests.fake_maps import FakeDriver, FakeMaps, build_world, geocode_stub  # noqa: E402
+from tests.fake_gms import MUMBAI_BOX, FakeEngine, build_world, geocode_stub  # noqa: E402
 
 
 class FakeApi:
@@ -32,6 +35,7 @@ class FakeApi:
         self.completed = False
         self.failed: list[tuple[str, bool]] = []
         self.resumed: list[str] = []
+        self.intel_calls: list[dict] = []
         self.enrich_calls = 0
         self._seen: set[str] = set()
         self._next_id = 1
@@ -80,17 +84,25 @@ class FakeApi:
             row["id"] = f"lead-{self._next_id}"
             self._next_id += 1
             row["email"] = None
-            row["email_status"] = None
+            row["email_status"] = "unknown"
+            row["email_source_url"] = None
             self.saved_leads.append(row)
             accepted += 1
-        return {"collected": len(self.saved_leads), "accepted": accepted, "duplicates": duplicates, "filtered": filtered}
+        return {
+            "ok": True,
+            "collected": len(self.saved_leads),
+            "accepted": accepted,
+            "duplicates": duplicates,
+            "filtered": filtered,
+        }
 
     def enrich(self, job):
         self.enrich_calls += 1
         return {"enriched": len(self.saved_leads)}
 
     def pending_emails(self, job):
-        return [lead for lead in self.saved_leads if lead.get("email_status") is None]
+        return [lead for lead in self.saved_leads if lead.get("email_status") in (None, "unknown")
+                and lead.get("email") is None]
 
     def email(self, job, lead_id, **fields):
         for lead in self.saved_leads:
@@ -151,30 +163,66 @@ class PipelineTest(unittest.TestCase):
     def setUp(self):
         self.original_run_scrape = worker_module.run_scrape
         self.original_intel = worker_module.find_site_intel
+        self.original_log = worker_module.log
+        self.fakes: list[FakeEngine] = []
+        self.log_lines: list[dict] = []
+
+        def quiet_log(level, message, **fields):
+            # Keep the suite readable; errors are still printed on teardown.
+            self.log_lines.append({"level": level, "message": message, **fields})
+
+        worker_module.log = quiet_log
 
     def tearDown(self):
         worker_module.run_scrape = self.original_run_scrape
         worker_module.find_site_intel = self.original_intel
+        worker_module.log = self.original_log
+        for record in self.log_lines:
+            if record.get("level") in ("error", "warning"):
+                print(f"  [worker:{record['level']}] {record.get('message')} "
+                      f"{ {k: v for k, v in record.items() if k not in ('level', 'message')} }",
+                      file=sys.stderr)
+        for fake in self.fakes:
+            fake.cleanup()
 
-    def run_job(self, job, world=None, intel=None, after=None):
-        """Run the real ``process_job`` against fake Maps + an in-memory API."""
-        maps = FakeMaps(world if world is not None else build_world(240, seed=7))
-        driver = FakeDriver(maps)
+    def engine_for(self, world) -> FakeEngine:
+        fake = FakeEngine(world)
+        self.fakes.append(fake)
+        return fake
+
+    def run_job(self, job, world=None, intel=None, after=None, targets_per_batch=6, engine=None):
+        """Run the real ``process_job`` against the engine simulator + fake API."""
+        simulator = engine or self.engine_for(world if world is not None else build_world(240, seed=7))
 
         def patched(**kwargs):
+            # The worker builds an engine from the environment and caps the plan
+            # by MAX_TILES; the test injects the simulator instead.
+            kwargs.pop("engine", None)
+            kwargs.pop("max_tiles", None)
             result = self.original_run_scrape(
-                driver=driver,
+                engine=simulator.engine,
                 geocoder=geocode_stub,
                 sleep=lambda _seconds: None,
-                page_timeout=1,
+                targets_per_batch=targets_per_batch,
+                max_tiles=36,
                 **kwargs,
             )
             return after(result) if after else result
 
         worker_module.run_scrape = patched
-        worker_module.find_site_intel = intel or (lambda website: None)
+
+        def default_intel(website, engine_candidates=None):
+            return None
+
+        def recording_intel(website, engine_candidates=None):
+            api_holder["intel"].append({"website": website, "engine_candidates": engine_candidates})
+            return (intel or default_intel)(website, engine_candidates=engine_candidates)
+
+        api_holder = {"intel": []}
+        worker_module.find_site_intel = recording_intel
 
         api = FakeApi(job)
+        api_holder["intel"] = api.intel_calls
         worker_module.WorkerApi.create = classmethod(lambda cls: api)
         worker_module.process_job(job)
         return api
@@ -196,17 +244,42 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(counts.get("unique"), 50)
         self.assertEqual(counts.get("saved"), 50)
         self.assertGreaterEqual(counts.get("discovered", 0), 50)
+        self.assertGreaterEqual(counts.get("errors", -1), 0)
+
+    def test_progress_never_moves_backwards(self):
+        api = self.run_job(make_job(quantity=50))
+        percents = [call["progress"] for call in api.progress_calls]
+        self.assertEqual(percents, sorted(percents), "the progress bar must only ever move forward")
+        self.assertLessEqual(max(percents), 99, "the worker never claims 100% — the API closes the job")
+        self.assertEqual(api.job["progress"], 100)
+
+    def test_every_saved_lead_satisfies_the_api_contract(self):
+        api = self.run_job(make_job(quantity=25))
+        self.assertTrue(api.saved_leads)
+        required = {
+            "company", "category", "address", "city", "state", "country", "phone", "website",
+            "maps_url", "rating", "reviews", "hours", "open_status", "place_id", "external_id",
+            "latitude", "longitude", "social_profiles", "source_query", "description",
+            "email", "email_status", "email_source_url",
+        }
+        for lead in api.saved_leads:
+            self.assertTrue(required.issubset(lead.keys()), f"missing {required - lead.keys()}")
+            self.assertTrue(lead["company"])
+            self.assertIn(lead["open_status"], {"open", "closed", "permanently_closed", "unknown"})
+            self.assertTrue(str(lead["maps_url"]).startswith("https://www.google.com/maps/"))
+            if lead["latitude"] is not None:
+                self.assertTrue(-90 <= lead["latitude"] <= 90)
+            if lead["longitude"] is not None:
+                self.assertTrue(-180 <= lead["longitude"] <= 180)
 
     def test_dentists_mumbai_end_to_end(self):
-        from tests.fake_maps import MUMBAI_BOX
-
         world = build_world(240, seed=31, box=MUMBAI_BOX, prefix="Dental Care", category="Dentist")
         api = self.run_job(make_job(query="dentists", location="Mumbai", quantity=50), world=world)
         self.assertTrue(api.completed)
         self.assertEqual(len(api.saved_leads), 50)
 
     def test_emails_are_discovered_stored_and_counted(self):
-        def intel(website):
+        def intel(website, engine_candidates=None):
             return SiteIntel(
                 email=f"hello@{website.split('//')[-1].split('/')[0]}",
                 status="verified",
@@ -228,7 +301,7 @@ class PipelineTest(unittest.TestCase):
     def test_invalid_email_never_fails_the_job(self):
         """The reported 'Invalid email address' failure mode."""
 
-        def intel(_website):
+        def intel(_website, engine_candidates=None):
             return SiteIntel(email="not-an-email", status="verified", source_url="https://x/contact")
 
         api = self.run_job(make_job(quantity=10), intel=intel)
@@ -244,17 +317,18 @@ class PipelineTest(unittest.TestCase):
         world = build_world(30, seed=17)
         for business in world:
             business.website = None
-        api = self.run_job(make_job(quantity=10), world=world, intel=lambda _w: None)
+        api = self.run_job(make_job(quantity=10), world=world, intel=lambda _w, **_k: None)
         self.assertTrue(api.completed)
-        self.assertTrue(api.leads)
+        self.assertTrue(api.saved_leads)
         for lead in api.saved_leads:
             self.assertIsNone(lead["website"])
             self.assertEqual(lead["email_status"], "unknown")
+        self.assertEqual(api.intel_calls, [], "a business without a website is never looked up")
 
     def test_one_website_that_explodes_does_not_stop_email_discovery(self):
         calls = {"n": 0}
 
-        def intel(website):
+        def intel(website, engine_candidates=None):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("boom")
@@ -264,10 +338,33 @@ class PipelineTest(unittest.TestCase):
         self.assertTrue(api.completed)
         self.assertGreater(sum(1 for lead in api.saved_leads if lead.get("email")), 0)
 
+    def test_engine_email_candidates_are_handed_to_the_site_scan(self):
+        """With -email on, the engine's addresses must reach the verifier."""
+        world = build_world(20, seed=23)
+        for index, business in enumerate(world):
+            if business.website:
+                business.emails = [f"contact{index}@{business.website.split('//')[-1].split('/')[0]}"]
+        fake = self.engine_for(world)
+        fake.engine.extract_email = True
+
+        seen: list[dict] = []
+
+        def intel(website, engine_candidates=None):
+            seen.append({"website": website, "engine_candidates": engine_candidates})
+            return None
+
+        api = self.run_job(make_job(quantity=10), intel=intel, engine=fake)
+        self.assertTrue(api.completed)
+        self.assertTrue(seen)
+        self.assertTrue(
+            any(call["engine_candidates"] for call in seen),
+            "engine-read addresses are passed through, keyed by website host",
+        )
+
     def test_filters_are_applied_to_the_saved_leads(self):
         api = self.run_job(make_job(quantity=25, filters={"min_rating": 4.7, "has_website": True}))
         self.assertTrue(api.completed)
-        self.assertTrue(api.leads)
+        self.assertTrue(api.saved_leads)
         for lead in api.saved_leads:
             self.assertGreaterEqual(lead["rating"], 4.7)
             self.assertIsNotNone(lead["website"])
@@ -294,13 +391,6 @@ class PipelineTest(unittest.TestCase):
 
     def test_a_scrape_timeout_is_resumable_not_fatal(self):
         def timed_out(**kwargs):
-            self.original_run_scrape(
-                driver=FakeDriver(FakeMaps(build_world(240, seed=7))),
-                geocoder=geocode_stub,
-                sleep=lambda _seconds: None,
-                page_timeout=1,
-                **kwargs,
-            )
             raise JobTimeout("scrape exceeded its job time budget")
 
         worker_module.run_scrape = timed_out
@@ -311,6 +401,59 @@ class PipelineTest(unittest.TestCase):
         self.assertTrue(api.resumed)
         self.assertEqual(api.failed, [])
         self.assertEqual(api.job["status"], "queued")
+
+    def test_a_google_challenge_requeues_the_job_with_its_cursor(self):
+        fake = self.engine_for(build_world(60, seed=29))
+        fake = FakeEngine(build_world(60, seed=29), mode="challenge")
+        self.fakes.append(fake)
+        api = self.run_job(make_job(quantity=50), engine=fake)
+        self.assertFalse(api.completed)
+        self.assertEqual(api.failed, [], "a Google challenge is a pause, not a dead job")
+        self.assertTrue(api.resumed, "the worker must retry with a fresh browser session")
+        self.assertEqual(api.job["status"], "queued")
+        self.assertTrue(api.states, "the cursor is saved so the retry resumes instead of restarting")
+
+    def test_the_heartbeat_reports_the_engine_build(self):
+        """/api/ready shows which pinned engine a running worker uses."""
+        label = worker_module.engine_label(
+            {"available": True, "engine_version": "v1.18.0", "engine_commit": "2b8616d0ccf7d3c578b42a7440e3c13bb22e5083"}
+        )
+        self.assertEqual(label, "google-maps-scraper v1.18.0+2b8616d")
+        self.assertEqual(worker_module.engine_label({"available": True}), "google-maps-scraper")
+        self.assertIn("unavailable", worker_module.engine_label({"available": False}))
+
+    def test_a_missing_engine_is_logged_with_its_reason(self):
+        """The operator sees *why* the job failed, not just that it did."""
+        logs: list[dict] = []
+        original = worker_module.log
+        worker_module.log = lambda level, message, **fields: logs.append(
+            {"level": level, "message": message, **fields}
+        )
+        try:
+            api = FakeApi(make_job(quantity=5))
+            worker_module.WorkerApi.create = classmethod(lambda cls: api)
+            worker_module.run_scrape = lambda **_kwargs: (_ for _ in ()).throw(
+                worker_module.EngineUnavailable("google-maps-scraper is not installed")
+            )
+            worker_module.process_job(make_job(quantity=5))
+        finally:
+            worker_module.log = original
+        record = next(item for item in logs if item["message"] == "scraping engine unavailable")
+        self.assertEqual(record["level"], "error")
+        self.assertIn("not installed", record["error"])
+        self.assertEqual(api.job["status"], "failed")
+
+    def test_a_missing_engine_is_not_retried_forever(self):
+        api = FakeApi(make_job(quantity=10))
+        worker_module.WorkerApi.create = classmethod(lambda cls: api)
+        worker_module.run_scrape = lambda **_kwargs: (_ for _ in ()).throw(
+            worker_module.EngineUnavailable("google-maps-scraper is not installed")
+        )
+        worker_module.process_job(make_job(quantity=10))
+        self.assertTrue(api.failed)
+        _error, retryable = api.failed[0]
+        self.assertFalse(retryable, "a missing binary cannot fix itself by retrying")
+        self.assertEqual(api.job["status"], "failed")
 
 
 if __name__ == "__main__":

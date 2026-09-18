@@ -2,10 +2,11 @@
 /**
  * Guard: lead discovery must never depend on a Google Maps API.
  *
- * Zybble finds businesses with the open-source GoogleMapScraper engine that
- * runs in the Railway worker (worker/scraper.py → worker/vendor). No Google
- * Maps API key, Places API or Geocoding API is used — or even referenced — in
- * the lead-generation path.
+ * Zybble finds businesses with the open-source gosom/google-maps-scraper engine
+ * that runs in the Railway worker (worker/gmaps_engine.py →
+ * worker/scraper.py), pinned in worker/vendor/engine.json. No Google Maps API
+ * key, Places API or Geocoding API is used — or even referenced — in the
+ * lead-generation path.
  *
  * This script fails the build if any of that ever creeps back in.
  *
@@ -34,9 +35,10 @@ const FORBIDDEN = [
   { pattern: /leadProvider/i, why: "retired Google Places lead provider switch" },
 ];
 
-// The vendored upstream scraper is allowed to *name* Google Maps: it drives the
-// public maps UI in a browser, which is the whole point of the engine.
-const ALLOWED_CONTEXT = /vendor|googlemapscraper|GoogleMapScraper|google\.com\/maps\/search|www\.google\.com\/maps/i;
+// The scraping engine is allowed to *name* Google Maps: it drives the public
+// maps UI in a headless browser, which is the whole point of it.
+const ALLOWED_CONTEXT =
+  /vendor|google-maps-scraper|google_maps_scraper|gosom|gmaps_engine|fake_gms|google\.com\/maps\/search|www\.google\.com\/maps/i;
 
 const violations = [];
 let scanned = 0;
@@ -85,7 +87,7 @@ if (violations.length) {
     console.error(`    ${violation.snippet}`);
   }
   console.error(
-    "\nLead discovery runs through the GoogleMapScraper worker. Remove every Google Maps API dependency.",
+    "\nLead discovery runs through the google-maps-scraper worker. Remove every Google Maps API dependency.",
   );
   process.exit(1);
 }

@@ -4,9 +4,9 @@ import type { SearchFilters, SearchJob } from "./types";
 // ————————————————————————————————————————————————————————————
 // Lead Finder client.
 //
-// The server creates a durable search job in Supabase; the GoogleMapScraper
-// worker (Railway) drives real Google Maps discovery and streams businesses
-// back. The UI polls job status, which now carries the full counter set:
+// The server creates a durable search job in Supabase; the scraper worker
+// (Railway, running the google-maps-scraper engine) drives real Google Maps
+// discovery and streams businesses back. The UI polls job status, which now carries the full counter set:
 // requested → discovered → unique → enriched → saved, plus duplicates,
 // filtered, emails found, errors and search-coverage progress.
 // ————————————————————————————————————————————————————————————

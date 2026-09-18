@@ -1,0 +1,63 @@
+{
+  "engine": "google-maps-scraper",
+  "upstream": "https://github.com/gosom/google-maps-scraper",
+  "version": "v1.18.0",
+  "commit": "2b8616d0ccf7d3c578b42a7440e3c13bb22e5083",
+  "license": "MIT",
+  "license_file": "LICENSE-google-maps-scraper.txt",
+  "copyright": "Copyright (c) 2023 Georgios Komninos",
+  "binary": "google-maps-scraper",
+  "install_path": "/usr/local/bin/google-maps-scraper",
+  "interface": "cli",
+  "output_format": "jsonl",
+  "build": {
+    "go_version": "1.27.1",
+    "playwright_go_version": "v0.6100.0",
+    "playwright_browsers_path": "/opt/browsers",
+    "playwright_driver_path": "/opt/ms-playwright-go"
+  },
+  "flags": [
+    "-input",
+    "-results",
+    "-json",
+    "-c",
+    "-depth",
+    "-lang",
+    "-exit-on-inactivity",
+    "-browser-pool-size",
+    "-pages-per-browser",
+    "-email",
+    "-disable-page-reuse",
+    "-proxies-file",
+    "-version"
+  ],
+  "environment": {
+    "DISABLE_TELEMETRY": "1",
+    "PLAYWRIGHT_BROWSERS_PATH": "/opt/browsers",
+    "PLAYWRIGHT_DRIVER_PATH": "/opt/ms-playwright-go"
+  },
+  "entry_fields_used": [
+    "input_id",
+    "title",
+    "category",
+    "categories",
+    "address",
+    "complete_address",
+    "web_site",
+    "phone",
+    "link",
+    "review_rating",
+    "review_count",
+    "latitude",
+    "longitude",
+    "longtitude",
+    "place_id",
+    "cid",
+    "data_id",
+    "status",
+    "open_hours",
+    "description",
+    "emails"
+  ],
+  "notes": "worker/Dockerfile builds this exact tag+commit from source; scripts/verify-scraper-engine.mjs fails the build if the Dockerfile and this file drift apart."
+}

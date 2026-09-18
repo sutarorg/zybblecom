@@ -1,15 +1,16 @@
 """Zybble scraper worker — production queue consumer.
 
-Runs the Google Maps discovery engine (``scraper.run_scrape``, built on the
-vendored SoCloseSociety/GoogleMapScraper two-phase core) and streams what it
-finds into Zybble's Supabase pipeline through the authenticated
-``/api/worker/*`` control plane.
+Runs the Google Maps discovery engine (``scraper.run_scrape``, powered by the
+open-source `gosom/google-maps-scraper <https://github.com/gosom/google-maps-scraper>`_
+binary — see ``worker/gmaps_engine.py``) and streams what it finds into Zybble's
+Supabase pipeline through the authenticated ``/api/worker/*`` control plane.
 
 Responsibilities
 ----------------
 1. claim a job (atomic lease, one job per lease token);
-2. sweep the whole requested area until the requested number of *unique,
-   filtered* businesses is collected or the coverage plan is exhausted;
+2. sweep the whole requested area — one batch of Google Maps viewports per
+   engine invocation — until the requested number of *unique, filtered*
+   businesses is collected or the coverage plan is exhausted;
 3. deduplicate (place id → Maps URL → name+address) and apply the user's
    filters while scraping, persisting crash-safe batches;
 4. enrich the stored rows and discover publicly published emails / socials;
@@ -17,8 +18,10 @@ Responsibilities
 
 Resilience
 ----------
-* The browser session is bounded by a time budget. Hitting it is **not** a
-  failure: the coverage cursor is saved and the job resumes on the next claim.
+* Every engine invocation is bounded by a time budget and runs in its own
+  process group, so a stuck browser is always killed and can never be orphaned.
+  Hitting the budget is **not** a failure: the coverage cursor is saved and the
+  job resumes on the next claim.
 * One unreadable business, one unreachable website and one malformed email
   address can never fail a job — they increment warnings and the sweep continues.
 * The worker holds no Supabase credentials; all storage goes through the app.
@@ -38,16 +41,17 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 import requests
-from selenium.common.exceptions import SessionNotCreatedException, WebDriverException
 
 from email_finder import find_site_intel, normalize_email
 from filters import LeadFilters
+from gmaps_engine import EngineError, EngineUnavailable, GosomEngine
 from scraper import (
     ChallengeError,
     JobTimeout,
     Place,
     ScrapeState,
-    SelectorChangedError,
+    engine_summary,
+    site_key,
     run_scrape,
 )
 
@@ -62,6 +66,7 @@ EMAIL_BUDGET = max(60, int(os.environ.get("SCRAPER_EMAIL_BUDGET_SECONDS", "600")
 BATCH_SIZE = max(1, min(25, int(os.environ.get("SCRAPER_BATCH_SIZE", "10"))))
 MAX_TILES = max(1, min(72, int(os.environ.get("SCRAPER_MAX_TILES", "36"))))
 MAX_ATTEMPTS = max(1, min(12, int(os.environ.get("SCRAPER_MAX_ATTEMPTS", "6"))))
+TARGETS_PER_RUN = max(1, min(24, int(os.environ.get("SCRAPER_TARGETS_PER_RUN", "6"))))
 INSTANCE_ID = os.environ.get("HOSTNAME") or socket.gethostname()
 
 stopping = threading.Event()
@@ -257,6 +262,7 @@ def process_job(job: dict) -> None:
 
     reporter = ProgressReporter(api, job)
     pending_batch: list[Place] = []
+    email_candidates: dict[str, list[str]] = {}
     counters = {
         "discovered": int(state.stats.discovered or 0),
         "unique": int(state.stats.unique or 0),
@@ -330,10 +336,16 @@ def process_job(job: dict) -> None:
             on_stage=on_stage,
             on_place=on_place,
             on_state=on_state,
+            engine=GosomEngine.from_env(),
             max_tiles=MAX_TILES,
+            should_stop=stopping.is_set,
         )
         flush()
         state = result.state
+        # Addresses the engine read on a business's own website (only when
+        # SCRAPER_ENGINE_EXTRACT_EMAIL is on). They are candidates: Zybble still
+        # validates syntax, provenance and DNS MX before anything is stored.
+        email_candidates.update(result.email_candidates or {})
 
         if not result.exhausted and counters["saved"] < quantity:
             # Time budget reached mid-sweep: save and hand the job back to the
@@ -381,7 +393,10 @@ def process_job(job: dict) -> None:
                 if not website:
                     return None
                 try:
-                    return find_site_intel(website)
+                    # Candidates the engine already read on this site are handed
+                    # over too — they are verified (syntax + DNS MX) exactly like
+                    # addresses Zybble finds itself, and never stored unverified.
+                    return find_site_intel(website, engine_candidates=email_candidates.get(site_key(website)))
                 except Exception as err:  # noqa: BLE001
                     log("warning", "email discovery failed", job=job_id, error=str(err))
                     return None
@@ -507,24 +522,28 @@ def process_job(job: dict) -> None:
                 api.fail(job, str(err), True)
             except Exception:  # noqa: BLE001
                 pass
-    except (ChallengeError, SelectorChangedError, SessionNotCreatedException) as err:
-        # Google served a challenge, Chrome changed layout, or the browser
-        # failed to start (DevToolsActivePort): retry with a clean session
-        # from the saved cursor instead of failing the job.
-        log("warning", "google maps challenge/layout/driver", job=job_id, error=str(err))
+    except EngineUnavailable as err:
+        # The pinned engine binary is missing or not executable: that is a
+        # broken deployment, not a bad search. Fail loudly, do not retry.
+        log("error", "scraping engine unavailable", job=job_id, error=str(err))
+        try:
+            api.fail(job, str(err), False)
+        except Exception:  # noqa: BLE001
+            pass
+    except (ChallengeError, EngineError) as err:
+        # Google served a challenge, or the engine/browser died mid-sweep:
+        # retry with a clean session from the saved cursor instead of failing.
+        log("warning", "google maps challenge or engine failure", job=job_id, error=str(err),
+            kind=err.__class__.__name__)
         try:
             api.save_state(job, state)
             api.resume(job, "Retrying with a fresh browser session…")
         except Exception:  # noqa: BLE001
             pass
     except Exception as err:  # noqa: BLE001 - a worker must never die on one job
-        # Any WebDriver failure is a transient browser problem → retryable.
-        # Everything else is a code bug → not retryable.
-        retryable = isinstance(err, (WebDriverException, SessionNotCreatedException))
-        # Also treat the known DevToolsActivePort text as retryable even if
-        # it somehow arrives as a plain RuntimeError.
-        if not retryable and "devtoolsactiveport" in str(err).lower():
-            retryable = True
+        # Any engine failure is transient (browser, network, upstream) →
+        # retryable. Everything else is a code bug → not retryable.
+        retryable = isinstance(err, EngineError)
         log("error", "job failed", job=job_id, retryable=retryable, error=str(err))
         traceback.print_exc()
         try:
@@ -540,12 +559,33 @@ def handle_signal(_signum, _frame) -> None:
     stopping.set()
 
 
+def engine_label(summary: dict) -> str:
+    """One-line engine identity, published in every heartbeat.
+
+    ``/api/ready`` surfaces it, so an operator can see which pinned engine build
+    a running worker actually uses without opening Railway logs.
+    """
+    if not summary.get("available"):
+        return "google-maps-scraper (unavailable)"
+    version = str(summary.get("engine_version") or "").strip()
+    commit = str(summary.get("engine_commit") or "").strip()[:7]
+    if version and commit:
+        return f"google-maps-scraper {version}+{commit}"
+    return f"google-maps-scraper {version}".strip()
+
+
 def main() -> None:
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
     api = WorkerApi.create()
+    summary = engine_summary()
     log("info", "worker online", concurrency=CONCURRENCY, app=APP_URL, max_tiles=MAX_TILES,
-        job_timeout=JOB_TIMEOUT, max_attempts=MAX_ATTEMPTS)
+        job_timeout=JOB_TIMEOUT, max_attempts=MAX_ATTEMPTS, targets_per_run=TARGETS_PER_RUN,
+        engine=summary)
+    if not summary.get("available"):
+        # A missing engine binary is a broken deployment. Log it loudly at boot;
+        # every job will fail fast with the same actionable message.
+        log("error", "scraping engine unavailable", error=summary.get("error"))
 
     with ThreadPoolExecutor(max_workers=CONCURRENCY, thread_name_prefix="scrape") as pool:
         active: set[Future] = set()
@@ -554,7 +594,8 @@ def main() -> None:
             active = {future for future in active if not future.done()}
             if time.time() - last_heartbeat >= 20:
                 try:
-                    api.heartbeat("healthy", active_jobs=len(active), capacity=CONCURRENCY)
+                    api.heartbeat("healthy", active_jobs=len(active), capacity=CONCURRENCY,
+                                  engine=engine_label(summary))
                 except Exception as err:  # noqa: BLE001
                     log("warning", "heartbeat failed", error=str(err))
                 last_heartbeat = time.time()
@@ -571,7 +612,7 @@ def main() -> None:
 
             stopping.wait(POLL_SECONDS)
 
-        log("info", "waiting for active browsers", active_jobs=len(active))
+        log("info", "waiting for active engine runs", active_jobs=len(active))
 
     api.session.close()
     log("info", "worker stopped")

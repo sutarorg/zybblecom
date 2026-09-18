@@ -17,14 +17,15 @@ import { finalizeSearchJob } from "./jobs.ts";
 import type { Router } from "./http.ts";
 
 // ————————————————————————————————————————————————————————————
-// Secure control plane for the GoogleMapScraper worker.
+// Secure control plane for the scraper worker.
 //
 // The worker holds only SCRAPER_WORKER_SECRET — never the Supabase
 // service-role key — and every mutation is bound to a one-job lease token, so
 // a stale or concurrent worker cannot write to a job it no longer owns.
 //
-// Discovery itself runs in the worker's browser (worker/scraper.py, built on
-// the vendored SoCloseSociety/GoogleMapScraper core). The API is the durable
+// Discovery itself runs in the worker's engine child process
+// (worker/gmaps_engine.py → gosom/google-maps-scraper, orchestrated by
+// worker/scraper.py). The API is the durable
 // half of the pipeline: it deduplicates, applies filters, stores crash-safe
 // batches, tracks every counter the UI shows, and finalises the job.
 // ————————————————————————————————————————————————————————————
