@@ -22,3 +22,7 @@ npm-debug.log*
 *.log
 __pycache__/
 *.pyc
+
+# Build-time SSR and audit artifacts
+.prerender/
+.seo-audit/

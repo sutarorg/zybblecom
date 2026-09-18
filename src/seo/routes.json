@@ -1,0 +1,134 @@
+{
+  "siteUrl": "https://zybble.com",
+  "siteName": "Zybble",
+  "defaultImage": "/og.png",
+  "routes": [
+    {
+      "path": "/",
+      "title": "AI Lead Generation & B2B Prospecting Software | Zybble",
+      "description": "Zybble helps B2B teams find businesses, enrich public data, verify emails and automate thoughtful sales prospecting with AI.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "changefreq": "weekly",
+      "priority": "1.0"
+    },
+    {
+      "path": "/features",
+      "title": "Lead Generation Features: Finder, Enrichment & Automation | Zybble",
+      "description": "Explore Zybble's lead finder, lead enrichment, email verification, sales intelligence, AI scoring, email writing and follow-up automation features.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "changefreq": "monthly",
+      "priority": "0.9"
+    },
+    {
+      "path": "/features/lead-finder",
+      "title": "Business Lead Finder & AI Lead Generation | Zybble",
+      "description": "Find B2B and local business leads by industry and location, then build a clean prospecting list from public business data with Zybble's lead finder.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "priority": "0.8"
+    },
+    {
+      "path": "/features/lead-enrichment",
+      "title": "Lead Enrichment, Email Finder & Verification | Zybble",
+      "description": "Enrich business leads with public company data, find business-published emails and check email status before outreach with Zybble.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "priority": "0.8"
+    },
+    {
+      "path": "/features/ai-lead-scoring",
+      "title": "AI Lead Scoring & Sales Intelligence | Zybble",
+      "description": "Prioritize prospects with transparent AI lead scoring based on fit, reachability, web presence and visible business signals.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "priority": "0.8"
+    },
+    {
+      "path": "/features/ai-email-writer",
+      "title": "AI Sales Prospecting Email Writer | Zybble",
+      "description": "Write concise, personalized B2B sales outreach grounded in real lead data. Zybble's AI email writer helps you draft without invented facts or empty flattery.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "priority": "0.8"
+    },
+    {
+      "path": "/features/email-sequences",
+      "title": "Sales Automation & Email Sequences | Zybble",
+      "description": "Automate sales follow-up with email sequences that stop on reply, suppress bounces and respect one-click unsubscribe through your own SMTP account.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "priority": "0.8"
+    },
+    {
+      "path": "/pricing",
+      "title": "Zybble Pricing | AI Lead Generation Plans from $0",
+      "description": "Compare Zybble plans for AI lead generation and sales automation: Free, Growth and Agency options with clear monthly lead limits and no hidden add-ons.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "changefreq": "monthly",
+      "priority": "0.9"
+    },
+    {
+      "path": "/blog",
+      "title": "Zybble Blog | AI Sales Prospecting & Lead Generation Guides",
+      "description": "Practical, original guides on B2B lead generation, email deliverability, sales intelligence and AI-assisted prospecting from the Zybble team.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "changefreq": "weekly",
+      "priority": "0.7"
+    },
+    {
+      "path": "/blog/build-a-local-lead-list",
+      "title": "How to build a local lead list that actually converts in 2026 | Zybble",
+      "description": "A practical process for turning a broad market into a focused list of businesses that fit your offer — without buying a stale database.",
+      "ogType": "article",
+      "lastmod": "2026-09-08",
+      "priority": "0.7"
+    },
+    {
+      "path": "/blog/cold-email-deliverability-checklist",
+      "title": "The cold email deliverability checklist: land in the inbox, not spam (2026) | Zybble",
+      "description": "Deliverability is decided before you write a word. The complete pre-send checklist — DNS records, warm-up math, bounce rules and unsubscribe mechanics — that keeps cold outreach out of the spam folder.",
+      "ogType": "article",
+      "lastmod": "2026-09-10",
+      "priority": "0.7"
+    },
+    {
+      "path": "/blog/how-ai-lead-scoring-works",
+      "title": "What AI lead scoring actually measures (and how to use it without fooling yourself) | Zybble",
+      "description": "Scores are compressed evidence, not prophecy. A clear-eyed look at the signals that predict fit, how to validate a scoring model against your own reply data, and when to override it.",
+      "ogType": "article",
+      "lastmod": "2026-09-12",
+      "priority": "0.7"
+    },
+    {
+      "path": "/about",
+      "title": "About Zybble | AI Lead Generation for B2B Teams",
+      "description": "Learn how Zybble approaches AI lead generation, public business data, lead enrichment and sales automation for founders, agencies and B2B teams.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "changefreq": "yearly",
+      "priority": "0.5"
+    },
+    {
+      "path": "/privacy",
+      "title": "Privacy Policy | Zybble",
+      "description": "Zybble's privacy policy explains how account information, public business data and AI processing are handled, retained and protected.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "changefreq": "yearly",
+      "priority": "0.3"
+    },
+    {
+      "path": "/terms",
+      "title": "Terms of Service | Zybble",
+      "description": "The Zybble terms of service cover acceptable use, public-data practices, email outreach, billing, termination and liability.",
+      "ogType": "website",
+      "lastmod": "2026-09-18",
+      "changefreq": "yearly",
+      "priority": "0.3"
+    }
+  ]
+}

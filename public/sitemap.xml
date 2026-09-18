@@ -2,83 +2,83 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://zybble.com/</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://zybble.com/features</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://zybble.com/features/lead-finder</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://zybble.com/features/lead-enrichment</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://zybble.com/features/ai-lead-scoring</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://zybble.com/features/ai-email-writer</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://zybble.com/features/email-sequences</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://zybble.com/pricing</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://zybble.com/blog</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://zybble.com/blog/build-a-local-lead-list</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-08</lastmod>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://zybble.com/blog/cold-email-deliverability-checklist</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-10</lastmod>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://zybble.com/blog/how-ai-lead-scoring-works</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-12</lastmod>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://zybble.com/about</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
     <loc>https://zybble.com/privacy</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
     <loc>https://zybble.com/terms</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-18</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>

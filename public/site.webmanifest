@@ -1,12 +1,14 @@
 {
   "name": "Zybble — AI lead generation",
   "short_name": "Zybble",
-  "description": "Find, enrich and reach your next customers with one simple AI-powered platform.",
+  "description": "Find businesses, enrich leads and automate thoughtful B2B sales prospecting.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f5f4f1",
-  "theme_color": "#14120f",
+  "theme_color": "#111113",
   "icons": [
-    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }

@@ -1,34 +1,28 @@
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 
 type RevealProps = {
   children: ReactNode;
   className?: string;
   delay?: number;
-  y?: number;
   once?: boolean;
 };
 
 /**
- * Subtle editorial scroll reveal: fade + rise + de-blur.
+ * A viewport-aware wrapper. Content is visible in the prerendered HTML so
+ * first paint and LCP do not depend on client animation code; Framer Motion
+ * still handles the in-view transition after hydration.
  */
 export default function Reveal({
   children,
   className,
   delay = 0,
-  y = 26,
   once = true,
 }: RevealProps) {
-  const reduce = useReducedMotion();
-
   return (
     <motion.div
       className={className}
-      initial={{
-        opacity: 0,
-        y: reduce ? 0 : y,
-        filter: "blur(6px)",
-      }}
+      initial={false}
       whileInView={{
         opacity: 1,
         y: 0,

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Zybble AI lead generation and B2B prospecting software</title>
+  <desc id="desc">Find businesses, enrich leads and automate thoughtful sales prospecting with Zybble.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse"><stop stop-color="#fbfaf8"/><stop offset="1" stop-color="#eef2ff"/></linearGradient>
+    <linearGradient id="node" x1="15" y1="48" x2="50" y2="14" gradientUnits="userSpaceOnUse"><stop stop-color="#22d3ee"/><stop offset="1" stop-color="#818cf8"/></linearGradient>
+    <linearGradient id="markbg" x1="0" y1="64" x2="64" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#0f172a"/><stop offset="1" stop-color="#24212f"/></linearGradient>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(935 330) rotate(90) scale(245 245)"><stop stop-color="#818cf8" stop-opacity=".18"/><stop offset="1" stop-color="#818cf8" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="935" cy="330" r="245" fill="url(#halo)"/>
+  <g opacity=".5" fill="none" stroke="#a5b4fc" stroke-width="2"><ellipse cx="935" cy="330" rx="218" ry="92"/><ellipse cx="935" cy="330" rx="218" ry="150" transform="rotate(45 935 330)"/><ellipse cx="935" cy="330" rx="218" ry="150" transform="rotate(-45 935 330)"/></g>
+  <g transform="translate(78 73)"><rect width="76" height="76" rx="22" fill="url(#markbg)"/><path d="M22 22h36L24 58h35" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="59" cy="22" r="6" fill="url(#node)"/><circle cx="59" cy="22" r="2.4" fill="#fff" fill-opacity=".75"/><text x="101" y="55" fill="#111113" font-family="Arial, sans-serif" font-size="43" font-weight="700" letter-spacing="-1.5">Zybble</text></g>
+  <text x="78" y="300" fill="#111113" font-family="Arial, sans-serif" font-size="62" font-weight="700" letter-spacing="-2.5">AI lead generation</text>
+  <text x="78" y="371" fill="#111113" font-family="Arial, sans-serif" font-size="62" font-weight="700" letter-spacing="-2.5">for B2B teams.</text>
+  <text x="80" y="431" fill="#5b6478" font-family="Arial, sans-serif" font-size="24">Find businesses. Enrich leads. Automate thoughtful outreach.</text>
+  <g transform="translate(825 235)"><circle cx="110" cy="95" r="23" fill="#fff" stroke="#c7d2fe" stroke-width="2"/><path d="M101 95h18M110 86v18" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/><circle cx="110" cy="95" r="105" fill="none" stroke="#c7d2fe" stroke-width="2" stroke-dasharray="4 11"/></g>
+  <rect x="78" y="505" width="230" height="2" fill="#6366f1"/>
+</svg>

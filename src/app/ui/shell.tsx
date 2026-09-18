@@ -76,9 +76,7 @@ export default function Shell({
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center px-5">
-        <a href="#/" aria-label="Back to zybble.com">
-          <Logo />
-        </a>
+        <Logo href="#/" aria-label="Back to zybble.com" />
       </div>
 
       <nav className="mt-2 flex-1 space-y-0.5 px-3">

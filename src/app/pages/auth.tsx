@@ -33,9 +33,7 @@ function AuthFrame({
         className="relative w-full max-w-[400px]"
       >
         <div className="flex justify-center">
-          <a href="#/">
-            <Logo />
-          </a>
+          <Logo href="#/" />
         </div>
         <div className="mt-8 rounded-[24px] border border-black/[0.06] bg-white p-7 shadow-[0_1px_2px_rgba(20,18,15,0.04),0_32px_80px_-32px_rgba(20,18,15,0.18)] sm:p-8">
           <h1 className="text-center font-display text-[22px] font-semibold tracking-[-0.02em] text-neutral-950">

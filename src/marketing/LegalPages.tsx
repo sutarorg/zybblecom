@@ -11,8 +11,8 @@ export function PrivacyPage() {
   return (
     <MarketingLayout path="/privacy">
       <Seo
-        title="Privacy Policy — Zybble"
-        description="How Zybble collects, uses and protects personal data: account data, prospect data, AI processing, subprocessors, retention and your rights. Last updated September 15, 2026."
+        title="Privacy Policy | Zybble"
+        description="Zybble's privacy policy explains how account information, public business data and AI processing are handled, retained and protected."
         path="/privacy"
         jsonld={[
           breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Privacy Policy", path: "/privacy" }]),
@@ -151,8 +151,8 @@ export function TermsPage() {
   return (
     <MarketingLayout path="/terms">
       <Seo
-        title="Terms of Service — Zybble"
-        description="The terms governing use of Zybble: acceptable use, anti-spam requirements, public-data practices, billing terms, termination and liability. Last updated September 15, 2026."
+        title="Terms of Service | Zybble"
+        description="The Zybble terms of service cover acceptable use, public-data practices, email outreach, billing, termination and liability."
         path="/terms"
         jsonld={[
           breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Terms of Service", path: "/terms" }]),

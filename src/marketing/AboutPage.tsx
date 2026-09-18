@@ -29,8 +29,8 @@ export default function AboutPage() {
   return (
     <MarketingLayout path="/about">
       <Seo
-        title="About Zybble — AI lead generation, simplified"
-        description="Zybble helps agencies, founders and sales teams find, understand and reach their next customers. Learn about our principles, our data practices and how to contact us."
+        title="About Zybble | AI Lead Generation for B2B Teams"
+        description="Learn how Zybble approaches AI lead generation, public business data, lead enrichment and sales automation for founders, agencies and B2B teams."
         path="/about"
         jsonld={[
           breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "About", path: "/about" }]),

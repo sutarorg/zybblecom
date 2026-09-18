@@ -25,7 +25,7 @@ export default function Hero() {
     <>
       <motion.header
         variants={container}
-        initial="hidden"
+        initial={false}
         animate="show"
         className="relative z-30 mx-auto flex max-w-3xl flex-col items-center px-6 pt-16 text-center sm:pt-24"
       >
@@ -111,7 +111,7 @@ export default function Hero() {
 
       {/* Conceptual ecosystem label */}
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={false}
         animate={{ opacity: 1 }}
         transition={{ duration: 1, delay: 1.6 }}
         className="relative z-30 mt-3 flex items-center justify-center gap-3 px-6"

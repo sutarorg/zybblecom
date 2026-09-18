@@ -27,7 +27,7 @@ const SECTIONS: Section[] = [
     n: "01",
     tag: "Find",
     title: "Find leads without the endless searching.",
-    copy: "Describe your market in plain language. Zybble scans millions of local and B2B businesses and returns clean, verified, outreach-ready leads — in seconds, not weekends.",
+    copy: "Describe your market in plain language. Zybble searches public local and B2B business listings and returns clean, deduplicated leads with useful context for outreach.",
     bullets: [
       "Search by industry, location and size",
       "Verified emails and company data included",
@@ -46,7 +46,7 @@ const SECTIONS: Section[] = [
     bullets: [
       "Transparent score breakdowns",
       "Fit measured against your real ICP",
-      "Focus your effort on the top 5%",
+      "Focus your effort on the highest-fit leads",
     ],
     cta: "See AI scoring",
     mock: <MockScore />,

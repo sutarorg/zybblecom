@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 80" role="img" aria-labelledby="title desc">
+  <title id="title">Zybble</title>
+  <desc id="desc">Zybble AI lead generation and sales prospecting</desc>
+  <defs>
+    <linearGradient id="node" x1="15" y1="48" x2="50" y2="14" gradientUnits="userSpaceOnUse"><stop stop-color="#22d3ee"/><stop offset="1" stop-color="#818cf8"/></linearGradient>
+    <linearGradient id="markbg" x1="0" y1="64" x2="64" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#f7f6f3"/><stop offset="1" stop-color="#fff"/></linearGradient>
+  </defs>
+  <rect x="2" y="2" width="76" height="76" rx="22" fill="url(#markbg)"/>
+  <path d="M22 22h36L24 58h35" fill="none" stroke="#111113" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="59" cy="22" r="6" fill="url(#node)"/>
+  <circle cx="59" cy="22" r="2.4" fill="#fff" fill-opacity=".95"/>
+  <text x="99" y="56" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="650" letter-spacing="-1.4">Zybble</text>
+</svg>

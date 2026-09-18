@@ -268,7 +268,7 @@ export default function OrbitVisual() {
 
         {/* ————— Central product card ————— */}
         <motion.div
-          initial={{ opacity: 0, y: 30, scale: 0.96 }}
+          initial={false}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 1, delay: 0.55, ease: [0.22, 1, 0.36, 1] }}
           className="absolute left-1/2 top-1/2 z-30 w-[min(88vw,382px)] -translate-x-1/2 -translate-y-1/2"
@@ -337,7 +337,7 @@ export default function OrbitVisual() {
               </div>
               <div className="mt-2 h-[5px] overflow-hidden rounded-full bg-neutral-200/70">
                 <motion.div
-                  initial={{ width: "0%" }}
+                  initial={false}
                   animate={{ width: "94%" }}
                   transition={{ duration: 1.4, delay: 1.15, ease: [0.22, 1, 0.36, 1] }}
                   className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-sky-400 to-sky-300"
@@ -382,7 +382,7 @@ export default function OrbitVisual() {
         {MINIS.map((m) => (
           <motion.div
             key={m.title}
-            initial={{ opacity: 0, scale: 0.94 }}
+            initial={false}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.9, delay: 0.9, ease: [0.22, 1, 0.36, 1] }}
             className={`absolute z-10 hidden lg:block ${m.pos}`}

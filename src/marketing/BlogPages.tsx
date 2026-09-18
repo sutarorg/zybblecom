@@ -3,11 +3,12 @@ import Reveal from "../components/Reveal";
 import { MLink, Seo, SITE_URL, breadcrumbJsonLd } from "../seo/Seo";
 import { cn } from "../utils/cn";
 import MarketingLayout, { CtaBlock, Kicker, ProseSection } from "./Layout";
+import NotFound from "./NotFound";
 
 // ————————————————————————————————————————————————————————————
 // Guides — genuinely useful, original, expertise-driven content.
-// Three deep articles, written to be the best answer on the
-// topic — not a content farm. Dates reflect real publication.
+// Three original, practical articles written for readers with
+// real prospecting and deliverability questions. Dates reflect real publication.
 // ————————————————————————————————————————————————————————————
 
 interface ArticleSection {
@@ -35,13 +36,13 @@ const ARTICLES: Article[] = [
   {
     slug: "/blog/build-a-local-lead-list",
     title: "How to build a local lead list that actually converts in 2026",
-    desc: "The exact process for turning \"every SMB in America\" into 200 businesses that are plausibly waiting for your pitch — without buying a stale database.",
+    desc: "A practical process for turning a broad market into a focused list of businesses that fit your offer — without buying a stale database.",
     category: "Playbooks",
     date: "September 8, 2026",
     dateISO: "2026-09-08",
     readingTime: "6 min read",
     excerpt:
-      "The exact process for turning \"every SMB in America\" into 200 businesses that are plausibly waiting for your pitch — without buying a stale database.",
+      "A practical process for turning a broad market into a focused list of businesses that fit your offer — without buying a stale database.",
     sections: [
       {
         h: "Start with an ICP you can observe",
@@ -54,7 +55,7 @@ const ARTICLES: Article[] = [
         h: "Search wide, filter hard",
         paras: [
           "Run category-and-geography searches that deliberately overshoot — \"dentists in Texas\" rather than \"affluent dentists in Plano with growth mindsets.\" Breadth is cheap upfront and expensive later: every unqualified lead you email costs deliverability, a resource no filter can rebuild quickly.",
-          "Then filter hard on your observable signals before a single send. In Zybble that means trimming by rating presence, review volume, website presence and email status — a 2,000-result search should realistically yield 150–300 worked leads per month, not 2,000 contacts.",
+          "Then filter hard on your observable signals before a single send. In Zybble that means trimming by rating presence, review volume, website presence and email status — a broad search should produce a focused working list, not an undifferentiated export.",
         ],
       },
       {
@@ -141,7 +142,7 @@ const ARTICLES: Article[] = [
         table: {
           head: ["Week", "Max emails / day", "Focus"],
           rows: [
-            ["1", "10–20", "Warm contacts, guaranteed replies"],
+            ["1", "10–20", "Warm contacts and positive engagement"],
             ["2", "30–50", "Best-fit segments only"],
             ["3", "60–100", "Broaden to strong-fit lists"],
             ["4+", "100–150 steady", "Hold volume; never chase a bigger number with worse lists"],
@@ -269,8 +270,8 @@ export function BlogIndex() {
   return (
     <MarketingLayout path="/blog">
       <Seo
-        title="Blog — Zybble | Lead generation, deliverability & AI guides"
-        description="Practical guides on local lead generation, cold email deliverability and AI-powered prospecting from the Zybble team."
+        title="Zybble Blog | AI Sales Prospecting & Lead Generation Guides"
+        description="Practical, original guides on B2B lead generation, email deliverability, sales intelligence and AI-assisted prospecting from the Zybble team."
         path="/blog"
         jsonld={[
           breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Blog", path: "/blog" }]),
@@ -279,7 +280,7 @@ export function BlogIndex() {
             "@type": "Blog",
             name: "Zybble Blog",
             url: `${SITE_URL}/blog`,
-            publisher: { "@id": "https://zybble.com/#org" },
+            publisher: { "@id": "https://zybble.com/#organization" },
             blogPost: ARTICLES.map((a) => ({
               "@type": "BlogPosting",
               headline: a.title,
@@ -346,12 +347,12 @@ export function BlogIndex() {
 
 export function ArticleDetail({ path }: { path: string }) {
   const a = ARTICLES.find((x) => x.slug === path);
-  if (!a) return null;
+  if (!a) return <NotFound />;
 
   return (
     <MarketingLayout path={a.slug}>
       <Seo
-        title={`${a.title} — Zybble Blog`}
+        title={`${a.title} | Zybble`}
         description={a.desc}
         path={a.slug}
         ogType="article"
@@ -368,11 +369,11 @@ export function ArticleDetail({ path }: { path: string }) {
             description: a.desc,
             url: `${SITE_URL}${a.slug}`,
             datePublished: a.dateISO,
-            dateModified: "2026-09-15",
+            dateModified: a.dateISO,
             inLanguage: "en",
             image: `${SITE_URL}/og.png`,
-            author: { "@id": "https://zybble.com/#org" },
-            publisher: { "@id": "https://zybble.com/#org" },
+            author: { "@id": "https://zybble.com/#organization" },
+            publisher: { "@id": "https://zybble.com/#organization" },
             mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}${a.slug}` },
             articleSection: a.category,
           },

@@ -176,7 +176,7 @@ export function MockFinder() {
         {LEADS.map((l, i) => (
           <motion.div
             key={l.name}
-            initial={{ opacity: 0, y: 10 }}
+            initial={false}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.15 + i * 0.09 }}
@@ -263,7 +263,7 @@ export function MockScore() {
               strokeWidth="8"
               strokeLinecap="round"
               strokeDasharray={C}
-              initial={{ strokeDashoffset: C }}
+              initial={false}
               whileInView={{ strokeDashoffset: C * (1 - 0.94) }}
               viewport={{ once: true }}
               transition={{ duration: 1.4, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
@@ -290,7 +290,7 @@ export function MockScore() {
           {SIGNALS.map((s, i) => (
             <motion.div
               key={s.label}
-              initial={{ opacity: 0, x: 12 }}
+              initial={false}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: 0.3 + i * 0.12 }}
@@ -305,7 +305,7 @@ export function MockScore() {
             </motion.div>
           ))}
           <motion.div
-            initial={{ opacity: 0, x: 12 }}
+            initial={false}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.66 }}
@@ -380,7 +380,7 @@ export function MockResearch() {
         {INSIGHTS.map((t, i) => (
           <motion.div
             key={t.label}
-            initial={{ opacity: 0, y: 8 }}
+            initial={false}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.45, delay: 0.2 + i * 0.08 }}
@@ -399,7 +399,7 @@ export function MockResearch() {
 
       {/* Outreach angle */}
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
+        initial={false}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.5, delay: 0.55 }}
@@ -459,7 +459,7 @@ export function MockWriter() {
       {/* Body */}
       <div className="mt-3 space-y-2.5 text-[12px] leading-relaxed text-neutral-600">
         <motion.p
-          initial={{ opacity: 0 }}
+          initial={false}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.2 }}
@@ -472,7 +472,7 @@ export function MockWriter() {
           harder to fill evenly.
         </motion.p>
         <motion.p
-          initial={{ opacity: 0 }}
+          initial={false}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.45 }}
@@ -482,7 +482,7 @@ export function MockWriter() {
           booked hygiene appointments — without adding front-desk hours.
         </motion.p>
         <motion.p
-          initial={{ opacity: 0 }}
+          initial={false}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.7 }}
@@ -563,7 +563,7 @@ export function MockSequence() {
         {SEQUENCE.map((s, i) => (
           <motion.li
             key={s.day}
-            initial={{ opacity: 0, y: 10 }}
+            initial={false}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.2 + i * 0.14 }}

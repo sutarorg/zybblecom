@@ -78,7 +78,7 @@ const FAQ = [
   },
   {
     q: "How does Zybble compare to Apollo, Instantly or Smartlead?",
-    a: "Those platforms are broad: CRM layers, dialers, marketplaces and enterprise administration. Zybble deliberately focuses on the find → understand → reach loop for local and SMB prospecting — which is why it's simpler, cheaper per lead, and takes minutes instead of days to set up. If you need an enterprise CRM, we aren't it; if you need customers, we are.",
+    a: "Many sales platforms are broad: CRM layers, dialers, marketplaces and enterprise administration. Zybble deliberately focuses on the find → understand → reach loop for local and SMB prospecting. If you need an enterprise CRM, we are not it; if you need a focused prospecting workflow, that is what we build.",
   },
   {
     q: "Is the free plan really free?",
@@ -90,8 +90,8 @@ export default function PricingPage() {
   return (
     <MarketingLayout path="/pricing">
       <Seo
-        title="Pricing — Zybble | AI lead generation from $0"
-        description="Zybble pricing: Free with 100 leads/month, Growth at $49/month for 5,000 leads with AI research, scoring and email automation, Agency at $129/month for 20,000 leads. No contracts, cancel anytime."
+        title="Zybble Pricing | AI Lead Generation Plans from $0"
+        description="Compare Zybble plans for AI lead generation and sales automation: Free, Growth and Agency options with clear monthly lead limits and no hidden add-ons."
         path="/pricing"
         jsonld={[
           breadcrumbJsonLd([
@@ -214,8 +214,8 @@ export default function PricingPage() {
           </table>
         </div>
         <p className="mt-4 text-[13.5px] leading-relaxed text-neutral-400">
-          At under a penny per researched, enriched lead, even one recovered
-          customer pays for years of the Growth plan.
+          Use the table to compare monthly volume and the effective cost per
+          unique, deduplicated lead before choosing a plan.
         </p>
       </section>
 

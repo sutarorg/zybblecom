@@ -5,16 +5,30 @@ import Navbar from "./components/Navbar";
 import Pricing from "./components/Pricing";
 import Showcase from "./components/showcase/Showcase";
 import Workflow from "./components/Workflow";
-import ZybbleApp, { useHashRoute } from "./app/index";
-import AboutPage from "./marketing/AboutPage";
-import { ArticleDetail, BlogIndex } from "./marketing/BlogPages";
-import { FeatureDetail, FeaturesIndex } from "./marketing/FeaturesPages";
-import { PrivacyPage, TermsPage } from "./marketing/LegalPages";
-import NotFound from "./marketing/NotFound";
-import PricingPage from "./marketing/PricingPage";
 import { Seo, usePathname } from "./seo/Seo";
 import { isConfigured } from "./app/lib/remote";
 import React from "react";
+
+const ZybbleApp = React.lazy(() => import("./app/index"));
+const AboutPage = React.lazy(() => import("./marketing/AboutPage"));
+const BlogIndex = React.lazy(() => import("./marketing/BlogPages").then(({ BlogIndex }) => ({ default: BlogIndex })));
+const ArticleDetail = React.lazy(() => import("./marketing/BlogPages").then(({ ArticleDetail }) => ({ default: ArticleDetail })));
+const FeaturesIndex = React.lazy(() => import("./marketing/FeaturesPages").then(({ FeaturesIndex }) => ({ default: FeaturesIndex })));
+const FeatureDetail = React.lazy(() => import("./marketing/FeaturesPages").then(({ FeatureDetail }) => ({ default: FeatureDetail })));
+const PrivacyPage = React.lazy(() => import("./marketing/LegalPages").then(({ PrivacyPage }) => ({ default: PrivacyPage })));
+const TermsPage = React.lazy(() => import("./marketing/LegalPages").then(({ TermsPage }) => ({ default: TermsPage })));
+const NotFound = React.lazy(() => import("./marketing/NotFound"));
+const PricingPage = React.lazy(() => import("./marketing/PricingPage"));
+
+function useHashRoute(): string {
+  const [hash, setHash] = React.useState(() => window.location.hash.replace(/^#/, "") || "/");
+  React.useEffect(() => {
+    const onChange = () => setHash(window.location.hash.replace(/^#/, "") || "/");
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return hash;
+}
 
 const SHEET =
   "relative rounded-[24px] border border-black/[0.05] bg-white shadow-[0_1px_2px_rgba(20,18,15,0.03),0_40px_90px_-40px_rgba(23,20,15,0.14)] sm:rounded-[28px]";
@@ -31,13 +45,13 @@ function isAppRoute(route: string): boolean {
 }
 
 const HOME_SEO = {
-  title: "Zybble — Find the businesses that need you",
+  title: "AI Lead Generation & B2B Prospecting Software | Zybble",
   description:
-    "Zybble is the AI-powered lead generation platform that finds, enriches and researches your next customers — then helps you reach them. Free plan included.",
+    "Zybble helps B2B teams find businesses, enrich public data, verify emails and automate thoughtful sales prospecting with AI.",
   path: "/",
 };
 
-function Landing() {
+export function Landing() {
   return (
     <div
       id="top"
@@ -76,17 +90,27 @@ function Landing() {
   );
 }
 
-function MarketingRouter({ path }: { path: string }) {
+export function MarketingRouter({ path }: { path: string }) {
   if (path === "/") return <Landing />;
-  if (path === "/pricing") return <PricingPage />;
-  if (path === "/features") return <FeaturesIndex />;
-  if (path.startsWith("/features/")) return <FeatureDetail path={path} />;
-  if (path === "/blog") return <BlogIndex />;
-  if (path.startsWith("/blog/")) return <ArticleDetail path={path} />;
-  if (path === "/about") return <AboutPage />;
-  if (path === "/privacy") return <PrivacyPage />;
-  if (path === "/terms") return <TermsPage />;
-  return <NotFound />;
+
+  let page: React.ReactNode;
+  if (path === "/pricing") page = <PricingPage />;
+  else if (path === "/features") page = <FeaturesIndex />;
+  else if (path.startsWith("/features/")) page = <FeatureDetail path={path} />;
+  else if (path === "/blog") page = <BlogIndex />;
+  else if (path.startsWith("/blog/")) page = <ArticleDetail path={path} />;
+  else if (path === "/about") page = <AboutPage />;
+  else if (path === "/privacy") page = <PrivacyPage />;
+  else if (path === "/terms") page = <TermsPage />;
+  else page = <NotFound />;
+
+  return (
+    <React.Suspense
+      fallback={<div className="min-h-screen bg-canvas" aria-label="Loading page" />}
+    >
+      {page}
+    </React.Suspense>
+  );
 }
 
 export default function App() {
@@ -95,9 +119,19 @@ export default function App() {
 
   // The authenticated product continues to live behind hash routes.
   if (isAppRoute(hashRoute)) {
+    const privateMeta = (
+      <Seo
+        title="Zybble app"
+        description="Private Zybble workspace. Sign in to access your leads and campaigns."
+        path="/"
+        robots="noindex, nofollow, noarchive, nosnippet"
+      />
+    );
     if (!isConfigured()) {
       return (
-        <div className="grid min-h-screen place-items-center bg-canvas px-6 text-center">
+        <>
+          {privateMeta}
+          <div className="grid min-h-screen place-items-center bg-canvas px-6 text-center">
           <div className="max-w-md">
             <h1 className="font-display text-2xl font-semibold text-neutral-950">
               Zybble is temporarily unavailable
@@ -113,13 +147,25 @@ export default function App() {
               Contact support
             </a>
           </div>
-        </div>
+          </div>
+        </>
       );
     }
     return (
-      <ErrorBoundary>
-        <ZybbleApp route={hashRoute} />
-      </ErrorBoundary>
+      <>
+        {privateMeta}
+        <React.Suspense
+          fallback={
+            <div className="grid min-h-screen place-items-center bg-canvas">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900" />
+            </div>
+          }
+        >
+          <ErrorBoundary>
+            <ZybbleApp route={hashRoute} />
+          </ErrorBoundary>
+        </React.Suspense>
+      </>
     );
   }
 
