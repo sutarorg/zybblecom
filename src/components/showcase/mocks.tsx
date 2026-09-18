@@ -71,11 +71,8 @@ function Avatar({
   );
 }
 
-function ScorePill({ score }: { score: number }) {
-  const styles =
-    score >= 90
-      ? "bg-emerald-50 text-emerald-700"
-      : "bg-amber-50 text-amber-700";
+function ScorePill({ score }: { score: string }) {
+  const styles = "bg-emerald-50 text-emerald-700";
   return (
     <span
       className={cn(
@@ -94,37 +91,37 @@ function ScorePill({ score }: { score: number }) {
 const LEADS = [
   {
     name: "BrightPath Dental",
-    sub: "hello@brightpath.dental",
+    sub: "Business email",
     meta: "brightpath.dental · Dallas, TX",
-    rating: "5.0",
-    score: 96,
+    rating: "Public rating",
+    score: "High fit",
     tint: "bg-sky-50 text-sky-600",
     initials: "BP",
   },
   {
     name: "Lone Star Smiles",
-    sub: "care@lonestarsmiles.com",
+    sub: "Business email",
     meta: "lonestarsmiles.com · Austin, TX",
-    rating: "4.8",
-    score: 92,
+    rating: "Public rating",
+    score: "Strong fit",
     tint: "bg-violet-50 text-violet-600",
     initials: "LS",
   },
   {
     name: "Hill Country Dental",
-    sub: "info@hillcountrydental.com",
+    sub: "Business email",
     meta: "hillcountrydental.com · San Antonio, TX",
-    rating: "4.9",
-    score: 89,
+    rating: "Public rating",
+    score: "Review fit",
     tint: "bg-amber-50 text-amber-600",
     initials: "HC",
   },
   {
     name: "Oak Ridge Family Dental",
-    sub: "frontdesk@oakridgetx.com",
+    sub: "Business email",
     meta: "oakridgetx.com · Houston, TX",
-    rating: "4.7",
-    score: 84,
+    rating: "Public rating",
+    score: "Needs review",
     tint: "bg-emerald-50 text-emerald-600",
     initials: "OR",
   },
@@ -167,7 +164,7 @@ export function MockFinder() {
         ))}
         <span className="ml-auto inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-neutral-900">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          248 matches
+          Search matches
         </span>
       </div>
 
@@ -206,7 +203,7 @@ export function MockFinder() {
           Verified and ready for outreach
         </p>
         <button className="text-[11px] font-medium text-neutral-900 hover:underline underline-offset-4">
-          View all 248 →
+          View results →
         </button>
       </div>
     </MockShell>
@@ -264,7 +261,7 @@ export function MockScore() {
               strokeLinecap="round"
               strokeDasharray={C}
               initial={{ strokeDashoffset: C }}
-              whileInView={{ strokeDashoffset: C * (1 - 0.94) }}
+              whileInView={{ strokeDashoffset: C * 0.1 }}
               viewport={{ once: true }}
               transition={{ duration: 1.4, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
             />
@@ -277,7 +274,7 @@ export function MockScore() {
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="font-display text-[26px] font-semibold leading-none tracking-tight text-neutral-950 sm:text-[30px]">
-              94
+              Fit
             </span>
             <span className="mt-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
               AI Score
@@ -315,7 +312,7 @@ export function MockScore() {
               <Sparkles className="h-2.5 w-2.5" strokeWidth={3} />
             </span>
             <p className="truncate text-[12px] font-medium text-neutral-600">
-              Contact this week — office expansions detected
+              Review the public signals before contacting
             </p>
           </motion.div>
         </div>
@@ -324,10 +321,10 @@ export function MockScore() {
       {/* Footer bar */}
       <div className="mt-5 flex items-center justify-between rounded-lg border border-black/[0.05] bg-neutral-50/70 px-3 py-2">
         <p className="truncate text-[11px] text-neutral-500">
-          Fit: Dental · TX · 10–50 staff · Growing
+          Fit signals: category · location · public presence
         </p>
         <button className="shrink-0 text-[11px] font-medium text-neutral-900 hover:underline underline-offset-4">
-          Why 94? →
+          Why this fit? →
         </button>
       </div>
     </MockShell>
@@ -337,10 +334,10 @@ export function MockScore() {
 /* ———————————————— 03 · AI research ———————————————— */
 
 const INSIGHTS = [
-  { icon: <TrendingUp className="h-3 w-3" />, label: "Hiring", value: "2 open roles" },
-  { icon: <Star className="h-3 w-3" />, label: "Reputation", value: "4.9 · 213 reviews" },
-  { icon: <Globe className="h-3 w-3" />, label: "Web traffic", value: "Growing 3 months" },
-  { icon: <Building2 className="h-3 w-3" />, label: "Booking", value: "Phone only" },
+  { icon: <TrendingUp className="h-3 w-3" />, label: "Hiring", value: "Public signal" },
+  { icon: <Star className="h-3 w-3" />, label: "Reputation", value: "Public rating" },
+  { icon: <Globe className="h-3 w-3" />, label: "Web presence", value: "Website signal" },
+  { icon: <Building2 className="h-3 w-3" />, label: "Contact path", value: "Review available" },
 ];
 
 export function MockResearch() {
@@ -369,9 +366,9 @@ export function MockResearch() {
           Summary
         </p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-600">
-          Family dental practice with a strong reputation and an outdated
-          booking flow. Recently expanded to a second location — likely
-          investing in growth and short on front-desk capacity.
+          Local business with public reputation and website signals ready for
+          review. Use the available context to decide whether the offer is
+          relevant before writing.
         </p>
       </div>
 
@@ -410,9 +407,8 @@ export function MockResearch() {
           Best outreach angle
         </p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-700">
-          Congratulate them on the new location, then show how quickly the
-          second office's calendar can be filled with hygiene recall
-          campaigns.
+          Start with a public business detail, connect it to your offer, and
+          ask a small question that the recipient can answer.
         </p>
       </motion.div>
     </MockShell>
@@ -443,7 +439,7 @@ export function MockWriter() {
             <span className="grid h-3.5 w-3.5 place-items-center rounded-full bg-amber-100 text-[7px] font-bold text-amber-700">
               S
             </span>
-            sarah@oakhilldental.com
+            Business contact
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -464,12 +460,11 @@ export function MockWriter() {
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          Hi Sarah — congrats on opening the{" "}
+          Hi there — we noticed a public detail about{" "}
           <span className="underline decoration-indigo-300 decoration-2 underline-offset-2">
-            second Oak Hill location
+            your business
           </span>
-          . Growing to two offices usually means the calendar suddenly gets
-          harder to fill evenly.
+          . Thought it might be relevant to the way you reach new customers.
         </motion.p>
         <motion.p
           initial={{ opacity: 0 }}
@@ -477,9 +472,9 @@ export function MockWriter() {
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.45 }}
         >
-          We found 1,400+ nearby households with no recorded dental visit in
-          12 months. Practices like yours use Zybble to turn exactly that into
-          booked hygiene appointments — without adding front-desk hours.
+          We can share the public signals we used and a practical idea for
+          reaching a similar audience — without inventing details about your
+          business.
         </motion.p>
         <motion.p
           initial={{ opacity: 0 }}
@@ -550,10 +545,10 @@ export function MockSequence() {
         </p>
         <div className="flex shrink-0 gap-1.5">
           <span className="rounded-full border border-black/[0.06] px-2 py-1 text-[10px] font-medium text-neutral-500">
-            62% open
+            Draft cadence
           </span>
           <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
-            9% reply
+            Guardrails on
           </span>
         </div>
       </div>

@@ -76,9 +76,7 @@ export default function Shell({
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center px-5">
-        <a href="#/" aria-label="Back to zybble.com">
-          <Logo />
-        </a>
+        <Logo />
       </div>
 
       <nav className="mt-2 flex-1 space-y-0.5 px-3">
@@ -231,7 +229,7 @@ export default function Shell({
           </h1>
           <div className="ml-auto flex items-center gap-2">{actions}</div>
         </header>
-        <main className="px-4 py-6 sm:px-7 sm:py-8">{children}</main>
+        <main id="main-content" className="px-4 py-6 sm:px-7 sm:py-8">{children}</main>
       </div>
 
       <Toaster />

@@ -78,7 +78,7 @@ const FAQ = [
   },
   {
     q: "How does Zybble compare to Apollo, Instantly or Smartlead?",
-    a: "Those platforms are broad: CRM layers, dialers, marketplaces and enterprise administration. Zybble deliberately focuses on the find → understand → reach loop for local and SMB prospecting — which is why it's simpler, cheaper per lead, and takes minutes instead of days to set up. If you need an enterprise CRM, we aren't it; if you need customers, we are.",
+    a: "Those platforms are broad: CRM layers, dialers, marketplaces and enterprise administration. Zybble deliberately focuses on the find → understand → reach loop for local and SMB prospecting instead of adding a broad CRM layer. If you need an enterprise CRM, we are not it; if you need a focused prospecting workflow, that is what we built.",
   },
   {
     q: "Is the free plan really free?",

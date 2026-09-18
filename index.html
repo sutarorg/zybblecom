@@ -2,139 +2,60 @@
 <html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f4f1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- The build pre-renders every public marketing route and replaces these
+         defaults with route-specific values. They remain useful for the root
+         document during local development and as a safe crawler fallback. -->
     <title>Zybble — Find the businesses that need you</title>
-    <meta
-      name="description"
-      content="Zybble is the AI-powered lead generation platform that finds, enriches and researches your next customers — then helps you reach them. Free plan included."
-    />
-    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="description" content="Zybble is an AI-powered lead generation platform that helps you find, enrich and reach your next customers. Start with 100 free leads each month." />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <meta name="author" content="Zybble, Inc." />
     <link rel="canonical" href="https://zybble.com/" />
 
-    <!-- Theme -->
-    <meta name="theme-color" content="#f5f4f1" />
-    <meta name="color-scheme" content="light" />
-
-    <!-- Open Graph -->
+    <!-- Open Graph / social previews -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Zybble" />
     <meta property="og:title" content="Zybble — Find the businesses that need you" />
-    <meta
-      property="og:description"
-      content="Find, enrich and reach your next customers with one simple AI-powered platform. Free plan included."
-    />
+    <meta property="og:description" content="Find, enrich and reach your next customers with one simple AI-powered platform. Start with 100 free leads each month." />
     <meta property="og:url" content="https://zybble.com/" />
     <meta property="og:image" content="https://zybble.com/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="Zybble — AI-powered lead generation and outreach" />
     <meta property="og:locale" content="en_US" />
-
-    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Zybble — Find the businesses that need you" />
-    <meta
-      name="twitter:description"
-      content="Find, enrich and reach your next customers with one simple AI-powered platform. Free plan included."
-    />
+    <meta name="twitter:description" content="Find, enrich and reach your next customers with one simple AI-powered platform. Start with 100 free leads each month." />
     <meta name="twitter:image" content="https://zybble.com/og.png" />
     <meta name="twitter:image:alt" content="Zybble — AI-powered lead generation and outreach" />
 
-    <!-- Icons & manifest -->
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2314120f'/%3E%3Cpath d='M21 21.5h21.5L27.5 42.5H44' stroke='white' stroke-width='5.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='46.5' cy='18' r='4' fill='%236366f1'/%3E%3C/svg%3E"
-    />
+    <!-- Supplied brand mark. SVG keeps the favicon crisp at every size. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
 
-    <!-- Fonts: preconnect + display=swap for fast first paint -->
+    <!-- Fonts are non-blocking after the first paint; system fallbacks preserve
+         readable text if the third-party stylesheet is unavailable. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&display=swap" />
 
-    <!-- Structured data: organization + website + software application.
-         Matches visible homepage content; reviews/ratings intentionally
-         omitted until genuine, verifiable ones exist. -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@graph": [
-        {
-          "@type": "Organization",
-          "@id": "https://zybble.com/#org",
-          "name": "Zybble",
-          "url": "https://zybble.com/",
-          "logo": {
-            "@type": "ImageObject",
-            "url": "https://zybble.com/apple-touch-icon.png",
-            "width": 180,
-            "height": 180
-          },
-          "email": "hello@zybble.com",
-          "description": "Zybble is an AI-powered lead generation and outreach platform that helps businesses find, enrich and reach their next customers."
-        },
-        {
-          "@type": "WebSite",
-          "@id": "https://zybble.com/#website",
-          "url": "https://zybble.com/",
-          "name": "Zybble",
-          "publisher": { "@id": "https://zybble.com/#org" },
-          "inLanguage": "en"
-        },
-        {
-          "@type": "SoftwareApplication",
-          "name": "Zybble",
-          "url": "https://zybble.com/",
-          "applicationCategory": "BusinessApplication",
-          "applicationSubCategory": "Lead generation software",
-          "operatingSystem": "Web",
-          "description": "AI-powered lead generation and outreach platform. Find, enrich and research local businesses, score them with AI, write personalized outreach and run automated email sequences.",
-          "creator": { "@id": "https://zybble.com/#org" },
-          "offers": [
-            {
-              "@type": "Offer",
-              "name": "Free",
-              "price": "0",
-              "priceCurrency": "USD",
-              "description": "100 leads per month with lead finder, database, email finder and enrichment."
-            },
-            {
-              "@type": "Offer",
-              "name": "Growth",
-              "price": "49",
-              "priceCurrency": "USD",
-              "description": "5,000 leads per month plus AI research, AI scoring, AI email writer and email sequences."
-            },
-            {
-              "@type": "Offer",
-              "name": "Agency",
-              "price": "129",
-              "priceCurrency": "USD",
-              "description": "20,000 leads per month with every feature included."
-            }
-          ]
-        }
-      ]
-    }
-    </script>
-    <!-- Google Search Console: after verifying ownership, paste your
-         <meta name="google-site-verification" content="…"> tag here. -->
+    <!-- Replaced with route-specific JSON-LD during the production build. -->
+    <!-- STATIC_JSON_LD_START -->
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","@id":"https://zybble.com/#org","name":"Zybble","url":"https://zybble.com/","logo":"https://zybble.com/logo.svg"}</script>
+    <!-- STATIC_JSON_LD_END -->
   </head>
   <body>
+    <a class="sr-only" href="#main-content">Skip to main content</a>
     <div id="root">
-      <div
-        id="boot"
-        style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#f5f4f1;color:#8b867e;font:500 14px -apple-system,sans-serif;letter-spacing:0.02em"
-      >
+      <div id="boot" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#f5f4f1;color:#8b867e;font:500 14px -apple-system,sans-serif;letter-spacing:0.02em">
         <span style="display:flex;align-items:center;gap:10px">
-          <span
-            style="width:14px;height:14px;border:2px solid #d8d5d0;border-top-color:#14120f;border-radius:50%;animation:boot-spin 0.7s linear infinite"
-          ></span>
+          <span style="width:14px;height:14px;border:2px solid #d8d5d0;border-top-color:#14120f;border-radius:50%;animation:boot-spin 0.7s linear infinite"></span>
           Loading Zybble
         </span>
       </div>
@@ -144,13 +65,15 @@
       </style>
     </div>
     <noscript>
-      <div style="padding:4rem 2rem;text-align:center;font-family:sans-serif">
-        Zybble requires JavaScript. Please enable it and reload.
+      <div style="padding:2rem;font:400 15px/1.6 system-ui,sans-serif">
+        Zybble uses JavaScript for interactive features. You can still explore
+        <a href="/features">features</a>, <a href="/pricing">pricing</a> and the
+        <a href="/blog">blog</a>.
       </div>
     </noscript>
     <script>
-      // If the application fails during boot (e.g., a module crash), surface a
-      // human-readable error instead of leaving an entirely white page.
+      // Surface boot failures instead of leaving a blank page. This is kept
+      // inline so it also works when the module bundle cannot be downloaded.
       window.addEventListener("error", function (e) {
         var boot = document.getElementById("boot");
         if (!boot || !boot.parentNode) return;

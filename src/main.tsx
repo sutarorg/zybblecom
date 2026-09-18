@@ -1,5 +1,5 @@
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import "./index.css";
 import App from "./App";
@@ -44,7 +44,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-createRoot(document.getElementById("root")!).render(
+const app = (
   <StrictMode>
     <ErrorBoundary>
       <App />
@@ -52,3 +52,12 @@ createRoot(document.getElementById("root")!).render(
     <Analytics />
   </StrictMode>
 );
+
+const root = document.getElementById("root");
+if (!root) throw new Error("Zybble root element is missing");
+
+// Production marketing pages are prerendered at build time. Hydrating them
+// preserves the first HTML paint for crawlers and users; the app/auth shell
+// still mounts normally when a page is not prerendered.
+if (root.dataset.prerendered === "true") hydrateRoot(root, app);
+else createRoot(root).render(app);

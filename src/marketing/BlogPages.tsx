@@ -21,6 +21,7 @@ interface ArticleSection {
 interface Article {
   slug: string;
   title: string;
+  metaTitle: string;
   desc: string;
   category: string;
   date: string;
@@ -31,22 +32,23 @@ interface Article {
   related: { title: string; to: string; body: string }[];
 }
 
-const ARTICLES: Article[] = [
+export const ARTICLES: Article[] = [
   {
     slug: "/blog/build-a-local-lead-list",
     title: "How to build a local lead list that actually converts in 2026",
-    desc: "The exact process for turning \"every SMB in America\" into 200 businesses that are plausibly waiting for your pitch — without buying a stale database.",
+    metaTitle: "How to Build a Local Lead List in 2026 — Zybble Blog",
+    desc: "A practical process for turning a broad market into a focused list of businesses to contact, without buying a stale database.",
     category: "Playbooks",
     date: "September 8, 2026",
     dateISO: "2026-09-08",
     readingTime: "6 min read",
     excerpt:
-      "The exact process for turning \"every SMB in America\" into 200 businesses that are plausibly waiting for your pitch — without buying a stale database.",
+      "A practical process for turning a broad market into a focused list of businesses to contact, without buying a stale database.",
     sections: [
       {
         h: "Start with an ICP you can observe",
         paras: [
-          "The most common list-building mistake is describing your ideal customer in traits you can't see: \"growth-minded,\" \"ready to buy,\" \"decision-maker.\" You can't search for those. You can, however, search for observable proxies: a dental practice with 4.7 stars and 200+ reviews is busy; a five-year-old HVAC company with no website has a gap you can name in your first sentence.",
+          "The most common list-building mistake is describing your ideal customer in traits you can't see: \"growth-minded,\" \"ready to buy,\" \"decision-maker.\" You can't search for those. You can, however, search for observable proxies: a business with a strong public reputation may be established; a business with no website may have a gap you can name in your first sentence.",
           "Write your ICP as three columns: industry + geography, positive signals (what good looks like), and exclusion signals (what you'll skip). If any row can't be checked from public data, rewrite it until it can.",
         ],
       },
@@ -54,7 +56,7 @@ const ARTICLES: Article[] = [
         h: "Search wide, filter hard",
         paras: [
           "Run category-and-geography searches that deliberately overshoot — \"dentists in Texas\" rather than \"affluent dentists in Plano with growth mindsets.\" Breadth is cheap upfront and expensive later: every unqualified lead you email costs deliverability, a resource no filter can rebuild quickly.",
-          "Then filter hard on your observable signals before a single send. In Zybble that means trimming by rating presence, review volume, website presence and email status — a 2,000-result search should realistically yield 150–300 worked leads per month, not 2,000 contacts.",
+          "Then filter hard on your observable signals before a single send. In Zybble that means trimming by rating presence, review volume, website presence and email status — a broad search should be narrowed to the businesses that match your actual criteria, not sent as an undifferentiated list.",
         ],
       },
       {
@@ -71,26 +73,26 @@ const ARTICLES: Article[] = [
         ],
       },
       {
-        h: "Score, then look again by hand",
+        h: "Score, then review by hand",
         paras: [
-          "AI scoring exists to order your day, not to replace it. A reliable rhythm: score the batch, review the top twenty by eye, and check whether the reasoning matches your judgment. If you keep overrule the model, your ICP signals are wrong — fix the signals, not the score.",
+          "AI scoring exists to order your day, not to replace it. A reliable rhythm: score the batch, review a sample of the highest-fit leads by eye, and check whether the reasoning matches your judgment. If you keep overrule the model, your ICP signals are wrong — fix the signals, not the score.",
         ],
         table: {
           head: ["Score band", "Your time allocation"],
           rows: [
-            ["85+", "Personalized outreach today — research, angle, custom first line"],
-            ["70–84", "This week's sequence, step one personalized per lead"],
-            ["50–69", "Hold; different channel next month"],
-            ["<50", "Skip without guilt — protect deliverability above all"],
+            ["High fit", "Personalized outreach — research, angle, custom first line"],
+            ["Strong fit", "This week's sequence, with step one personalized"],
+            ["Needs review", "Hold; validate the fit with another signal"],
+            ["Low fit", "Skip when the record does not support a useful message"],
           ],
         },
       },
       {
         h: "Mistakes that quietly kill lists",
         bullets: [
-          "Scaling volume before fixing fit — 500 wrong contacts is worse than 50 right ones",
+          "Scaling volume before fixing fit — a long list of wrong contacts is worse than a short list of right ones",
           "Re-emailing bounced or unsubscribed addresses — one repeat offense can burn a domain for months",
-          "Letting lists go stale past 90 days without re-verification",
+          "Letting lists go stale without re-verification",
           "Personalizing with invented specifics — one fake \"loved your redesign\" erases ten good emails",
           "Measuring sends instead of replies — the list's job is conversations, not volume",
         ],
@@ -99,13 +101,14 @@ const ARTICLES: Article[] = [
     related: [
       { title: "Deliverability checklist", body: "Everything to fix before your first send.", to: "/blog/cold-email-deliverability-checklist" },
       { title: "AI Lead Scoring", body: "How the 0–100 score works under the hood.", to: "/features/ai-lead-scoring" },
-      { title: "Lead Finder", body: "Run your first real search in minutes.", to: "/features/lead-finder" },
+      { title: "Lead Finder", body: "Run your first focused search with public business data.", to: "/features/lead-finder" },
     ],
   },
   {
     slug: "/blog/cold-email-deliverability-checklist",
     title: "The cold email deliverability checklist: land in the inbox, not spam (2026)",
-    desc: "Deliverability is decided before you write a word. The complete pre-send checklist — DNS records, warm-up math, bounce rules and unsubscribe mechanics — that keeps cold outreach out of the spam folder.",
+    metaTitle: "Cold Email Deliverability Checklist for 2026 — Zybble Blog",
+    desc: "A pre-send checklist for cold email deliverability: authentication, list hygiene, pacing, bounce handling and unsubscribe mechanics.",
     category: "Deliverability",
     date: "September 10, 2026",
     dateISO: "2026-09-10",
@@ -136,15 +139,15 @@ const ARTICLES: Article[] = [
       {
         h: "Warm up like a human, not a cannon",
         paras: [
-          "A new or dormant domain that suddenly sends 300 emails a day reads as abuse to every major mailbox provider. Ramp gradually and keep replies flowing — engagement is the strongest positive signal.",
+          "A new or dormant domain that suddenly sends a large burst reads as unusual to mailbox providers. Ramp gradually, watch responses and keep the sending pattern steady.",
         ],
         table: {
           head: ["Week", "Max emails / day", "Focus"],
           rows: [
-            ["1", "10–20", "Warm contacts, guaranteed replies"],
-            ["2", "30–50", "Best-fit segments only"],
-            ["3", "60–100", "Broaden to strong-fit lists"],
-            ["4+", "100–150 steady", "Hold volume; never chase a bigger number with worse lists"],
+            ["Start", "Small, controlled batch", "Warm contacts and confirm the setup"],
+            ["Next", "Increase cautiously", "Keep the best-fit segment"],
+            ["Steady", "Consistent daily pace", "Watch bounce and reply signals"],
+            ["Ongoing", "Hold a sustainable level", "Do not trade list quality for volume"],
           ],
         },
       },
@@ -155,9 +158,9 @@ const ARTICLES: Article[] = [
         ],
       },
       {
-        h: "The under-2% bounce rule",
+        h: "Set a bounce threshold and pause",
         paras: [
-          "Cross roughly 2% hard bounces and providers start pre-filing you to spam; cross 5% and recovery takes months. The only durable defense is list hygiene: verified public emails, hard-bounce suppression that is permanent (Zybble suppresses 5xx permanently and marks the lead invalid), and re-verifying any list older than a quarter.",
+          "There is no universal safe bounce percentage for every sender or provider. Set a conservative threshold for your domain, pause when it moves in the wrong direction, and investigate the source. Durable defenses include verified public emails, permanent hard-bounce suppression (Zybble suppresses 5xx permanently and marks the lead invalid), and regular re-verification.",
         ],
       },
       {
@@ -177,10 +180,10 @@ const ARTICLES: Article[] = [
         table: {
           head: ["Metric", "Healthy", "If it slips"],
           rows: [
-            ["Open rate", "55%+ on small, scored lists", "Subject lines or sender reputation — pause and diagnose before more sends"],
-            ["Reply rate", "5–10% with real personalization", "Fit problem: tighten ICP and angles, don't just rewrite copy"],
-            ["Bounce rate", "<2% always", "Stop immediately; audit list sources and verification"],
-            ["Spam complaints", "~0%", "Pause everything; review targeting, frequency and unsubscribe visibility"],
+            ["Open rate", "Compare with your own baseline", "Check subject lines and sender reputation"],
+            ["Reply rate", "Track by segment and message", "Tighten ICP and angles before increasing volume"],
+            ["Bounce rate", "Keep as low as possible", "Pause and audit list sources and verification"],
+            ["Spam complaints", "As close to zero as possible", "Pause and review targeting, frequency and unsubscribe visibility"],
           ],
         },
       },
@@ -194,7 +197,8 @@ const ARTICLES: Article[] = [
   {
     slug: "/blog/how-ai-lead-scoring-works",
     title: "What AI lead scoring actually measures (and how to use it without fooling yourself)",
-    desc: "Scores are compressed evidence, not prophecy. A clear-eyed look at the signals that predict fit, how to validate a scoring model against your own reply data, and when to override it.",
+    metaTitle: "What AI Lead Scoring Measures — Zybble Blog",
+    desc: "A clear guide to the public signals behind AI lead scoring, how to validate a model against reply data and when to override it.",
     category: "AI & Data",
     date: "September 12, 2026",
     dateISO: "2026-09-12",
@@ -205,13 +209,13 @@ const ARTICLES: Article[] = [
       {
         h: "A score is compressed evidence, not prophecy",
         paras: [
-          "Ask what any score is really saying and the honest answer is narrow: \"given these observable signals, this lead resembles the ones that tend to work out.\" That is enormously useful for ordering a day — and useless for predicting any single lead's answer. Teams burn scores by treating 90 as a promise and 40 as a verdict; teams win with them by using bands to allocate attention.",
+          "Ask what any score is really saying and the honest answer is narrow: \"given these observable signals, this lead resembles the ones that tend to work out.\" That is enormously useful for ordering a day — and useless for predicting any single lead's answer. Teams burn scores by treating a number as a promise or verdict; teams get value by using fit bands to allocate attention.",
         ],
       },
       {
         h: "The signal categories that actually predict fit",
         paras: [
-          "For local and SMB prospecting, four families of public signals do almost all the work. Reputation signals — rating and review volume — proxy business health and momentum. Reachability signals — a verified public email, a phone, an active website — determine whether a conversation is even possible. Presence signals — the strength and currency of the website — estimate both sophistication and gap size. Fit signals — category and geography — make sure the lead belongs to your market at all.",
+          "For local and SMB prospecting, several families of public signals provide useful context. Reputation signals — rating and review volume — proxy business health and momentum. Reachability signals — a verified public email, a phone, an active website — determine whether a conversation is even possible. Presence signals — the strength and currency of the website — estimate both sophistication and gap size. Fit signals — category and geography — make sure the lead belongs to your market at all.",
           "Anything a model can't observe must not affect the score. The moment scores encode guesses — headcount invented from thin air, \"intent\" with no observable basis — explainability is gone and so is trust.",
         ],
       },
@@ -230,15 +234,15 @@ const ARTICLES: Article[] = [
       {
         h: "Validate against your own reply data, monthly",
         paras: [
-          "The only ground truth for lead scoring is your reply data. Each month, bucket sends by score band and compute reply rates — a well-calibrated system shows a clean monotone gradient. If 60s out-reply 85s, your scoring inputs are misreading your market: change the signals, not the spreadsheet.",
+          "The only ground truth for lead scoring is your reply data. Bucket sends by score band and compare reply rates over time. If the ordering does not match your experience, your scoring inputs may be misreading the market: change the signals, not the spreadsheet.",
         ],
         table: {
           head: ["Score band", "Expected reply gradient", "If reality disagrees"],
           rows: [
-            ["85+", "Highest reply rate by a clear margin", "Scoring overrates polish (ratings) and underrates need (gaps)"],
-            ["70–84", "Strong second", "Band boundaries too wide for your market"],
-            ["50–69", "Thin but present", "Roughly right — keep nurturing"],
-            ["<50", "Near zero", "If it's high, your exclusion signals need work"],
+            ["High fit", "Compare with your strongest replies", "Check whether the signals reflect real need"],
+            ["Strong fit", "Compare with the next band", "Review whether band boundaries help"],
+            ["Needs review", "Look for useful patterns", "Add context before changing the model"],
+            ["Low fit", "Check for unexpected replies", "Improve exclusion signals if needed"],
           ],
         },
       },
@@ -351,7 +355,7 @@ export function ArticleDetail({ path }: { path: string }) {
   return (
     <MarketingLayout path={a.slug}>
       <Seo
-        title={`${a.title} — Zybble Blog`}
+        title={a.metaTitle}
         description={a.desc}
         path={a.slug}
         ogType="article"
@@ -368,7 +372,7 @@ export function ArticleDetail({ path }: { path: string }) {
             description: a.desc,
             url: `${SITE_URL}${a.slug}`,
             datePublished: a.dateISO,
-            dateModified: "2026-09-15",
+            dateModified: "2026-09-18",
             inLanguage: "en",
             image: `${SITE_URL}/og.png`,
             author: { "@id": "https://zybble.com/#org" },
@@ -462,9 +466,9 @@ export function ArticleDetail({ path }: { path: string }) {
             <p className="mt-2 text-[13px] leading-[1.7] text-neutral-600">
               This guide reflects the systems that ship in Zybble itself and the
               deliverability and scoring practices we run against real
-              campaigns — not recycled advice. Benchmarks are directional, from
-              observed SMB prospecting patterns in 2026, and should be
-              calibrated against your own reply data.
+              campaigns — not recycled advice. Examples are illustrative; calibrate
+              decisions against your own audience, sending environment and
+              reply data.
             </p>
           </div>
         </section>

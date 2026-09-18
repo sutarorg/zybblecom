@@ -44,7 +44,7 @@ export default function FinalCTA() {
             <Gauge className="h-3 w-3" />
           </span>
           <span className="text-[11.5px] font-medium text-neutral-700">
-            AI Score 94
+            AI fit score
           </span>
         </div>
       </div>
@@ -60,7 +60,7 @@ export default function FinalCTA() {
             <Sparkles className="h-3 w-3" />
           </span>
           <span className="text-[11.5px] font-medium text-neutral-700">
-            142 new leads found
+            New leads found
           </span>
         </div>
       </div>
@@ -94,7 +94,7 @@ export default function FinalCTA() {
         </Reveal>
         <Reveal delay={0.3}>
           <p className="mt-5 text-[12px] font-medium text-neutral-400">
-            Free plan included · Set up in minutes
+            Free plan included · No credit card required
           </p>
         </Reveal>
       </div>

@@ -152,7 +152,7 @@ export default function Pricing() {
 
           <Reveal delay={0.2}>
             <p className="mt-10 text-center text-[12px] text-neutral-400">
-              Prices in USD, billed monthly. Annual billing saves 20%.
+              Prices in USD, billed monthly. Upgrade or cancel from your account.
             </p>
           </Reveal>
         </div>

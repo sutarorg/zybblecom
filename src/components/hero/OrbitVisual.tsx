@@ -67,7 +67,7 @@ const MINIS = [
   {
     icon: <Gauge className="h-3 w-3" />,
     tint: "bg-emerald-50 text-emerald-600",
-    title: "94 AI Score",
+    title: "AI fit score",
     sub: "High fit · Recommended",
     pos: "right-[2%] top-[13%] xl:right-[5%]",
     delay: "1.1s",
@@ -76,7 +76,7 @@ const MINIS = [
     icon: <BadgeCheck className="h-3 w-3" />,
     tint: "bg-sky-50 text-sky-600",
     title: "Email verified",
-    sub: "sarah@lonestarsmiles.com",
+    sub: "Business contact",
     pos: "left-[0%] top-[62%] xl:left-[3%]",
     delay: "0.6s",
   },
@@ -84,7 +84,7 @@ const MINIS = [
     icon: <Lightbulb className="h-3 w-3" />,
     tint: "bg-amber-50 text-amber-600",
     title: "Best outreach angle",
-    sub: "Based on 12 live signals",
+    sub: "Based on public signals",
     pos: "right-[1%] top-[58%] xl:right-[3%]",
     delay: "1.6s",
   },
@@ -99,8 +99,8 @@ const MINIS = [
   {
     icon: <Users className="h-3 w-3" />,
     tint: "bg-rose-50 text-rose-600",
-    title: "3 high-fit leads",
-    sub: "Match score above 90",
+    title: "High-fit leads",
+    sub: "Prioritized matches",
     pos: "right-[9%] top-[85%]",
     delay: "1.9s",
   },
@@ -110,7 +110,7 @@ const AVATARS = [
   { initials: "JR", tint: "bg-sky-100 text-sky-700" },
   { initials: "MK", tint: "bg-violet-100 text-violet-700" },
   { initials: "AS", tint: "bg-amber-100 text-amber-700" },
-  { initials: "+9", tint: "bg-neutral-100 text-neutral-500" },
+  { initials: "…", tint: "bg-neutral-100 text-neutral-500" },
 ];
 
 function MetaRow({
@@ -294,11 +294,11 @@ export default function OrbitVisual() {
             {/* Big number */}
             <div className="mt-3.5 flex items-baseline gap-2.5">
               <span className="font-display text-[46px] font-semibold leading-none tracking-[-0.03em] text-neutral-950">
-                142
+                New
               </span>
               <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-emerald-600">
                 <TrendingUp className="h-3 w-3" />
-                +12 this week
+                Ready to review
               </span>
             </div>
 
@@ -329,16 +329,13 @@ export default function OrbitVisual() {
                   AI Score
                 </span>
                 <span className="font-display text-[15px] font-semibold text-neutral-950">
-                  94
-                  <span className="text-[11px] font-medium text-neutral-400">
-                    /100
-                  </span>
+                  Fit
                 </span>
               </div>
               <div className="mt-2 h-[5px] overflow-hidden rounded-full bg-neutral-200/70">
                 <motion.div
                   initial={{ width: "0%" }}
-                  animate={{ width: "94%" }}
+                  animate={{ width: "100%" }}
                   transition={{ duration: 1.4, delay: 1.15, ease: [0.22, 1, 0.36, 1] }}
                   className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-sky-400 to-sky-300"
                 />
@@ -352,7 +349,7 @@ export default function OrbitVisual() {
                 Verified emails
               </span>
               <span className="text-[12.5px] font-semibold text-neutral-900">
-                87%
+                Verified
               </span>
             </div>
 

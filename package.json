@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vercel dev",
     "dev:web": "vite",
-    "build": "tsc --noEmit && node scripts/verify-api-emit.mjs && vite build",
+    "build": "tsc --noEmit && node scripts/verify-api-emit.mjs && vite build && vite build --config vite.ssr.config.ts && node scripts/prerender.mjs && node scripts/verify-seo.mjs",
+    "verify:seo": "node scripts/verify-seo.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "verify:api": "node scripts/verify-api-emit.mjs",
@@ -40,7 +41,6 @@
     "@vitejs/plugin-react": "5.1.1",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",
-    "vite": "7.3.2",
-    "vite-plugin-singlefile": "2.3.0"
+    "vite": "7.3.2"
   }
 }
