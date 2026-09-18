@@ -132,7 +132,7 @@ git push -u origin main
 1. **https://supabase.com** → **New project** → name `zybble`, generate a database
    password, pick the region closest to your users → **Create new project** (~2 min).
 
-### 2.2 Run the migrations — **all eight, in order**
+### 2.2 Run the migrations — **all nine, in order**
 1. Left sidebar → **SQL Editor** → **+ New query**.
 2. Paste the entire contents of each file and click **Run**, one at a time:
    - `supabase/migrations/001_init.sql`
@@ -143,6 +143,7 @@ git push -u origin main
    - `supabase/migrations/006_worker_retry_bounds.sql` ← bounded retries for lease-reclaimed jobs
    - `supabase/migrations/007_search_job_signature_fix.sql` ← converges the 6-arg `create_search_job` signature + reloads the PostgREST schema cache
    - `supabase/migrations/008_lead_finder_scraper_engine.sql` ← Lead Finder counters, filters, lead identity + the 8-arg `create_search_job`
+   - `supabase/migrations/009_requeue_stalled_search_jobs.sql` ← hands a search back to the queue if its worker is killed mid-sweep
 
 **Already have a database?** If Lead Finder ever returned `Request failed (500)`,
 run `008_lead_finder_scraper_engine.sql` alone — it is fully idempotent and
@@ -392,7 +393,18 @@ Or **GitHub → Actions → Production E2E → Run workflow** after adding the
 npm install
 npm run typecheck     # frontend + API in one pass
 npm run build
+npm test              # API tests + Lead Finder tests + scraper worker tests
 ```
+
+`npm test` runs, in order:
+
+| Script | What it checks |
+| --- | --- |
+| `test:api` | API behaviour, validation and auth |
+| `test:leadfinder` | lead filters, email safety, dedupe keys, job counters |
+| `verify:no-google` | no Google Maps API dependency anywhere in the lead path |
+| `test:worker` | the scraper engine against an offline Google Maps simulator (98% of it runs without a browser) |
+| `verify:migrations` | every migration parses (`pip install pglast` to enable; skipped otherwise) |
 
 To run the **full app** (frontend + serverless API + cron routes) locally you
 need the Vercel CLI, because the API is made of Vercel Functions:

@@ -738,6 +738,8 @@ export interface TickResult {
   searchSlices: number;
   emailsSent: number;
   failedStaleJobs: number;
+  /** Searches handed back to the queue after their worker stopped mid-sweep. */
+  requeuedJobs?: number;
 }
 
 /**
@@ -762,6 +764,16 @@ export async function runTick(budget: Budget, opts: { full: boolean }): Promise<
   }
 
   if (opts.full) {
+    // A worker that was killed mid-sweep leaves its job in searching/collecting.
+    // Hand it back to the queue (it resumes from its saved coverage cursor) or,
+    // if it has run out of attempts, fail it and refund the unused quota.
+    const { data: requeued } = await sb.rpc("requeue_stalled_search_jobs", {
+      p_provider: "scraper",
+      p_stalled_seconds: 120,
+      p_max_attempts: MAX_ATTEMPTS,
+    });
+    if (requeued !== null && requeued !== undefined) result.requeuedJobs = Number(requeued);
+
     const { data: failed } = await sb.rpc("fail_exhausted_search_jobs", {
       p_max_attempts: MAX_ATTEMPTS,
     });
