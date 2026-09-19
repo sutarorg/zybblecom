@@ -180,6 +180,72 @@ export function ProseSection({
   );
 }
 
+/**
+ * A comparison table that never scrolls sideways and never clips: desktop gets
+ * the table, phones get one card per row with the headers as labels.
+ */
+export function DataTable({
+  head,
+  rows,
+}: {
+  head: string[];
+  rows: ReactNode[][];
+}) {
+  return (
+    <div className="rounded-2xl border border-black/[0.06] bg-white">
+      <ul className="divide-y divide-black/[0.05] sm:hidden">
+        {rows.map((row, i) => (
+          <li key={i} className="space-y-2.5 px-4 py-3.5">
+            {row.map((cell, j) => (
+              <div key={j} className="min-w-0">
+                <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
+                  {head[j]}
+                </p>
+                <p
+                  className={cn(
+                    "mt-0.5 break-words text-[13px] leading-relaxed",
+                    j === 0 ? "font-semibold text-neutral-900" : "text-neutral-600",
+                  )}
+                >
+                  {cell}
+                </p>
+              </div>
+            ))}
+          </li>
+        ))}
+      </ul>
+      <table className="hidden w-full text-left sm:table">
+        <thead>
+          <tr className="border-b border-black/[0.06] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
+            {head.map((h) => (
+              <th key={h} className="px-4 py-3">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className="border-b border-black/[0.04] align-top last:border-0">
+              {row.map((cell, j) => (
+                <td
+                  key={j}
+                  className={cn(
+                    "px-4 py-3 text-[13px] leading-relaxed",
+                    j === 0 ? "font-semibold text-neutral-900" : "text-neutral-600",
+                  )}
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function CtaBlock({
   title = "Find your next customers with Zybble.",
   sub = "Free plan included. No credit card required.",

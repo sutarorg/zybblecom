@@ -2,7 +2,7 @@ import { ArrowRight } from "lucide-react";
 import Reveal from "../components/Reveal";
 import { MLink, Seo, breadcrumbJsonLd } from "../seo/Seo";
 import { cn } from "../utils/cn";
-import MarketingLayout, { CtaBlock, Kicker, PageHero, ProseSection } from "./Layout";
+import MarketingLayout, { CtaBlock, DataTable, Kicker, PageHero, ProseSection } from "./Layout";
 
 // ————————————————————————————————————————————————————————————
 // Feature pages — original, decision-complete content targeting
@@ -94,11 +94,11 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "/features/lead-enrichment",
-    kicker: "Enrichment & Email Finder",
+    kicker: "Enrichment & Email Verification",
     h1: "From a map pin to an outreach-ready record.",
-    lede: "Zybble enriches every business with its public website, phone, hours and reputation — then finds the email the business itself published, and tells you how much to trust it.",
+    lede: "Zybble enriches every business with its public website, phone, hours and reputation — and keeps the emails the scraping engine reads on the business's own site, with an honest trust level attached.",
     metaTitle: "Lead Enrichment & Email Verification | Zybble",
-    metaDesc: "Enrich leads with verified public data and find business-published emails with honest statuses: verified, risky, invalid or unknown — never invented addresses.",
+    metaDesc: "Enrich leads with verified public data and business-published emails, each with an honest status: verified, risky, invalid or unknown — never invented addresses.",
     sections: [
       {
         h: "Raw listings in, complete records out",
@@ -111,27 +111,28 @@ export const FEATURES: Feature[] = [
             ["Company, category, address", "Public business listing", "Filtering, personalization, dedupe"],
             ["Rating & review count", "Public listing reputation", "Fit signals, AI scoring, opening lines"],
             ["Phone & hours", "Public listing", "Multi-channel follow-up, call timing"],
+            ["Additional phones & emails", "Every contact the listing or site publishes", "Multi-channel follow-up, backup addresses"],
             ["Website", "Listing → live site check", "Research depth, web-presence signals"],
-            ["Public email + source URL", "The business's own website", "Outreach with provenance you can defend"],
+            ["Public email + source URL", "Read by the scraper on the business's own website", "Outreach with provenance you can defend"],
           ],
         },
       },
       {
         h: "Email statuses you can actually act on",
         paras: [
-          "Every email Zybble reports was found published by the business itself — on its contact page, about page or homepage. Nothing is guessed, pattern-fabricated or invented. Each address carries a status so you always know the confidence level before you write.",
+          "Every email Zybble reports was published by the business itself on its own website, read there by the open-source scraping engine Zybble runs (never by a pattern generator). Nothing is guessed, pattern-fabricated or invented, and addresses that fail validation are simply dropped. Each remaining address carries a status so you always know the confidence level before you write.",
         ],
         table: {
           head: ["Status", "Meaning", "Recommended action"],
           rows: [
-            ["Verified", "Found on a contact-type page; domain accepts mail (MX confirmed)", "Send with confidence"],
-            ["Risky", "Found on a general page or obfuscated; deliverability less certain", "Send, but watch bounces"],
+            ["Verified", "Published by the business and the domain accepts mail (MX confirmed)", "Send with confidence"],
+            ["Risky", "Published by the business; the mail records could not be confirmed", "Send, but watch bounces"],
             ["Invalid", "Domain has no mail records — delivery is impossible", "Do not send; reach out another way"],
             ["Unknown", "No public email found on the site", "Phone, form or skip"],
           ],
         },
         afterParas: [
-          "Every email also stores its source URL — when a teammate asks \"where did this address come from?\", the answer is one click away.",
+          "Every email also stores the website it was read on — when a teammate asks \"where did this address come from?\", the answer is one click away.",
         ],
       },
       {
@@ -144,11 +145,11 @@ export const FEATURES: Feature[] = [
     faq: [
       {
         q: "Does Zybble ever guess email addresses?",
-        a: "Never. If a pattern like info@domain.com wasn't actually published by the business, it does not appear as a lead email. Invented addresses are the single biggest driver of bounces and spam complaints — we simply don't do it.",
+        a: "Never. Zybble's emails come from exactly one place: the addresses the open-source scraping engine reads on the business's own website. A pattern like info@domain.com that was never published never becomes a lead email, and anything that fails strict syntax or DNS checks is dropped. Invented addresses are the single biggest driver of bounces and spam complaints — we simply don't do it.",
       },
       {
         q: "What does 'verified' mean technically?",
-        a: "The address was found on a page whose purpose is contact, and the domain has live mail-exchange (MX) records. It is not a guarantee of inbox placement — no tool can promise one honestly — but it is the strongest signal available without contacting the server.",
+        a: "The business published the address on its own website and the domain has live mail-exchange (MX) records. It is not a guarantee of inbox placement — no tool can promise one honestly — but it is the strongest signal available without contacting the server.",
       },
       {
         q: "Is enrichment included on the free plan?",
@@ -479,30 +480,7 @@ export function FeatureDetail({ path }: { path: string }) {
               ))}
             </ul>
           )}
-          {s.table && (
-            <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-black/[0.06] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
-                    {s.table.head.map((h) => (
-                      <th key={h} className="px-4 py-3">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.table.rows.map((r, i) => (
-                    <tr key={i} className="border-b border-black/[0.04] align-top last:border-0">
-                      {r.map((c, j) => (
-                        <td key={j} className={cn("px-4 py-3 text-[13px] leading-relaxed", j === 0 ? "font-semibold text-neutral-900" : "text-neutral-600")}>
-                          {c}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {s.table && <DataTable head={s.table.head} rows={s.table.rows} />}
           {s.afterParas?.map((p, i) => <p key={`a${i}`}>{p}</p>)}
         </ProseSection>
       ))}

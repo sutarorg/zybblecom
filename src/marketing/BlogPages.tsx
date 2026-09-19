@@ -1,8 +1,7 @@
 import { ArrowRight, Clock } from "lucide-react";
 import Reveal from "../components/Reveal";
 import { MLink, Seo, SITE_URL, breadcrumbJsonLd } from "../seo/Seo";
-import { cn } from "../utils/cn";
-import MarketingLayout, { CtaBlock, Kicker, ProseSection } from "./Layout";
+import MarketingLayout, { CtaBlock, DataTable, Kicker, ProseSection } from "./Layout";
 
 // ————————————————————————————————————————————————————————————
 // Guides — genuinely useful, original, expertise-driven content.
@@ -429,30 +428,7 @@ export function ArticleDetail({ path }: { path: string }) {
                 ))}
               </ul>
             )}
-            {s.table && (
-              <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-black/[0.06] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
-                      {s.table.head.map((h) => (
-                        <th key={h} className="px-4 py-3">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {s.table.rows.map((r, i) => (
-                      <tr key={i} className="border-b border-black/[0.04] align-top last:border-0">
-                        {r.map((c, j) => (
-                          <td key={j} className={cn("px-4 py-3 text-[13px] leading-relaxed", j === 0 ? "font-semibold text-neutral-900" : "text-neutral-600")}>
-                            {c}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {s.table && <DataTable head={s.table.head} rows={s.table.rows} />}
             {s.afterParas?.map((p, i) => <p key={`a${i}`}>{p}</p>)}
           </ProseSection>
         ))}

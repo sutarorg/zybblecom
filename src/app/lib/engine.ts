@@ -15,7 +15,7 @@ export interface StartSearchInput {
   query: string;
   location: string;
   quantity: number;
-  radiusMeters: number;
+  /** Coverage is always the whole area; the API applies its own default. */
   filters?: Partial<SearchFilters>;
   sortBy?: SearchFilters["sort_by"];
 }
@@ -44,7 +44,6 @@ export async function startSearch(input: StartSearchInput): Promise<SearchJob> {
       query,
       location,
       quantity: Math.max(1, Math.min(200, Math.round(input.quantity))),
-      radius_meters: input.radiusMeters,
       filters: cleanFilters(input.filters),
       sort_by: input.sortBy ?? "relevance",
     },

@@ -123,10 +123,14 @@ class InvocationContractTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("-browser-pool-size") + 1], "2")
         self.assertEqual(argv[argv.index("-pages-per-browser") + 1], "4")
         self.assertIn("-json", argv, "JSONL output is what the adapter parses")
-        self.assertNotIn("-email", argv, "email extraction is opt-in")
+        self.assertIn("-email", argv, "the engine is Zybble's only email source, so it is on by default")
         self.assertNotIn("-fast-mode", argv)
         self.assertNotIn("-resume", argv, "Zybble owns resumability")
         self.assertNotIn("-dsn", argv, "Zybble never gives the engine a database")
+
+    def test_email_can_still_be_switched_off_explicitly(self):
+        engine = GosomEngine(binary=self.fake.binary, extract_email=False)
+        self.assertNotIn("-email", engine.build_argv("in", "out"))
 
     def test_boolean_flags_are_bare_go_flags(self):
         """Go's flag package rejects `-json true`; booleans must have no value."""

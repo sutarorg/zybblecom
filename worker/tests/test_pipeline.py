@@ -1,10 +1,14 @@
-"""Full worker pipeline: claim → discover → dedupe → enrich → emails → complete.
+"""Full worker pipeline: claim → discover → dedupe → enrich → contacts → complete.
 
 The Zybble API is replaced by an in-memory double with the same method surface
 as ``worker.WorkerApi``, and `gosom/google-maps-scraper` by the offline CLI
 double in :mod:`tests.fake_gms`. Everything between them — job orchestration,
 coverage planning, the real subprocess/JSONL transport, streaming, dedupe,
-filters, enrichment, email discovery and progress reporting — is production code.
+filters, enrichment, contact validation and progress reporting — is production
+code.
+
+Emails come from the engine only, so these tests assert the engine's addresses
+survive validation and reach storage — and that nothing invents one.
 """
 
 from __future__ import annotations
@@ -12,12 +16,12 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from unittest import mock
 
 os.environ.setdefault("ZYBBLE_APP_URL", "https://zybble.test")
 os.environ.setdefault("SCRAPER_WORKER_SECRET", "test-secret")
 os.environ.setdefault("SCRAPER_BATCH_SIZE", "5")
 
-from email_finder import SiteIntel  # noqa: E402
 from filters import LeadFilters, evaluate_discovery  # noqa: E402
 from scraper import JobTimeout, ScrapeState, place_key  # noqa: E402
 import worker as worker_module  # noqa: E402
@@ -35,7 +39,8 @@ class FakeApi:
         self.completed = False
         self.failed: list[tuple[str, bool]] = []
         self.resumed: list[str] = []
-        self.intel_calls: list[dict] = []
+        self.social_calls: list[str] = []
+        self.enrichment_calls: list[dict] = []
         self.enrich_calls = 0
         self._seen: set[str] = set()
         self._next_id = 1
@@ -83,8 +88,11 @@ class FakeApi:
             row = place.json()
             row["id"] = f"lead-{self._next_id}"
             self._next_id += 1
-            row["email"] = None
-            row["email_status"] = "unknown"
+            # The API stores the first engine address as the primary one and
+            # keeps every address the engine published.
+            row.setdefault("emails", [])
+            row["email"] = row["emails"][0] if row["emails"] else None
+            row["email_status"] = row.get("email_status") if row["emails"] else "unknown"
             row["email_source_url"] = None
             self.saved_leads.append(row)
             accepted += 1
@@ -94,23 +102,25 @@ class FakeApi:
             "accepted": accepted,
             "duplicates": duplicates,
             "filtered": filtered,
+            "email_found": sum(1 for lead in self.saved_leads if lead.get("email")),
         }
 
     def enrich(self, job):
         self.enrich_calls += 1
         return {"enriched": len(self.saved_leads)}
 
-    def pending_emails(self, job):
-        return [lead for lead in self.saved_leads if lead.get("email_status") in (None, "unknown")
-                and lead.get("email") is None]
+    def pending_enrichment(self, job):
+        """Leads with a website whose public socials are not resolved yet."""
+        return [
+            lead for lead in self.saved_leads
+            if lead.get("website") and not lead.get("social_profiles")
+        ]
 
-    def email(self, job, lead_id, **fields):
+    def enrichment(self, job, lead_id, **fields):
         for lead in self.saved_leads:
             if lead["id"] == lead_id:
-                lead["email"] = fields.get("email")
-                lead["email_status"] = fields.get("email_status")
-                lead["email_source_url"] = fields.get("email_source_url")
                 lead["social_profiles"] = fields.get("social_profiles") or []
+                self.enrichment_calls.append({"lead": lead_id, "social_profiles": lead["social_profiles"]})
                 return {"ok": True}
         raise AssertionError(f"unknown lead {lead_id}")
 
@@ -162,10 +172,14 @@ def make_job(**overrides) -> dict:
 class PipelineTest(unittest.TestCase):
     def setUp(self):
         self.original_run_scrape = worker_module.run_scrape
-        self.original_intel = worker_module.find_site_intel
+        self.original_socials = worker_module.find_social_profiles
         self.original_log = worker_module.log
         self.fakes: list[FakeEngine] = []
         self.log_lines: list[dict] = []
+        # Deterministic DNS: every domain in the fake world accepts mail, so the
+        # suite never touches the network.
+        self.mx_patch = mock.patch("engine_contacts.mx_status", return_value=True)
+        self.mx_patch.start()
 
         def quiet_log(level, message, **fields):
             # Keep the suite readable; errors are still printed on teardown.
@@ -174,8 +188,9 @@ class PipelineTest(unittest.TestCase):
         worker_module.log = quiet_log
 
     def tearDown(self):
+        self.mx_patch.stop()
         worker_module.run_scrape = self.original_run_scrape
-        worker_module.find_site_intel = self.original_intel
+        worker_module.find_social_profiles = self.original_socials
         worker_module.log = self.original_log
         for record in self.log_lines:
             if record.get("level") in ("error", "warning"):
@@ -190,7 +205,7 @@ class PipelineTest(unittest.TestCase):
         self.fakes.append(fake)
         return fake
 
-    def run_job(self, job, world=None, intel=None, after=None, targets_per_batch=6, engine=None):
+    def run_job(self, job, world=None, socials=None, after=None, targets_per_batch=6, engine=None):
         """Run the real ``process_job`` against the engine simulator + fake API."""
         simulator = engine or self.engine_for(world if world is not None else build_world(240, seed=7))
 
@@ -211,18 +226,18 @@ class PipelineTest(unittest.TestCase):
 
         worker_module.run_scrape = patched
 
-        def default_intel(website, engine_candidates=None):
-            return None
+        def default_socials(website):
+            return []
 
-        def recording_intel(website, engine_candidates=None):
-            api_holder["intel"].append({"website": website, "engine_candidates": engine_candidates})
-            return (intel or default_intel)(website, engine_candidates=engine_candidates)
+        def recording_socials(website):
+            api_holder["socials"].append(website)
+            return (socials or default_socials)(website)
 
-        api_holder = {"intel": []}
-        worker_module.find_site_intel = recording_intel
+        api_holder = {"socials": []}
+        worker_module.find_social_profiles = recording_socials
 
         api = FakeApi(job)
-        api_holder["intel"] = api.intel_calls
+        api_holder["socials"] = api.social_calls
         worker_module.WorkerApi.create = classmethod(lambda cls: api)
         worker_module.process_job(job)
         return api
@@ -278,88 +293,87 @@ class PipelineTest(unittest.TestCase):
         self.assertTrue(api.completed)
         self.assertEqual(len(api.saved_leads), 50)
 
-    def test_emails_are_discovered_stored_and_counted(self):
-        def intel(website, engine_candidates=None):
-            return SiteIntel(
-                email=f"hello@{website.split('//')[-1].split('/')[0]}",
-                status="verified",
-                source_url=f"{website}/contact",
-                social_profiles=["https://facebook.com/x", "https://instagram.com/x"],
-            )
-
-        api = self.run_job(make_job(quantity=20), intel=intel)
-        mailable = [lead for lead in api.saved_leads if lead.get("website")]
-        with_email = [lead for lead in api.saved_leads if lead.get("email")]
-        self.assertTrue(mailable)
-        self.assertEqual(len(with_email), len(mailable), "every business with a website gets an address")
-        for lead in with_email:
+    def test_engine_emails_are_stored_with_their_status_and_counted(self):
+        """Emails arrive with the lead batch — straight from the scraper engine."""
+        api = self.run_job(make_job(quantity=20))
+        with_website = [lead for lead in api.saved_leads if lead.get("website")]
+        self.assertTrue(with_website)
+        for lead in with_website:
+            self.assertTrue(lead["emails"], "the engine published an address for this business")
+            self.assertEqual(lead["email"], lead["emails"][0])
             self.assertEqual(lead["email_status"], "verified")
-            self.assertTrue(lead["email_source_url"].endswith("/contact"))
-            self.assertEqual(len(lead["social_profiles"]), 2)
-        self.assertEqual(api.job["counts"]["email_found"], len(mailable))
+        for lead in with_website:
+            # The address is exactly the one the engine published — nothing was
+            # crawled for, derived or guessed.
+            host = lead["website"].split("//")[-1].split("/")[0]
+            self.assertEqual(lead["emails"], [f"hello@{host}"])
+        self.assertEqual(
+            api.job["counts"]["email_found"],
+            sum(1 for lead in api.saved_leads if lead.get("email")),
+        )
 
-    def test_invalid_email_never_fails_the_job(self):
-        """The reported 'Invalid email address' failure mode."""
-
-        def intel(_website, engine_candidates=None):
-            return SiteIntel(email="not-an-email", status="verified", source_url="https://x/contact")
-
-        api = self.run_job(make_job(quantity=10), intel=intel)
-        self.assertTrue(api.completed, "a malformed address must not fail the search")
-        self.assertEqual(api.failed, [])
-        self.assertEqual(len(api.saved_leads), 10, "the business is kept even when its email is unusable")
-        for lead in api.saved_leads:
-            self.assertIsNone(lead["email"])
-            self.assertEqual(lead["email_status"], "unknown")
-        self.assertEqual(api.job["counts"]["email_found"], 0)
-
-    def test_no_website_means_unknown_not_failure(self):
+    def test_a_business_without_an_engine_email_stays_unknown_never_fatal(self):
         world = build_world(30, seed=17)
         for business in world:
             business.website = None
-        api = self.run_job(make_job(quantity=10), world=world, intel=lambda _w, **_k: None)
-        self.assertTrue(api.completed)
+            business.emails = []
+        api = self.run_job(make_job(quantity=10), world=world)
+        self.assertTrue(api.completed, "a missing address must not fail the search")
+        self.assertEqual(api.failed, [])
         self.assertTrue(api.saved_leads)
         for lead in api.saved_leads:
             self.assertIsNone(lead["website"])
+            self.assertEqual(lead["emails"], [])
             self.assertEqual(lead["email_status"], "unknown")
-        self.assertEqual(api.intel_calls, [], "a business without a website is never looked up")
+        self.assertEqual(api.job["counts"]["email_found"], 0)
 
-    def test_one_website_that_explodes_does_not_stop_email_discovery(self):
+    def test_a_malformed_engine_email_is_dropped_not_stored(self):
+        world = build_world(10, seed=41)
+        for business in world:
+            business.emails = ["not-an-email", "noreply@example.com", "hello@ironyard.in"]
+        api = self.run_job(make_job(quantity=10), world=world)
+        self.assertTrue(api.completed)
+        for lead in api.saved_leads:
+            self.assertEqual(lead["emails"], ["hello@ironyard.in"])
+            self.assertEqual(lead["email_status"], "verified")
+
+    def test_no_website_is_never_fetched_for_socials(self):
+        self.assertEqual(
+            [url for url in self.run_job(make_job(quantity=10)).social_calls if not url],
+            [],
+        )
+
+    def test_social_profiles_are_enriched_and_never_fail_a_lead(self):
         calls = {"n": 0}
 
-        def intel(website, engine_candidates=None):
+        def socials(website):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("boom")
-            return SiteIntel(email="hi@ironyard.in", status="risky", source_url=f"{website}/contact")
+            return ["https://facebook.com/x", "https://instagram.com/x"]
 
-        api = self.run_job(make_job(quantity=10), intel=intel)
-        self.assertTrue(api.completed)
-        self.assertGreater(sum(1 for lead in api.saved_leads if lead.get("email")), 0)
+        api = self.run_job(make_job(quantity=10), socials=socials)
+        self.assertTrue(api.completed, "one unreachable website must not stop the job")
+        enriched = [lead for lead in api.saved_leads if lead.get("social_profiles")]
+        self.assertTrue(enriched)
+        for lead in enriched:
+            self.assertEqual(len(lead["social_profiles"]), 2)
 
-    def test_engine_email_candidates_are_handed_to_the_site_scan(self):
-        """With -email on, the engine's addresses must reach the verifier."""
+    def test_engine_emails_are_the_only_source_and_need_no_verifier_handoff(self):
+        """Regression guard: no lead without engine emails may gain an address."""
         world = build_world(20, seed=23)
-        for index, business in enumerate(world):
-            if business.website:
-                business.emails = [f"contact{index}@{business.website.split('//')[-1].split('/')[0]}"]
-        fake = self.engine_for(world)
-        fake.engine.extract_email = True
-
-        seen: list[dict] = []
-
-        def intel(website, engine_candidates=None):
-            seen.append({"website": website, "engine_candidates": engine_candidates})
-            return None
-
-        api = self.run_job(make_job(quantity=10), intel=intel, engine=fake)
+        for business in world:
+            business.emails = []
+        api = self.run_job(make_job(quantity=10), world=world,
+                           socials=lambda _w: ["https://facebook.com/x"])
         self.assertTrue(api.completed)
-        self.assertTrue(seen)
-        self.assertTrue(
-            any(call["engine_candidates"] for call in seen),
-            "engine-read addresses are passed through, keyed by website host",
+        self.assertFalse(
+            hasattr(worker_module, "find_site_intel"),
+            "the worker must not own an address-discovery path at all",
         )
+        for lead in api.saved_leads:
+            self.assertIsNone(lead["email"])
+            self.assertEqual(lead["email_status"], "unknown")
 
     def test_filters_are_applied_to_the_saved_leads(self):
         api = self.run_job(make_job(quantity=25, filters={"min_rating": 4.7, "has_website": True}))

@@ -295,9 +295,25 @@ export function registerCore(r: Router) {
   r.post("/api/leads/delete", async ({ req, json }) => {
     const user = await requireUser(req);
     const { ids } = await json(z.object({ ids: z.array(uuid).min(1).max(500) }));
-    const { error } = await sb.from("leads").delete().eq("user_id", user.id).in("id", ids);
+    // `.select()` returns exactly the rows this user's delete removed (child
+    // rows — AI research/scores, campaign links — cascade), so the client can
+    // trust the count instead of assuming every id was its own.
+    const { data, error } = await sb
+      .from("leads")
+      .delete()
+      .eq("user_id", user.id)
+      .in("id", ids)
+      .select("id");
     if (error) throw new HttpError(500, "Could not delete leads.");
-    return { ok: true, deleted: ids.length };
+    const deleted = (data ?? []) as Array<{ id: string }>;
+    if (deleted.length !== ids.length) {
+      log.warn("lead delete removed fewer rows than requested", {
+        user: user.id,
+        requested: ids.length,
+        deleted: deleted.length,
+      });
+    }
+    return { ok: true, deleted: deleted.length, ids: deleted.map((row) => row.id) };
   });
 
   r.patch("/api/leads/:id", async ({ req, json, params }) => {
@@ -325,8 +341,9 @@ export function registerCore(r: Router) {
       const s = String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
+    const list = (value: unknown): string => (Array.isArray(value) ? value.join(" | ") : "");
     const header =
-      "company,category,address,city,state,country,phone,website,google_maps_url,place_id,rating,reviews,hours,open_status,description,email,email_status,email_source_url,social_profiles,ai_score,notes,created_at";
+      "company,category,address,city,state,country,phone,phones,website,google_maps_url,place_id,rating,reviews,hours,open_status,description,email,emails,email_status,email_source_url,social_profiles,ai_score,notes,created_at";
     const lines = (leads ?? []).map((l) =>
       [
         l.company,
@@ -336,6 +353,7 @@ export function registerCore(r: Router) {
         l.state,
         l.country,
         l.phone,
+        list(l.phones),
         l.website,
         l.maps_url,
         l.place_id,
@@ -345,6 +363,7 @@ export function registerCore(r: Router) {
         l.open_status,
         l.description,
         l.email,
+        list(l.emails),
         l.email_status,
         l.email_source_url,
         Array.isArray(l.social_profiles) ? l.social_profiles.join(" ") : "",

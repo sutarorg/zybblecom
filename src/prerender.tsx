@@ -58,7 +58,7 @@ const software = {
       price: "0",
       priceCurrency: "USD",
       description:
-        "100 new leads per month with lead finder, database, email finder and enrichment.",
+        "100 new leads per month with lead finder, database, email validation and enrichment.",
     },
     {
       "@type": "Offer",

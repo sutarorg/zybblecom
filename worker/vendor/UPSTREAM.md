@@ -64,19 +64,23 @@ to the engine:
 | Resumable cursor, crash-safe batches | `worker/scraper.py` (`ScrapeState`) | Upstream's `-resume` is file-scoped; Zybble resumes through the API and Supabase |
 | Deduplication across viewports, variants and slices | `worker/scraper.py` (`place_key`) | Must match `dedupeKeyFor` in `api/_lib/routes-worker.ts` exactly |
 | Professional lead filters | `worker/filters.py` + `api/_lib/filters.ts` | Applied twice: while scraping and again server-side |
-| Email discovery + DNS MX verification, SSRF-guarded | `worker/email_finder.py` | See below |
+| Engine-owned email extraction + DNS MX verification | `worker/engine_contacts.py` | See below |
 | Time budget, process-group kill, error taxonomy, counters | `worker/gmaps_engine.py` | A stuck browser must never orphan a Chromium process on Railway |
 
-### Why `-email` is off by default
+### Why `-email` is on by default
 
-Upstream can crawl each business website for addresses (`-email`). Zybble's own
-finder already does that with two things upstream does not: an SSRF guard on
-every redirect hop, and DNS MX verification that separates `verified` /
-`risky` / `invalid`. So the engine's addresses are treated as **candidates**:
-set `SCRAPER_ENGINE_EXTRACT_EMAIL=1` and they are handed to
-`email_finder.verify_candidate_emails()`, which validates syntax and MX before
-anything is stored — and are used only when Zybble's own scan finds nothing.
-Nothing is ever invented, and an unverifiable address stays `unknown`.
+Upstream can read the addresses each business publishes on its own website
+(`-email`), and that is Zybble's **only** email source: the product never
+crawls for an address itself, never pattern-builds one and never guesses.
+`worker/engine_contacts.py` is the gate every address must pass — strict
+syntax validation first (malformed and role addresses are dropped), then a
+cached DNS MX lookup that labels each survivor `verified`, `risky` or
+`invalid`. A business whose address fails validation simply has no email, and
+the search never fails because of it.
+
+Setting `SCRAPER_ENGINE_EXTRACT_EMAIL=0` turns the extraction off entirely
+(leads then carry no addresses at all) — it does not switch Zybble to any
+other source, because there isn't one.
 
 ## Updating the engine
 

@@ -30,9 +30,9 @@ const {
   usesEnrichmentFilters,
   describeFilters,
 } = await import("../api/_lib/filters.ts");
-const { normalizeEmail, sanitizeEmailResult, extractSocialProfiles } = await import(
-  "../api/_lib/email-finder.ts"
-);
+const { normalizeEmail, normalizePhone, sanitizePhones, sanitizeEmailResult, extractSocialProfiles } =
+  await import("../api/_lib/contacts.ts");
+const { sanitizeEmails } = await import("../api/_lib/routes-worker.ts");
 const { canonicalMapsUrl, dedupeKeyFor } = await import("../api/_lib/routes-worker.ts");
 const { searchJobView } = await import("../api/_lib/jobs.ts");
 
@@ -206,7 +206,39 @@ await test("a bad email becomes unknown — it never fails the job", async () =>
   assert.equal(good.rejected, false);
 });
 
-await test("social profiles are extracted from business pages", async () => {
+await test("phone numbers are validated, deduplicated and capped", async () => {
+  assert.equal(normalizePhone("+91 11 4000 0000"), "+91 11 4000 0000");
+  assert.equal(normalizePhone("(212) 555-0100"), "(212) 555-0100");
+  assert.equal(normalizePhone("+1 415 555 2671 ext. 12"), "+1 415 555 2671 ext. 12");
+  for (const bad of ["call us", "hello@ironyard.in", "https://ironyard.in", "", null, 42]) {
+    assert.equal(normalizePhone(bad), null, `must reject ${String(bad)}`);
+  }
+  assert.deepEqual(
+    sanitizePhones("+91 11 4000 0000; +91 11 4000 0001", ["+1 212 555 0100", "+1 212 555 0100"]),
+    ["+91 11 4000 0000", "+91 11 4000 0001", "+1 212 555 0100"],
+  );
+  assert.deepEqual(sanitizePhones("Call us"), []);
+});
+
+await test("engine emails are the only source, and every one of them survives", async () => {
+  const contacts = sanitizeEmails(
+    ["One@IronYard.in", "one@ironyard.in", "not-an-email", "noreply@ironyard.in", "two@ironyard.in"],
+    "verified",
+  );
+  assert.deepEqual(contacts.emails, ["one@ironyard.in", "two@ironyard.in"]);
+  assert.equal(contacts.email, "one@ironyard.in");
+  assert.equal(contacts.email_status, "verified");
+
+  const empty = sanitizeEmails([], "verified");
+  assert.deepEqual(empty.emails, []);
+  assert.equal(empty.email, null);
+  assert.equal(empty.email_status, "unknown", "no address is ever invented");
+
+  const unverified = sanitizeEmails(["hello@ironyard.in"]);
+  assert.equal(unverified.email_status, "risky", "a status is never claimed without evidence");
+});
+
+await test("social profiles are read from business pages and sanitised", async () => {
   const socials = extractSocialProfiles(
     '<a href="https://www.facebook.com/ironyard">f</a><a href="https://instagram.com/ironyard">i</a><a href="https://example.com/about">about</a>',
   );

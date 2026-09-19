@@ -140,6 +140,10 @@ export interface Lead extends LeadCandidate {
   id: ID;
   user_id: ID;
   job_id: ID | null;
+  /** Every published address the engine returned; `email` is the primary one. */
+  emails?: string[] | null;
+  /** Every published phone number; `phone` is the primary one. */
+  phones?: string[] | null;
   email: string | null;
   email_status: EmailStatus | null;
   email_source_url: string | null;

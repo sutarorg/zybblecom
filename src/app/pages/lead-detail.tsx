@@ -30,27 +30,70 @@ function InfoRow({
   label,
   value,
   href,
+  truncate = false,
+  title,
 }: {
   icon: React.ElementType;
   label: string;
   value: React.ReactNode;
   href?: string;
+  /** Single-line ellipsis for values that can run long (URLs, hours). */
+  truncate?: boolean;
+  title?: string;
 }) {
   const inner = (
     <>
       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300" />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-neutral-400">{label}</p>
-        <p className="mt-0.5 break-words text-[13.5px] font-medium text-neutral-800">{value}</p>
+        <p
+          title={title}
+          className={cn(
+            "mt-0.5 text-[13.5px] font-medium text-neutral-800",
+            truncate ? "truncate" : "break-words",
+          )}
+        >
+          {value}
+        </p>
       </div>
     </>
   );
+  const shell = "flex min-w-0 gap-3 rounded-lg p-1.5 -m-1.5 transition-colors";
   return href ? (
-    <a href={href} target="_blank" rel="noreferrer" className="flex gap-3 rounded-lg transition-colors hover:bg-neutral-50">
+    <a href={href} target="_blank" rel="noreferrer" className={cn(shell, "hover:bg-neutral-50")}>
       {inner}
     </a>
   ) : (
-    <div className="flex gap-3">{inner}</div>
+    <div className={shell}>{inner}</div>
+  );
+}
+
+/** Every published email/phone, primary first, without breaking the layout. */
+function ContactList({ items }: { items: string[] }) {
+  return (
+    <ul className="mt-1.5 space-y-1">
+      {items.map((item) => (
+        <li key={item} className="flex min-w-0 items-center gap-2">
+          <span
+            className="min-w-0 flex-1 truncate text-[13px] text-neutral-700"
+            title={item}
+          >
+            {item}
+          </span>
+          <button
+            type="button"
+            aria-label={`Copy ${item}`}
+            onClick={() => {
+              void navigator.clipboard?.writeText(item);
+              toast("Copied to clipboard");
+            }}
+            className="shrink-0 rounded-md p-1 text-neutral-300 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+          >
+            <Copy className="h-3 w-3" />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -129,6 +172,18 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
   }, "write");
 
   const aiLocked = !plan.ai;
+  // Every published contact, primary first. The single-value columns stay the
+  // source of truth for older rows and for outreach.
+  const emails = (
+    lead.emails?.length ? lead.emails : lead.email ? [lead.email] : []
+  ).filter((value): value is string => Boolean(value));
+  const phones = (
+    lead.phones?.length ? lead.phones : lead.phone ? [lead.phone] : []
+  ).filter((value): value is string => Boolean(value));
+  const hoursLines = (lead.hours ?? "")
+    .split(/\s*;\s*/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -142,7 +197,12 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
           Leads
         </a>
         <span className="text-neutral-300">/</span>
-        <h2 className="font-display text-[17px] font-semibold text-neutral-950">{lead.company}</h2>
+        <h2
+          title={lead.company}
+          className="min-w-0 max-w-[42ch] truncate font-display text-[17px] font-semibold text-neutral-950"
+        >
+          {lead.company}
+        </h2>
         {score && (
           <Badge tone={score.score >= 85 ? "green" : score.score >= 70 ? "blue" : "amber"}>
             <Gauge className="h-3 w-3" />
@@ -165,10 +225,13 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
               {lead.company.split(" ").map((w) => w[0]).slice(0, 2).join("")}
             </span>
             <div className="min-w-0">
-              <p className="font-display text-[18px] font-semibold tracking-[-0.01em] text-neutral-950">
+              <p
+                title={lead.company}
+                className="truncate font-display text-[18px] font-semibold tracking-[-0.01em] text-neutral-950"
+              >
                 {lead.company}
               </p>
-              <p className="text-[12.5px] text-neutral-500">
+              <p className="truncate text-[12.5px] text-neutral-500" title={`${lead.category} · ${lead.city}`}>
                 {lead.category} · {lead.city}{lead.state ? `, ${lead.state}` : ""}
               </p>
             </div>
@@ -180,17 +243,17 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
             )}
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <div className="mt-6 grid min-w-0 gap-4 sm:grid-cols-2">
             <InfoRow icon={MapPin} label="Address" value={`${lead.address}, ${lead.city}${lead.state ? `, ${lead.state}` : ""} ${lead.country}`} />
-            <InfoRow icon={Phone} label="Phone" value={lead.phone ?? "Not listed"} />
             <InfoRow
               icon={Globe}
               label="Website"
+              truncate
+              title={lead.website ?? undefined}
               value={
                 lead.website ? (
-                  <span className="inline-flex items-center gap-1 text-neutral-900 underline decoration-neutral-300 underline-offset-4">
+                  <span className="text-neutral-900 underline decoration-neutral-300 underline-offset-4">
                     {lead.website.replace(/^https?:\/\//, "")}
-                    <ExternalLink className="h-3 w-3 text-neutral-400" />
                   </span>
                 ) : (
                   "No website found"
@@ -198,24 +261,97 @@ export default function LeadDetail({ userId, leadId }: { userId: string; leadId:
               }
               href={lead.website ?? undefined}
             />
-            <InfoRow icon={Clock} label="Hours" value={lead.hours ?? "Not listed"} />
+            <div className="min-w-0">
+              <div className="flex min-w-0 gap-3">
+                <Phone className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-neutral-400">
+                    {phones.length > 1 ? `Phone (${phones.length})` : "Phone"}
+                  </p>
+                  {phones.length ? (
+                    <ContactList items={phones} />
+                  ) : (
+                    <p className="mt-0.5 text-[13.5px] font-medium text-neutral-800">Not listed</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 gap-3">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-neutral-400">Hours</p>
+                  {hoursLines.length ? (
+                    <ul className="mt-0.5 space-y-0.5">
+                      {hoursLines.map((line) => (
+                        <li key={line} className="break-words text-[12.5px] leading-snug text-neutral-700">
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-0.5 text-[13.5px] font-medium text-neutral-800">Not listed</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="mt-6 border-t border-black/[0.05] pt-5">
-            <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-neutral-400">Email</p>
-            {lead.email ? (
-              <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-black/[0.06] bg-neutral-50/60 px-3.5 py-3">
-                <BadgeCheck className={cn("h-4 w-4", lead.email_status === "verified" ? "text-emerald-500" : "text-neutral-300")} />
-                <span className="text-[13.5px] font-medium text-neutral-900">{lead.email}</span>
-                <EmailStatusDot status={lead.email_status} />
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-neutral-400">
+              {emails.length > 1 ? `Email (${emails.length})` : "Email"}
+            </p>
+            {emails.length ? (
+              <div className="mt-2 min-w-0 rounded-xl border border-black/[0.06] bg-neutral-50/60 px-3.5 py-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <BadgeCheck
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      lead.email_status === "verified" ? "text-emerald-500" : "text-neutral-300",
+                    )}
+                  />
+                  <a
+                    href={`mailto:${emails[0]}`}
+                    title={emails[0]}
+                    className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-neutral-900 hover:underline"
+                  >
+                    {emails[0]}
+                  </a>
+                  <EmailStatusDot status={lead.email_status} />
+                  <button
+                    type="button"
+                    aria-label="Copy email address"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(emails[0]);
+                      toast("Copied to clipboard");
+                    }}
+                    className="shrink-0 rounded-md p-1 text-neutral-300 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+                {emails.length > 1 && (
+                  <div className="mt-2.5 border-t border-black/[0.05] pt-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-400">
+                      Also published
+                    </p>
+                    <ContactList items={emails.slice(1)} />
+                  </div>
+                )}
                 {lead.email_source_url && (
-                  <span className="ml-auto truncate text-[10.5px] text-neutral-400">
-                    source: {lead.email_source_url.replace(/^https?:\/\//, "")}
-                  </span>
+                  <p
+                    title={lead.email_source_url}
+                    className="mt-2 truncate text-[10.5px] text-neutral-400"
+                  >
+                    Published on their own website:{" "}
+                    {lead.email_source_url.replace(/^https?:\/\//, "")}
+                  </p>
                 )}
               </div>
             ) : (
-              <p className="mt-2 text-[13px] text-neutral-400">No public email found on their website.</p>
+              <p className="mt-2 text-[13px] text-neutral-400">
+                No email published by this business — Zybble never guesses or generates one.
+              </p>
             )}
           </div>
 

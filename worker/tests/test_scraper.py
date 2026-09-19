@@ -11,6 +11,7 @@ Zybble's behaviour.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from filters import LeadFilters
 from gmaps_engine import EngineFailure, EngineTarget, EngineUnavailable, GosomEngine
@@ -30,7 +31,6 @@ from scraper import (
     map_open_status,
     place_key,
     run_scrape,
-    site_key,
     split_address,
     targets_per_run,
 )
@@ -250,14 +250,13 @@ class EntryMappingTest(unittest.TestCase):
         """No engine-only field may leak into POST /api/worker/jobs/:id/leads."""
         place = entry_to_place(self.entry(emails=["hello@ironyard.example.in"]))
         assert place is not None
-        self.assertEqual(place.email_candidates, ["hello@ironyard.example.in"])
         self.assertEqual(
             set(place.json()),
             {
                 "company", "category", "address", "city", "state", "country", "phone",
-                "website", "maps_url", "rating", "reviews", "hours", "open_status",
+                "phones", "website", "maps_url", "rating", "reviews", "hours", "open_status",
                 "place_id", "external_id", "latitude", "longitude", "social_profiles",
-                "source_query", "description",
+                "source_query", "description", "emails", "email_status",
             },
         )
 
@@ -297,17 +296,53 @@ class EntryMappingTest(unittest.TestCase):
         self.assertEqual(split_address("1 Main, Pune, Maharashtra 411001, India"),
                          ("1 Main", "Pune", "Maharashtra", "India"))
 
-    def test_email_candidates_are_normalised_and_capped(self):
-        place = entry_to_place(self.entry(emails=["A@Iron.example.in", "a@iron.example.in", "not-an-email"]
-                                          + [f"x{i}@example.in" for i in range(10)]))
+    @mock.patch("engine_contacts.mx_status", return_value=True)
+    def test_engine_emails_are_validated_deduplicated_and_capped(self, _mx):
+        """Emails come from the engine's `emails` field only — never guessed."""
+        place = entry_to_place(
+            self.entry(emails=["A@Iron.example.in", "a@iron.example.in", "not-an-email"]
+                       + [f"x{i}@example.in" for i in range(10)])
+        )
         assert place is not None
-        self.assertEqual(len(place.email_candidates), 5)
-        self.assertEqual(place.email_candidates[0], "a@iron.example.in")
-        self.assertNotIn("not-an-email", place.email_candidates)
+        self.assertEqual(len(place.emails), 5)
+        self.assertEqual(place.emails[0], "a@iron.example.in")
+        self.assertNotIn("not-an-email", place.emails)
+        self.assertEqual(place.email_status, "verified")
 
-    def test_site_key_is_a_host(self):
-        self.assertEqual(site_key("https://Ironyard.example.in/contact?x=1"), "ironyard.example.in")
-        self.assertEqual(site_key("ironyard.example.in"), "ironyard.example.in")
+    def test_an_absent_email_is_absent_not_invented(self):
+        place = entry_to_place(self.entry())
+        assert place is not None
+        self.assertEqual(place.emails, [])
+        self.assertEqual(place.email_status, "unknown")
+
+    def test_any_other_key_cannot_introduce_an_address(self):
+        entry = self.entry()
+        entry["email"] = "guessed@ironyard.example.in"
+        entry["contact_email"] = "guessed-too@ironyard.example.in"
+        place = entry_to_place(entry)
+        assert place is not None
+        self.assertEqual(place.emails, [])
+
+    def test_phone_numbers_do_not_need_dns(self):
+        place = entry_to_place(self.entry(phone="+91 11 4000 0000"))
+        assert place is not None
+        self.assertEqual(place.phones, ["+91 11 4000 0000"])
+
+    def test_multiple_phone_numbers_are_kept_as_a_list(self):
+        place = entry_to_place(self.entry(phone="+91 11 4000 0000; +91 11 4000 0001",
+                                          phones=["+1 212 555 0100"]))
+        assert place is not None
+        self.assertEqual(place.phone, "+91 11 4000 0000")
+        self.assertEqual(
+            place.phones,
+            ["+91 11 4000 0000", "+91 11 4000 0001", "+1 212 555 0100"],
+        )
+
+    def test_junk_phone_values_are_dropped(self):
+        place = entry_to_place(self.entry(phone="Call us"))
+        assert place is not None
+        self.assertIsNone(place.phone)
+        self.assertEqual(place.phones, [])
 
 
 class BroadCoverageTest(unittest.TestCase):

@@ -3,7 +3,7 @@ import { useState } from "react";
 import Reveal from "../components/Reveal";
 import { cn } from "../utils/cn";
 import { MLink, Seo, breadcrumbJsonLd } from "../seo/Seo";
-import MarketingLayout, { CtaBlock, PageHero } from "./Layout";
+import MarketingLayout, { CtaBlock, DataTable, PageHero } from "./Layout";
 
 const PLANS = [
   {
@@ -16,7 +16,7 @@ const PLANS = [
       "100 leads / month",
       "Lead Finder",
       "Leads Database",
-      "Email Finder & Verification",
+      "Email Validation & Verification",
       "Lead Enrichment",
     ],
     featured: false,
@@ -31,7 +31,7 @@ const PLANS = [
       "5,000 leads / month",
       "Lead Finder",
       "Leads Database",
-      "Email Finder & Verification",
+      "Email Validation & Verification",
       "AI Research",
       "AI Lead Scoring",
       "AI Email Writer",
@@ -49,7 +49,7 @@ const PLANS = [
       "20,000 leads / month",
       "Lead Finder",
       "Leads Database",
-      "Email Finder & Verification",
+      "Email Validation & Verification",
       "AI Research",
       "AI Lead Scoring",
       "AI Email Writer",
@@ -82,7 +82,7 @@ const FAQ = [
   },
   {
     q: "Is the free plan really free?",
-    a: "Completely. 100 leads per month, every month, with the lead finder, database, email finder and enrichment included — and no credit card required to start. It exists so you can run a real search against a real market before paying anything.",
+    a: "Completely. 100 leads per month, every month, with the lead finder, database, email validation and enrichment included — and no credit card required to start. It exists so you can run a real search against a real market before paying anything.",
   },
 ];
 
@@ -182,36 +182,19 @@ export default function PricingPage() {
           Every Zybble plan includes the same data quality — the difference is
           volume and AI. Here's the honest math per unique, deduplicated lead:
         </p>
-        <div className="mt-6 overflow-hidden rounded-2xl border border-black/[0.06] bg-white">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-black/[0.06] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
-                <th className="px-5 py-3.5">Plan</th>
-                <th className="px-5 py-3.5">Price</th>
-                <th className="px-5 py-3.5">Leads / month</th>
-                <th className="px-5 py-3.5">Cost per lead</th>
-              </tr>
-            </thead>
-            <tbody>
-              {PLANS.map((p) => (
-                <tr key={p.name} className="border-b border-black/[0.04] last:border-0">
-                  <td className="px-5 py-3.5 text-[13.5px] font-semibold text-neutral-900">
-                    {p.name}
-                    {p.featured && (
-                      <Sparkles className="ml-1.5 inline h-3.5 w-3.5 text-indigo-500" />
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5 text-[13.5px] text-neutral-600">{p.price}/mo</td>
-                  <td className="px-5 py-3.5 text-[13.5px] text-neutral-600">
-                    {p.monthlyLeads.toLocaleString()}
-                  </td>
-                  <td className="px-5 py-3.5 text-[13.5px] font-semibold text-neutral-900">
-                    {p.costPerLead}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-6">
+          <DataTable
+            head={["Plan", "Price", "Leads / month", "Cost per lead"]}
+            rows={PLANS.map((p) => [
+              <>
+                {p.name}
+                {p.featured && <Sparkles className="ml-1.5 inline h-3.5 w-3.5 text-indigo-500" />}
+              </>,
+              `${p.price}/mo`,
+              p.monthlyLeads.toLocaleString(),
+              <span className="font-semibold text-neutral-900">{p.costPerLead}</span>,
+            ])}
+          />
         </div>
         <p className="mt-4 text-[13.5px] leading-relaxed text-neutral-400">
           At under a penny per researched, enriched lead, even one recovered

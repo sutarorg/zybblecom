@@ -27,12 +27,8 @@ import {
 } from "../ui/kit";
 import { getPlan, getUsage } from "../lib/plans";
 
-const SUGGESTIONS = [
-  { q: "Dentists", l: "Texas" },
-  { q: "Roofing companies", l: "Dallas" },
-  { q: "Marketing agencies", l: "London" },
-  { q: "Gym", l: "Delhi" },
-];
+/** How many of the user's own recent searches the "Try:" row offers. */
+const RECENT_SEARCHES = 4;
 
 const EMPTY_COUNTS: JobCounts = {
   requested: 0,
@@ -239,33 +235,6 @@ function MultiSelect({
   );
 }
 
-function Toggle({
-  label,
-  hint,
-  checked,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-3.5 w-3.5 rounded border-neutral-300 accent-neutral-900"
-      />
-      <span>
-        <span className="block text-[12.5px] font-medium text-neutral-800">{label}</span>
-        {hint && <span className="block text-[11px] text-neutral-400">{hint}</span>}
-      </span>
-    </label>
-  );
-}
-
 function FilterPanel({
   filters,
   onChange,
@@ -400,7 +369,7 @@ function FilterPanel({
         </Field>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="mt-3">
         <Field label="Sort results by">
           <Select value={filters.sort_by ?? "relevance"} onChange={(e) => set("sort_by", e.target.value as SortBy)}>
             {SORT_OPTIONS.map((option) => (
@@ -410,30 +379,6 @@ function FilterPanel({
             ))}
           </Select>
         </Field>
-        <div className="sm:col-span-2 grid gap-2 sm:grid-cols-2">
-          <Toggle
-            label="Only businesses with a website"
-            checked={Boolean(filters.websites_only)}
-            onChange={(v) => set("websites_only", v)}
-          />
-          <Toggle
-            label="Only businesses with public contact details"
-            hint="website or phone number"
-            checked={Boolean(filters.contactable_only)}
-            onChange={(v) => set("contactable_only", v)}
-          />
-          <Toggle
-            label="Skip businesses I already collected"
-            checked={filters.exclude_previously_collected !== false}
-            onChange={(v) => set("exclude_previously_collected", v)}
-          />
-          <Toggle
-            label="Only verified/enriched records"
-            hint="email status resolved"
-            checked={Boolean(filters.enriched_only)}
-            onChange={(v) => set("enriched_only", v)}
-          />
-        </div>
       </div>
     </div>
   );
@@ -441,7 +386,6 @@ function FilterPanel({
 
 function activeFilterCount(filters: Partial<SearchFilters>): number {
   return Object.entries(filters).filter(([key, value]) => {
-    if (key === "exclude_previously_collected") return value === false;
     if (key === "sort_by") return value !== undefined && value !== "relevance";
     if (Array.isArray(value)) return value.length > 0;
     return value !== null && value !== undefined && value !== "" && value !== false;
@@ -465,7 +409,6 @@ export default function FindLeads({ userId }: { userId: string }) {
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
   const [quantity, setQuantity] = useState("25");
-  const [radius, setRadius] = useState("25000");
   const [filters, setFilters] = useState<Partial<SearchFilters>>({ sort_by: "relevance" });
   const [showFilters, setShowFilters] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -479,6 +422,21 @@ export default function FindLeads({ userId }: { userId: string }) {
     .where<SearchJob>("search_jobs", (j) => j.user_id === userId)
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 
+  // The user's own most recent searches — newest first, de-duplicated, so the
+  // suggestion row always reflects what they actually search for.
+  const recentSearches = useMemo(() => {
+    const seen = new Set<string>();
+    const out: SearchJob[] = [];
+    for (const job of jobs) {
+      const key = `${job.query.trim().toLowerCase()}|${job.location.trim().toLowerCase()}`;
+      if (!job.query.trim() || !job.location.trim() || seen.has(key)) continue;
+      seen.add(key);
+      out.push(job);
+      if (out.length >= RECENT_SEARCHES) break;
+    }
+    return out;
+  }, [jobs.map((j) => j.id).join(",")]);
+
   const activeCount = useMemo(() => activeFilterCount(filters), [filters]);
 
   const submit = async (e: FormEvent) => {
@@ -490,7 +448,6 @@ export default function FindLeads({ userId }: { userId: string }) {
         query,
         location,
         quantity: Number(quantity),
-        radiusMeters: Number(radius),
         filters,
         sortBy: filters.sort_by ?? "relevance",
       });
@@ -515,8 +472,8 @@ export default function FindLeads({ userId }: { userId: string }) {
               Who are you looking for?
             </h2>
             <p className="mt-1 text-[13px] text-neutral-500">
-              Zybble searches Google Maps across the whole area, deduplicates, enriches and finds published
-              emails — then hands them to AI.
+              Zybble searches Google Maps across the whole area, deduplicates and enriches every business —
+              keeping the contact details each business publishes itself, never a guessed address.
             </p>
           </div>
           <div className="w-full sm:w-56">
@@ -524,7 +481,7 @@ export default function FindLeads({ userId }: { userId: string }) {
           </div>
         </div>
 
-        <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-[1.3fr_1fr_130px_130px_auto]">
+        <form onSubmit={submit} className="mt-5 grid gap-3 sm:grid-cols-[1.4fr_1fr_130px_auto]">
           <Field label="Business type">
             <Input
               value={query}
@@ -538,20 +495,6 @@ export default function FindLeads({ userId }: { userId: string }) {
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Texas, Dallas, Delhi…"
             />
-          </Field>
-          <Field label="Radius">
-            <Select value={radius} onChange={(e) => setRadius(e.target.value)}>
-              {[
-                { v: 5000, l: "5 km" },
-                { v: 10000, l: "10 km" },
-                { v: 25000, l: "25 km" },
-                { v: 50000, l: "50 km" },
-              ].map((r) => (
-                <option key={r.v} value={r.v}>
-                  {r.l}
-                </option>
-              ))}
-            </Select>
           </Field>
           <Field label="Quantity">
             <Select value={quantity} onChange={(e) => setQuantity(e.target.value)}>
@@ -606,22 +549,25 @@ export default function FindLeads({ userId }: { userId: string }) {
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="text-[11.5px] text-neutral-400">Try:</span>
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s.q}
-              type="button"
-              onClick={() => {
-                setQuery(s.q);
-                setLocation(s.l);
-              }}
-              className={cn(
-                "rounded-full border border-black/[0.07] px-2.5 py-1 text-[11.5px] font-medium text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900",
-              )}
-            >
-              {s.q} · {s.l}
-            </button>
-          ))}
+          {recentSearches.length > 0 && (
+            <>
+              <span className="text-[11.5px] text-neutral-400">Try:</span>
+              {recentSearches.map((job) => (
+                <button
+                  key={job.id}
+                  type="button"
+                  title={`${job.query} in ${job.location}`}
+                  onClick={() => {
+                    setQuery(job.query);
+                    setLocation(job.location);
+                  }}
+                  className="max-w-[16rem] truncate rounded-full border border-black/[0.07] px-2.5 py-1 text-[11.5px] font-medium text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+                >
+                  {job.query} · {job.location}
+                </button>
+              ))}
+            </>
+          )}
           <span className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-neutral-400">
             <Sparkles className="h-3 w-3 text-indigo-400" />
             {remaining.toLocaleString()} leads remaining this month

@@ -1,11 +1,22 @@
+import { db } from "./db";
 import { api, apiText, syncFromServer } from "./remote";
 import type { Lead } from "./types";
 
 // ————— Bulk lead operations (server-authoritative) —————
 
-export async function deleteLeads(ids: string[]) {
-  await api("/api/leads/delete", { body: { ids } });
+/**
+ * Delete leads on the server, then drop them from the local cache.
+ *
+ * The cache is cleared from the server's answer — the ids it confirms are
+ * gone — before the resync, so the rows cannot flash back into the table (or
+ * come back at all if the resync is still in flight).
+ */
+export async function deleteLeads(ids: string[]): Promise<number> {
+  const result = await api<{ deleted?: number }>("/api/leads/delete", { body: { ids } });
+  const removed = new Set(ids);
+  db.removeWhere<Lead>("leads", (lead) => removed.has(lead.id));
   await syncFromServer(true);
+  return Number(result?.deleted ?? ids.length);
 }
 
 export async function saveLeadNotes(leadId: string, notes: string): Promise<Lead> {
