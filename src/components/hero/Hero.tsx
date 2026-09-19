@@ -44,7 +44,7 @@ export default function Hero() {
         {/* Headline */}
         <motion.h1
           variants={item}
-          className="mt-8 font-display text-[clamp(2.85rem,7.2vw,5.375rem)] font-semibold leading-[0.98] tracking-[-0.045em] text-neutral-950"
+          className="mt-8 text-balance font-display text-[clamp(2rem,8vw,5.375rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-neutral-950 sm:leading-[0.98] sm:tracking-[-0.045em]"
         >
           Find the businesses
           <br />

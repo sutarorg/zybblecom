@@ -7,8 +7,10 @@
 # through Playwright, so this image needs no Selenium, no chromedriver and no
 # BeautifulSoup — all three went away with the retired vendored scraper.
 #
-# requests   → Nominatim geocoding (coverage.py), website scan (email_finder.py),
-#              and the /api/worker/* control plane (worker.py)
-# dnspython  → DNS MX verification of every discovered address (email_finder.py)
+# requests   → Nominatim geocoding (coverage.py), public social-profile
+#              enrichment (site_enrichment.py), and the /api/worker/* control
+#              plane (worker.py)
+# dnspython  → DNS MX verification of every address the engine published
+#              (engine_contacts.py)
 requests==2.34.2
 dnspython==2.8.0

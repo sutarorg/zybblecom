@@ -28,7 +28,7 @@ What it deliberately does *not* own
 -----------------------------------
 Coverage planning (``coverage.py``), deduplication, filters and the
 ``Place``/``ScrapeState`` records (``scraper.py``), email verification
-(``email_finder.py``) and the Zybble control plane (``worker.py``). The engine
+(``engine_contacts.py``) and the Zybble control plane (``worker.py``). The engine
 is a subprocess that turns search targets into raw Google Maps entries; every
 product decision stays in Zybble's own code.
 
@@ -263,7 +263,10 @@ class GosomEngine:
     depth: int = 10
     lang: str = "en"
     exit_on_inactivity: str = "3m"
-    extract_email: bool = False
+    #: Emails are only ever sourced from this engine, so ``-email`` is on by
+    #: default: it makes the engine read the addresses each business publishes
+    #: on its own website and emit them as ``entry["emails"]``.
+    extract_email: bool = True
     disable_page_reuse: bool = False
     proxies_file: Optional[str] = None
     extra_args: tuple[str, ...] = ()
@@ -288,7 +291,7 @@ class GosomEngine:
             depth=_env_int("SCRAPER_ENGINE_DEPTH", 10, 1, 40),
             lang=(os.environ.get("SCRAPER_ENGINE_LANG") or "en").strip()[:8] or "en",
             exit_on_inactivity=(os.environ.get("SCRAPER_ENGINE_INACTIVITY") or "3m").strip() or "3m",
-            extract_email=_env_bool("SCRAPER_ENGINE_EXTRACT_EMAIL", False),
+            extract_email=_env_bool("SCRAPER_ENGINE_EXTRACT_EMAIL", True),
             disable_page_reuse=_env_bool("SCRAPER_ENGINE_DISABLE_PAGE_REUSE", False),
             proxies_file=(os.environ.get("SCRAPER_ENGINE_PROXIES_FILE") or None),
             extra_args=tuple(part for part in extra.split() if part) if extra else (),

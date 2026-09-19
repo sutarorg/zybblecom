@@ -5,7 +5,13 @@ import {
   requireWorkerAuth,
   sb,
 } from "./core.ts";
-import { sanitizeEmailResult } from "./email-finder.ts";
+import {
+  MAX_EMAILS,
+  normalizeEmail,
+  sanitizePhones,
+  sanitizeSocialProfiles,
+  type EmailStatus,
+} from "./contacts.ts";
 import {
   evaluateDiscoveryFilters,
   parseFilters,
@@ -139,7 +145,10 @@ const leadSchema = z.object({
   city: z.string().trim().max(160).default(""),
   state: z.string().trim().max(160).default(""),
   country: z.string().trim().max(160).default(""),
+  // The engine publishes one primary number plus, on listings that carry
+  // several, a list. Both are validated; junk is dropped, never stored.
   phone: z.string().trim().max(100).nullable().default(null),
+  phones: z.array(z.string().trim().max(100)).max(12).nullish(),
   website: z.string().trim().max(1000).nullable().default(null),
   maps_url: z.string().trim().max(2000).default(""),
   rating: z.number().min(0).max(5).nullable().default(null),
@@ -151,6 +160,11 @@ const leadSchema = z.object({
   social_profiles: z.array(z.string().trim().max(500)).max(10).nullish(),
   source_query: z.string().trim().max(300).nullish(),
   description: z.string().max(2000).nullable().default(null),
+  // Emails come from the engine's `-email` extraction and nowhere else. They
+  // are validated here again (defence in depth): a malformed address can never
+  // reach the database, and a lead with none simply stays email-less.
+  emails: z.array(z.string().trim().max(320)).max(12).nullish(),
+  email_status: z.enum(["verified", "risky", "invalid", "unknown"]).optional(),
 });
 
 type LeadInput = z.infer<typeof leadSchema>;
@@ -164,12 +178,38 @@ function normaliseWebsite(value: string | null): string | null {
   return null;
 }
 
+/**
+ * Validate the engine's addresses: syntax first, duplicates collapsed, cap 5.
+ * The engine's own DNS verdict is kept when it supplies one; otherwise the
+ * address stays `risky` until something verifies it — never claimed verified.
+ */
+export function sanitizeEmails(
+  emails: unknown,
+  declared?: string,
+): { emails: string[]; email: string | null; email_status: EmailStatus } {
+  const list = Array.isArray(emails) ? emails : [];
+  const out: string[] = [];
+  for (const raw of list) {
+    const address = normalizeEmail(raw);
+    if (address && !out.includes(address)) out.push(address);
+    if (out.length >= MAX_EMAILS) break;
+  }
+  if (!out.length) return { emails: [], email: null, email_status: "unknown" };
+  const status: EmailStatus =
+    declared === "verified" || declared === "invalid" || declared === "risky"
+      ? declared
+      : "risky";
+  return { emails: out, email: out[0], email_status: status };
+}
+
 function buildRow(lead: LeadInput, job: Record<string, unknown>) {
   const category = lead.category || String(job.query ?? "");
   const website = normaliseWebsite(lead.website);
   const city = lead.city || "";
   const rating = lead.rating ?? null;
   const reviews = lead.reviews ?? null;
+  const phones = sanitizePhones(lead.phone, lead.phones);
+  const contacts = sanitizeEmails(lead.emails, lead.email_status);
   return {
     user_id: job.user_id as string,
     job_id: job.id as string,
@@ -179,7 +219,14 @@ function buildRow(lead: LeadInput, job: Record<string, unknown>) {
     city,
     state: lead.state,
     country: lead.country,
-    phone: lead.phone,
+    phone: phones[0] ?? null,
+    phones,
+    emails: contacts.emails,
+    email: contacts.email,
+    email_status: contacts.email_status,
+    // Provenance: the engine read the address on the business's own website
+    // (it never picks one up anywhere else), so that site is the source.
+    email_source_url: contacts.email ? website : null,
     website,
     maps_url: canonicalMapsUrl(lead.maps_url) || lead.maps_url || null,
     rating,
@@ -428,6 +475,14 @@ export function registerWorker(r: Router) {
       .eq("job_id", job.id);
     collected = count ?? collected + inserted.length;
 
+    // Emails arrive with the leads, so the counter the UI shows is derived
+    // from storage rather than from a separate discovery pass.
+    const { count: emailFound } = await sb
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .eq("job_id", job.id)
+      .not("email", "is", null);
+
     const patch: Record<string, unknown> = {
       collected,
       lease_until: new Date(Date.now() + 180_000).toISOString(),
@@ -450,6 +505,7 @@ export function registerWorker(r: Router) {
       duplicates,
       filtered,
       collected,
+      email_found: emailFound ?? 0,
       remaining: Math.max(0, quantity - collected),
     };
   });
@@ -496,68 +552,50 @@ export function registerWorker(r: Router) {
     return { enriched, total: (leads ?? []).length };
   });
 
-  r.get("/api/worker/jobs/:id/pending-emails", async ({ req, params }) => {
+  // Leads whose public social profiles are still unresolved. This is the only
+  // remaining website lookup in the product and it never collects addresses.
+  r.get("/api/worker/jobs/:id/pending-enrichment", async ({ req, params }) => {
     const { job } = await leasedJob(req, params.id);
     const { data, error } = await sb
       .from("leads")
-      .select("id,website")
+      .select("id,website,social_profiles")
       .eq("job_id", job.id)
       .eq("user_id", job.user_id)
-      .is("email_status", null)
+      .not("website", "is", null)
       .limit(500);
     if (error) throw new HttpError(500, "Could not load leads for enrichment.");
-    return { leads: data ?? [] };
+    const leads = (data ?? []).filter(
+      (lead) => !Array.isArray((lead as Record<string, unknown>).social_profiles)
+        || ((lead as Record<string, unknown>).social_profiles as unknown[]).length === 0,
+    );
+    return { leads };
   });
 
-  // ——— Email discovery result ———
+  // ——— Public social profiles ———
   //
-  // Tolerant by design: an invalid or missing address is stored as "unknown"
-  // and never fails the job (the old zod `.email()` validation turned one bad
-  // address into a 400 that killed the whole search).
-  r.post("/api/worker/jobs/:id/leads/:leadId/email", async ({ req, params, json }) => {
+  // The only website-derived data Zybble stores. Addresses travel exclusively
+  // with the engine's lead batches — there is no endpoint that lets a website
+  // scan (or anything else) hand one in afterwards.
+  r.post("/api/worker/jobs/:id/leads/:leadId/enrichment", async ({ req, params, json }) => {
     const { job, token } = await leasedJob(req, params.id);
     const input = await json(
       z.object({
-        email: z.string().max(320).nullable().optional(),
-        email_status: z.enum(["verified", "risky", "invalid", "unknown"]).optional(),
-        email_source_url: z.string().max(2000).nullable().optional(),
         social_profiles: z.array(z.string().trim().max(500)).max(10).optional(),
-      }),
+      }).strict(),
     );
     const { data: lead } = await sb
       .from("leads")
-      .select("id,email_status")
+      .select("id")
       .eq("id", params.leadId)
       .eq("job_id", job.id)
       .eq("user_id", job.user_id)
       .maybeSingle();
     if (!lead) throw new HttpError(404, "Lead does not belong to this job.");
 
-    const safe = sanitizeEmailResult(input);
-    const patch: Record<string, unknown> = {
-      email: safe.email,
-      email_status: safe.email_status,
-      email_source_url: safe.email_source_url,
-      ...(safe.social_profiles.length ? { social_profiles: safe.social_profiles } : {}),
-    };
-    const updated = await sb.from("leads").update(patch).eq("id", lead.id);
+    const socials = sanitizeSocialProfiles(input.social_profiles);
+    const updated = await sb.from("leads").update({ social_profiles: socials }).eq("id", lead.id);
     if (updated.error) {
-      log.warn("email update fell back to legacy columns", { error: updated.error.message });
-      const { email_source_url: _source, social_profiles: _socials, ...legacy } = patch;
-      await sb.from("leads").update(legacy).eq("id", lead.id);
-    }
-
-    if (safe.rejected) {
-      log.warn("discarded an invalid email address", { job: job.id, lead: lead.id });
-      const errorCount = Number(job.error_count ?? 0) + 1;
-      await sb
-        .from("search_jobs")
-        .update({ error_count: errorCount })
-        .eq("id", job.id)
-        .eq("lease_token", token)
-        .then(({ error }) => {
-          if (error) log.warn("error counter unavailable", { error: error.message });
-        });
+      log.warn("social profile update failed", { error: updated.error.message });
     }
 
     await sb.rpc("extend_search_job_lease", {
@@ -565,7 +603,7 @@ export function registerWorker(r: Router) {
       p_lease_token: token,
       p_lease_seconds: 180,
     });
-    return { ok: true, email_status: safe.email_status, rejected: safe.rejected };
+    return { ok: true, social_profiles: socials };
   });
 
   // ——— Hand a job back to the queue for its next slice ———

@@ -164,23 +164,20 @@ export async function syncFromServer(force = false): Promise<void> {
   try {
     const data = await api<Bootstrap>("/api/bootstrap");
     const expected = data.lead_count ?? data.leads?.length ?? 0;
-    let allLeads = data.leads ?? [];
+    const freshPage = data.leads ?? [];
     const cachedLeads = db.all<Record<string, unknown>>("leads");
 
-    if (expected === lastLeadCount && cachedLeads.length === expected && !force) {
+    // The server is the source of truth: a lead deleted (or filtered out) on
+    // the server must not survive in the local cache. The cache is only reused
+    // verbatim when nothing changed since the last sync — never merged back
+    // in, which is what used to resurrect deleted leads.
+    let allLeads = freshPage;
+    const unchanged = !force && expected === lastLeadCount && cachedLeads.length === expected;
+    if (unchanged) {
       allLeads = cachedLeads;
-    } else {
-      // New rows arrive at the front; merge the fresh page with the cached
-      // tail before asking the server for any remaining pages.
-      const seen = new Set(allLeads.map((row) => String(row.id)));
-      for (const row of cachedLeads) {
-        const id = String(row.id);
-        if (!seen.has(id)) {
-          allLeads.push(row);
-          seen.add(id);
-        }
-      }
-      for (let offset = allLeads.length; offset < expected; offset += 1000) {
+    } else if (expected > freshPage.length) {
+      allLeads = [...freshPage];
+      for (let offset = freshPage.length; offset < expected && offset < 20_000; offset += 1000) {
         const page = await api<{ leads: Record<string, unknown>[]; count: number }>(
           `/api/leads?offset=${offset}&limit=1000`
         );
@@ -189,7 +186,7 @@ export async function syncFromServer(force = false): Promise<void> {
       }
     }
     data.leads = allLeads;
-    lastLeadCount = expected;
+    lastLeadCount = allLeads.length;
 
     for (const t of SYNC_TABLES) {
       const rows = data[t];

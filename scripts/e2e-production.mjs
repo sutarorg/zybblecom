@@ -211,7 +211,7 @@ async function main() {
 
   let lead = null;
   if (RUN_SCRAPER) {
-    await test("Real Google Maps search → dedupe → email discovery", async () => {
+    await test("Real Google Maps search → dedupe → published-contact validation", async () => {
       const job = await request("/search", {
         body: { query: "dentists", location: "Austin, Texas", quantity: 5, radius_meters: 25000 },
       });
@@ -227,9 +227,14 @@ async function main() {
           lead = found[0];
           if (!lead.company || !lead.maps_url) throw new Error("lead lacks Maps identity");
           if (!found.every((l) => l.email_status))
-            throw new Error("email verification did not run for every lead");
+            throw new Error("email validation did not run for every lead");
+          const invented = found.filter(
+            (l) => (l.emails?.length ?? 0) > 0 && !l.website,
+          );
+          if (invented.length)
+            throw new Error("an address was stored for a business with no website to read it from");
           const withEmail = found.filter((l) => l.email && l.email_source_url);
-          return `${found.length} real businesses, ${withEmail.length} source-backed emails`;
+          return `${found.length} real businesses, ${withEmail.length} engine-sourced emails`;
         }
         if (current.status === "failed") throw new Error(current.error ?? "search failed");
         await sleep(2000);
@@ -254,7 +259,7 @@ async function main() {
       return `${after - before} net-new leads on repeat search`;
     });
   } else {
-    skip("Real Google Maps search → dedupe → email discovery", "set E2E_RUN_SCRAPER=true");
+    skip("Real Google Maps search → dedupe → published-contact validation", "set E2E_RUN_SCRAPER=true");
   }
 
   // A controlled recipient exercises real OpenAI/SMTP without emailing a

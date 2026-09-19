@@ -13,7 +13,9 @@ Responsibilities
    businesses is collected or the coverage plan is exhausted;
 3. deduplicate (place id → Maps URL → name+address) and apply the user's
    filters while scraping, persisting crash-safe batches;
-4. enrich the stored rows and discover publicly published emails / socials;
+4. enrich the stored rows and resolve each business's public social profiles
+   (emails arrive with the leads themselves — straight from the scraping
+   engine, validated before they are stored);
 5. report every counter the UI shows, then complete the job.
 
 Resilience
@@ -42,7 +44,6 @@ from typing import Any, Optional
 
 import requests
 
-from email_finder import find_site_intel, normalize_email
 from filters import LeadFilters
 from gmaps_engine import EngineError, EngineUnavailable, GosomEngine
 from scraper import (
@@ -51,9 +52,9 @@ from scraper import (
     Place,
     ScrapeState,
     engine_summary,
-    site_key,
     run_scrape,
 )
+from site_enrichment import find_social_profiles
 
 APP_URL = os.environ["ZYBBLE_APP_URL"].rstrip("/")
 WORKER_SECRET = os.environ["SCRAPER_WORKER_SECRET"]
@@ -62,7 +63,9 @@ POLL_SECONDS = max(2.0, float(os.environ.get("SCRAPER_POLL_SECONDS", "5")))
 # Time budget for the browser phase of ONE claim. The job resumes afterwards,
 # so this is a slice length, not a hard cap on the search.
 JOB_TIMEOUT = max(300, int(os.environ.get("SCRAPER_JOB_TIMEOUT_SECONDS", "1200")))
-EMAIL_BUDGET = max(60, int(os.environ.get("SCRAPER_EMAIL_BUDGET_SECONDS", "600")))
+#: Time budget for the website-enrichment sweep (public social profiles).
+#: Emails no longer need it: they arrive with the engine's lead batches.
+ENRICH_BUDGET = max(60, int(os.environ.get("SCRAPER_EMAIL_BUDGET_SECONDS", "600")))
 BATCH_SIZE = max(1, min(25, int(os.environ.get("SCRAPER_BATCH_SIZE", "10"))))
 MAX_TILES = max(1, min(72, int(os.environ.get("SCRAPER_MAX_TILES", "36"))))
 MAX_ATTEMPTS = max(1, min(12, int(os.environ.get("SCRAPER_MAX_ATTEMPTS", "6"))))
@@ -181,18 +184,19 @@ class WorkerApi:
     def enrich(self, job: dict) -> dict:
         return self.call("POST", f"/worker/jobs/{job['id']}/enrich", {}, job["lease_token"], timeout=45)
 
-    def pending_emails(self, job: dict) -> list[dict]:
+    def pending_enrichment(self, job: dict) -> list[dict]:
+        """Leads whose public social profiles have not been resolved yet."""
         payload = self.call(
             "GET",
-            f"/worker/jobs/{job['id']}/pending-emails",
+            f"/worker/jobs/{job['id']}/pending-enrichment",
             lease=job["lease_token"],
         )
         return payload.get("leads", [])
 
-    def email(self, job: dict, lead_id: str, **fields) -> None:
+    def enrichment(self, job: dict, lead_id: str, **fields) -> None:
         self.call(
             "POST",
-            f"/worker/jobs/{job['id']}/leads/{lead_id}/email",
+            f"/worker/jobs/{job['id']}/leads/{lead_id}/enrichment",
             fields,
             job["lease_token"],
         )
@@ -262,7 +266,6 @@ def process_job(job: dict) -> None:
 
     reporter = ProgressReporter(api, job)
     pending_batch: list[Place] = []
-    email_candidates: dict[str, list[str]] = {}
     counters = {
         "discovered": int(state.stats.discovered or 0),
         "unique": int(state.stats.unique or 0),
@@ -282,6 +285,8 @@ def process_job(job: dict) -> None:
             counters["saved"] = int(result.get("collected", counters["saved"]))
             counters["duplicates"] += int(result.get("duplicates", 0) or 0)
             counters["filtered"] += int(result.get("filtered", 0) or 0)
+            if result.get("email_found") is not None:
+                counters["email_found"] = int(result["email_found"] or 0)
         except ApiError as err:
             # A rejected batch must not lose the rest of the sweep.
             counters["errors"] += 1
@@ -342,10 +347,6 @@ def process_job(job: dict) -> None:
         )
         flush()
         state = result.state
-        # Addresses the engine read on a business's own website (only when
-        # SCRAPER_ENGINE_EXTRACT_EMAIL is on). They are candidates: Zybble still
-        # validates syntax, provenance and DNS MX before anything is stored.
-        email_candidates.update(result.email_candidates or {})
 
         if not result.exhausted and counters["saved"] < quantity:
             # Time budget reached mid-sweep: save and hand the job back to the
@@ -370,55 +371,48 @@ def process_job(job: dict) -> None:
             log("warning", "enrichment step failed", job=job_id, error=str(err))
             counters["errors"] += 1
 
-        # ——— Finding emails ———
-        # Parallelised discovery: the website scan is IO-bound (HTTP + DNS),
-        # so 8 concurrent fetches finish a 50-lead batch in ~1/6th the time
-        # of the previous sequential loop while keeping API updates serial
-        # (WorkerApi's requests.Session is not thread-safe).
-        reporter.report("finding_emails", 78, "Finding published email addresses…", counts=counters, force=True)
-        email_deadline = time.monotonic() + EMAIL_BUDGET
-        pending = api.pending_emails(job)
+        # ——— Final contact stage ———
+        # Emails are already here: they arrive from the google-maps-scraper
+        # engine with each lead batch (validated + MX-checked in scraper.py),
+        # so this stage never crawls a website looking for addresses. It only
+        # enriches the public social profiles the business links to, and it
+        # keeps the existing "finding_emails" stage name so every counter and
+        # the UI stepper stay exactly as they are.
+        reporter.report("finding_emails", 78, "Confirming published contact details…", counts=counters, force=True)
+        enrich_deadline = time.monotonic() + ENRICH_BUDGET
+        pending = api.pending_enrichment(job)
         total_pending = len(pending)
         found = 0
 
         if total_pending:
-            # Discover in parallel, then push results serially.
-            # Keep the deadline global — if we pass it, remaining leads stay
-            # 'unknown' instead of blocking the job slice.
             max_workers = min(8, max(2, total_pending)) if total_pending > 4 else total_pending
-            # Shrink timeout if deadline is closer than EMAIL_BUDGET.
-            intel_by_id: dict[str, Any] = {}
+            socials_by_id: dict[str, Any] = {}
 
-            def _safe_intel(website: str):
+            def _safe_socials(website: str):
                 if not website:
-                    return None
+                    return []
                 try:
-                    # Candidates the engine already read on this site are handed
-                    # over too — they are verified (syntax + DNS MX) exactly like
-                    # addresses Zybble finds itself, and never stored unverified.
-                    return find_site_intel(website, engine_candidates=email_candidates.get(site_key(website)))
+                    return find_social_profiles(website)
                 except Exception as err:  # noqa: BLE001
-                    log("warning", "email discovery failed", job=job_id, error=str(err))
-                    return None
+                    log("warning", "social profile lookup failed", job=job_id, error=str(err))
+                    return []
 
-            # Submit all fetches at once; as_completed yields the fastest first,
-            # but we enforce the global email_deadline on every iteration.
-            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="email") as email_pool:
+            # Fetch in parallel (IO-bound HTTP), then push serially: the
+            # worker's requests.Session is not thread-safe.
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="enrich") as pool:
                 future_to_id = {
-                    email_pool.submit(_safe_intel, lead.get("website") or ""): lead["id"]
+                    pool.submit(_safe_socials, lead.get("website") or ""): lead["id"]
                     for lead in pending
                 }
-                # Collect with deadline-aware polling — don't block past the budget.
                 for future in as_completed(future_to_id):
                     if stopping.is_set():
-                        # Cancel what hasn't started and break out to resume.
                         for fut in future_to_id:
                             fut.cancel()
                         raise JobTimeout("Worker received a shutdown signal; the job will resume")
-                    if time.monotonic() > email_deadline:
+                    if time.monotonic() > enrich_deadline:
                         for fut in future_to_id:
                             fut.cancel()
-                        state.note("Email discovery reached its time budget; remaining leads stay unenriched.")
+                        state.note("Social profile enrichment reached its time budget; remaining leads stay unenriched.")
                         try:
                             api.save_state(job, state)
                         except Exception:
@@ -426,69 +420,39 @@ def process_job(job: dict) -> None:
                         break
                     lead_id = future_to_id[future]
                     try:
-                        intel_by_id[lead_id] = future.result()
+                        socials_by_id[lead_id] = future.result()
                     except Exception as err:  # noqa: BLE001
-                        log("warning", "email discovery failed", job=job_id, lead=lead_id, error=str(err))
+                        log("warning", "social profile lookup failed", job=job_id, lead=lead_id, error=str(err))
                         counters["errors"] += 1
-                        intel_by_id[lead_id] = None
+                        socials_by_id[lead_id] = []
 
-            # Serial push to the API in original order so the UI progress is stable.
             for index, lead in enumerate(pending):
                 if stopping.is_set():
                     raise JobTimeout("Worker received a shutdown signal; the job will resume")
-                # If deadline passed during discovery, stop pushing.
-                if time.monotonic() > email_deadline and lead["id"] not in intel_by_id:
+                if time.monotonic() > enrich_deadline and lead["id"] not in socials_by_id:
                     break
 
-                intel = intel_by_id.get(lead["id"])
-                # Fallback for leads that never got a future (deadline hit early):
-                # treat as no intel rather than failing.
-                if lead["id"] not in intel_by_id:
-                    intel = None
-
-                email: Optional[str] = None
-                status = "unknown"
-                source_url: Optional[str] = None
-                socials: list[str] = []
-                if intel:
-                    email = normalize_email(intel.email)
-                    status = intel.status if email else "unknown"
-                    source_url = intel.source_url
-                    socials = intel.social_profiles or []
-                    if email:
-                        found += 1
-                    # Intel fetch errors already counted above; per-lead
-                    # errors here are only API update failures.
-
+                socials = list(socials_by_id.get(lead["id"]) or [])
+                if socials:
+                    found += 1
                 try:
-                    api.email(
-                        job,
-                        lead["id"],
-                        email=email,
-                        email_status=status,
-                        email_source_url=source_url,
-                        social_profiles=socials,
-                    )
+                    api.enrichment(job, lead["id"], social_profiles=socials)
                 except ApiError as err:
-                    log("warning", "email update rejected", job=job_id, lead=lead["id"], error=str(err))
+                    log("warning", "enrichment update rejected", job=job_id, lead=lead["id"], error=str(err))
                     counters["errors"] += 1
 
-                counters["email_found"] += 1 if email else 0
                 reporter.report(
                     "finding_emails",
                     78 + min(20, int(((index + 1) / max(1, total_pending)) * 20)),
-                    f"Finding emails · {found} found",
+                    f"Confirmed {counters['email_found']} published emails · {found} social profiles",
                     counts=counters,
                 )
-        else:
-            # No pending leads — still no-op but keep the stage for metrics.
-            pass
 
         # Final, un-rate-limited update so the last counters are always exact.
         reporter.report(
             "finding_emails",
             98,
-            f"Enriched {total_pending} businesses · {found} email addresses found",
+            f"Enriched {total_pending} businesses · {counters['email_found']} published email addresses",
             counts=counters,
             force=True,
         )

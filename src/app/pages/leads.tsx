@@ -82,6 +82,13 @@ export default function LeadsPage({ userId }: { userId: string }) {
   const pageRows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
   const allPageSelected = pageRows.length > 0 && pageRows.every((l) => selected.has(l.id));
 
+  const toggleOne = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
+
   const toggleAll = () => {
     const next = new Set(selected);
     if (allPageSelected) pageRows.forEach((l) => next.delete(l.id));
@@ -107,8 +114,11 @@ export default function LeadsPage({ userId }: { userId: string }) {
   const doDelete = async () => {
     const count = selected.size;
     try {
-      await deleteLeads(Array.from(selected));
-      toast(`Deleted ${count} lead${count > 1 ? "s" : ""}`);
+      // The server reports exactly how many rows it removed; the local cache is
+      // cleared before the resync, so deleted leads cannot come back.
+      const deleted = await deleteLeads(Array.from(selected));
+      toast(`Deleted ${deleted} lead${deleted === 1 ? "" : "s"}`);
+      if (deleted < count) toast(`${count - deleted} lead${count - deleted === 1 ? "" : "s"} could not be deleted.`, "error");
       setSelected(new Set());
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not delete leads.", "error");
@@ -226,8 +236,58 @@ export default function LeadsPage({ userId }: { userId: string }) {
             }
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left">
+          <>
+            {/* Phones and tablets: stacked rows — nothing to scroll sideways. */}
+            <ul className="divide-y divide-black/[0.04] sm:hidden">
+              {pageRows.map((l) => (
+                <li
+                  key={l.id}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors active:bg-neutral-50",
+                    selected.has(l.id) && "bg-neutral-50/60",
+                  )}
+                  onClick={() => (window.location.hash = `#/app/leads/${l.id}`)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(l.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleOne(l.id)}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-neutral-300 accent-neutral-900"
+                    aria-label={`Select ${l.company}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p title={l.company} className="truncate text-[13.5px] font-semibold text-neutral-900">
+                      {l.company}
+                    </p>
+                    <p className="truncate text-[11px] text-neutral-400">
+                      {[l.category, [l.city, l.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
+                    </p>
+                    <div className="mt-1.5 flex min-w-0 items-center gap-2">
+                      <EmailStatusDot status={l.email_status as EmailStatus | null} />
+                      <span title={l.email ?? undefined} className="min-w-0 flex-1 truncate text-[11.5px] text-neutral-600">
+                        {l.email ?? "No email published"}
+                      </span>
+                      {l.phones?.length || l.phone ? (
+                        <span className="shrink-0 text-[11px] text-neutral-400">
+                          {(l.phones?.length ?? 0) > 1 ? `${l.phones!.length} phones` : "phone"}
+                        </span>
+                      ) : null}
+                      <ScoreChip score={l.ai_score} />
+                    </div>
+                  </div>
+                  {l.rating ? (
+                    <span className="shrink-0 text-[11.5px] font-medium text-neutral-600">
+                      <span className="text-amber-500">★</span> {l.rating}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+
+            {/* Desktop: a fixed-layout table, so long values ellipsize instead
+                of widening the page. */}
+            <table className="hidden w-full table-fixed text-left sm:table">
               <thead>
                 <tr className="border-b border-black/[0.05] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
                   <th className="w-10 px-4 py-3">
@@ -239,11 +299,11 @@ export default function LeadsPage({ userId }: { userId: string }) {
                       aria-label="Select all"
                     />
                   </th>
-                  <th className="px-3 py-3">Company</th>
-                  <th className="hidden px-3 py-3 md:table-cell">Location</th>
-                  <th className="hidden px-3 py-3 lg:table-cell">Rating</th>
-                  <th className="px-3 py-3">Email</th>
-                  <th className="px-3 py-3">
+                  <th className="w-[30%] px-3 py-3">Company</th>
+                  <th className="hidden w-[18%] px-3 py-3 md:table-cell">Location</th>
+                  <th className="hidden w-[12%] px-3 py-3 lg:table-cell">Rating</th>
+                  <th className="w-[26%] px-3 py-3">Email</th>
+                  <th className="w-[14%] px-3 py-3">
                     <span className="inline-flex items-center gap-1">
                       AI Score
                       <ArrowUpDown className="h-3 w-3" />
@@ -265,29 +325,28 @@ export default function LeadsPage({ userId }: { userId: string }) {
                       <input
                         type="checkbox"
                         checked={selected.has(l.id)}
-                        onChange={() => {
-                          const next = new Set(selected);
-                          if (next.has(l.id)) next.delete(l.id);
-                          else next.add(l.id);
-                          setSelected(next);
-                        }}
+                        onChange={() => toggleOne(l.id)}
                         className="h-3.5 w-3.5 rounded border-neutral-300 accent-neutral-900"
                         aria-label={`Select ${l.company}`}
                       />
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex min-w-0 items-center gap-2.5">
                         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-neutral-100 text-[9px] font-semibold text-neutral-500">
                           {l.company.split(" ").map((w) => w[0]).slice(0, 2).join("")}
                         </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold text-neutral-900">{l.company}</p>
-                          <p className="truncate text-[10.5px] text-neutral-400">{l.category}</p>
+                        <div className="min-w-0 flex-1">
+                          <p title={l.company} className="truncate text-[13px] font-semibold text-neutral-900">
+                            {l.company}
+                          </p>
+                          <p title={l.category} className="truncate text-[10.5px] text-neutral-400">
+                            {l.category}
+                          </p>
                         </div>
                       </div>
                     </td>
                     <td className="hidden px-3 py-3 md:table-cell">
-                      <p className="text-[12px] text-neutral-600">
+                      <p className="truncate text-[12px] text-neutral-600">
                         {l.city}{l.state ? `, ${l.state}` : ""}
                       </p>
                     </td>
@@ -302,13 +361,27 @@ export default function LeadsPage({ userId }: { userId: string }) {
                       )}
                     </td>
                     <td className="px-3 py-3">
-                      <div className="max-w-[200px]">
+                      <div className="min-w-0">
                         {l.email ? (
-                          <p className="truncate text-[12px] text-neutral-700">{l.email}</p>
+                          <p title={l.email} className="truncate text-[12px] text-neutral-700">
+                            {l.email}
+                          </p>
                         ) : (
-                          <p className="text-[11px] text-neutral-300">Not found</p>
+                          <p className="truncate text-[11px] text-neutral-300">Not found</p>
                         )}
-                        <EmailStatusDot status={l.email_status as EmailStatus | null} />
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          <EmailStatusDot status={l.email_status as EmailStatus | null} />
+                          {(l.emails?.length ?? 0) > 1 && (
+                            <span className="truncate text-[10px] text-neutral-400">
+                              +{l.emails!.length - 1} more
+                            </span>
+                          )}
+                          {(l.phones?.length ?? 0) > 1 && !l.email && (
+                            <span className="truncate text-[10px] text-neutral-400">
+                              {l.phones!.length} phones
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-3 py-3">
@@ -318,7 +391,7 @@ export default function LeadsPage({ userId }: { userId: string }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </>
         )}
 
         {/* Pagination */}

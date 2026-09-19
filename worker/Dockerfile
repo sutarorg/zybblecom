@@ -114,7 +114,7 @@ COPY worker/requirements.txt ./
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# The worker: engine adapter, coverage planner, filters, email finder, queue
+# The worker: engine adapter, coverage planner, filters, contact validation, queue
 # consumer, the local smoke test and the offline suite (the suite is also the
 # build-time gate below, and lets an operator debug inside a running container).
 COPY worker/*.py ./
@@ -127,7 +127,7 @@ COPY worker/vendor ./vendor/
 # The env values here exist only so `import worker` can run at build time; the
 # real ones come from Railway.
 RUN google-maps-scraper -version \
-    && python -c "import coverage, email_finder, filters, gmaps_engine, scraper; binary = gmaps_engine.find_binary(); assert binary, 'google-maps-scraper not found by the adapter'; print('engine:', binary, gmaps_engine.GosomEngine(binary=binary).version()); print('pin:', gmaps_engine.upstream_pin().get('version'))" \
+    && python -c "import coverage, engine_contacts, filters, gmaps_engine, scraper, site_enrichment; binary = gmaps_engine.find_binary(); assert binary, 'google-maps-scraper not found by the adapter'; print('engine:', binary, gmaps_engine.GosomEngine(binary=binary).version()); print('pin:', gmaps_engine.upstream_pin().get('version'))" \
     && ZYBBLE_APP_URL=https://build.invalid SCRAPER_WORKER_SECRET=build-time-check \
        python -c "import worker; print('worker module OK', worker.engine_label({'available': True}))" \
     && python smoke_test.py --simulate "gym" "Delhi" 5 --max-tiles 4 --targets-per-run 2

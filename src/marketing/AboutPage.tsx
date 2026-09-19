@@ -6,7 +6,7 @@ const PRINCIPLES = [
   {
     icon: Eye,
     title: "Public data only, always",
-    body: "Zybble collects publicly listed business information — listings, websites, business-published emails. Never personal profiles, never scraped social data, never sensitive personal information.",
+    body: "Zybble collects publicly listed business information — listings, websites and the contact details a business publishes itself. Never personal profiles, never scraped social data, never sensitive personal information.",
   },
   {
     icon: Sparkles,

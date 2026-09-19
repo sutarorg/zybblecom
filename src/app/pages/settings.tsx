@@ -1,12 +1,9 @@
 import {
   Ban,
-  CheckCircle2,
-  Database,
   Download,
   KeyRound,
   Mail,
   Plus,
-  ShieldCheck,
   Trash2,
   User,
 } from "lucide-react";
@@ -319,32 +316,6 @@ export default function SettingsPage({ userId }: { userId: string }) {
             ))
           )}
         </div>
-      </Section>
-
-      {/* Environment */}
-      <Section icon={Database} title="Environment" sub="Integration status for this deployment.">
-        <div className="grid gap-2 sm:grid-cols-3">
-          {[
-            { name: "Database", value: "Supabase PostgreSQL + RLS", mode: "production binding" },
-            { name: "AI model", value: "o4-mini · server-side key", mode: "cached responses" },
-            { name: "Payments", value: "Razorpay · USD subscriptions", mode: "webhook verified" },
-          ].map((i) => (
-            <div key={i.name} className="rounded-xl border border-black/[0.06] p-3.5">
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-neutral-400">
-                {i.name}
-              </p>
-              <p className="mt-1.5 text-[12.5px] font-medium text-neutral-800">{i.value}</p>
-              <p className="mt-0.5 inline-flex items-center gap-1 text-[10.5px] text-emerald-600">
-                <CheckCircle2 className="h-3 w-3" /> {i.mode}
-              </p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-neutral-400">
-          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
-          Secrets (SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY, RAZORPAY_KEY_SECRET, SMTP_ENCRYPTION_KEY) are
-          server-only and never shipped to the client. See .env.example.
-        </p>
       </Section>
 
       {/* Data */}

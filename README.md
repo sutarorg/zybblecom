@@ -18,7 +18,7 @@ campaign job engine stay inside the Vercel app.
 | Background jobs | Database-leased queue; Vercel Cron + in-app ticks for email, Railway worker for scraping |
 | Database & Auth | Supabase (PostgreSQL + RLS + Auth) |
 | AI | OpenAI `o4-mini` (server-side only) |
-| Email finder | Source-backed public website scan + DNS MX verification (SSRF-guarded) |
+| Email accuracy | Addresses come from the pinned engine only — strict syntax + DNS MX validation, never guessed |
 | Email sending | User's own SMTP via nodemailer, AES-256-GCM encrypted credentials |
 | Payments | Razorpay USD subscriptions + signed, idempotent webhooks |
 
@@ -27,7 +27,7 @@ zybble/
 ├─ src/                 → frontend (Vite build → dist/)
 ├─ api/
 │  ├─ router.ts         → the entire backend, one function
-│  └─ _lib/             → core, jobs, worker control plane, email-finder, smtp, openai, razorpay
+│  └─ _lib/             → core, jobs, worker control plane, contacts, smtp, openai, razorpay
 ├─ worker/
 │  ├─ scraper.py         → discovery orchestration (coverage planning, dedupe, filters, progress)
 │  ├─ gmaps_engine.py    → adapter that runs the google-maps-scraper binary as a child process
@@ -45,7 +45,7 @@ zybble/
 
 1. **Plan the area.** The requested location is geocoded with OpenStreetMap
    (Nominatim — no Google Geocoding API) and tiled into viewports sized to the
-   requested radius (`worker/coverage.py`). "50 gyms in Delhi" becomes a sweep
+   coverage area (`worker/coverage.py`). "50 gyms in Delhi" becomes a sweep
    of the whole city, not one neighbourhood.
 2. **Discover.** `worker/scraper.py` hands each batch of viewports to the
    `google-maps-scraper` engine (`worker/gmaps_engine.py`), which scrolls real
@@ -58,11 +58,19 @@ zybble/
    URL → normalised name + address, within the job and across slices.
 4. **Filter.** The professional filters (rating, reviews, location, website,
    phone, email status, socials, open/closed, keywords, previously collected)
-   are applied while scraping and re-applied server-side as a safety net.
-5. **Enrich and find emails.** Published addresses are discovered from each
-   business's own website and verified against DNS MX records. An address that
-   is missing or malformed is stored as `unknown` — it never fails a job and is
-   never invented.
+   are applied while scraping and re-applied server-side as a safety net. The
+   four toggles the Find Leads form used to expose (website-only,
+   contactable-only, skip-previously-collected, verified-only) are gone from the
+   UI; the safe defaults they wrote are unchanged server-side.
+5. **Validate contacts.** Emails have exactly one source: the addresses the
+   pinned engine reads on each business's own website (`-email`), validated by
+   `worker/engine_contacts.py` — strict syntax first (malformed and role
+   addresses are dropped), then a cached DNS MX lookup that ranks each survivor
+   `verified` / `risky` / `invalid`. Zybble never guesses, pattern-builds or
+   independently discovers an address; every published phone number and email
+   is kept (up to 3 and 5) with the first as the lead's primary contact. A
+   business whose address fails validation keeps its record and simply has no
+   email.
 6. **Report.** The job reports requested → discovered → unique → enriched →
    saved, plus duplicates, filtered, emails found, warnings and search-coverage
    progress, live in the UI.
@@ -135,7 +143,7 @@ git push -u origin main
 1. **https://supabase.com** → **New project** → name `zybble`, generate a database
    password, pick the region closest to your users → **Create new project** (~2 min).
 
-### 2.2 Run the migrations — **all nine, in order**
+### 2.2 Run the migrations — **all ten, in order**
 1. Left sidebar → **SQL Editor** → **+ New query**.
 2. Paste the entire contents of each file and click **Run**, one at a time:
    - `supabase/migrations/001_init.sql`
@@ -147,6 +155,7 @@ git push -u origin main
    - `supabase/migrations/007_search_job_signature_fix.sql` ← converges the 6-arg `create_search_job` signature + reloads the PostgREST schema cache
    - `supabase/migrations/008_lead_finder_scraper_engine.sql` ← Lead Finder counters, filters, lead identity + the 8-arg `create_search_job`
    - `supabase/migrations/009_requeue_stalled_search_jobs.sql` ← hands a search back to the queue if its worker is killed mid-sweep
+   - `supabase/migrations/010_contact_details_and_plan_cache.sql` ← multiple published phones/emails per lead + Razorpay plans scoped to the configured key
 
 **Already have a database?** If Lead Finder ever returned `Request failed (500)`,
 run `008_lead_finder_scraper_engine.sql` alone — it is fully idempotent and
@@ -184,9 +193,9 @@ headless Chromium through Google Maps with Playwright. `worker/Dockerfile`
 builds the **pinned** tag and commit from source (the pin lives in
 `worker/vendor/engine.json`, verified in CI by `npm run verify:engine`), and
 `worker/gmaps_engine.py` runs it as a bounded child process that streams
-businesses back as JSONL. From there the worker dedupes, filters, verifies
-publicly listed emails and streams everything into your Supabase leads
-database. **No Google Maps API key is used or required.**
+businesses back as JSONL. From there the worker dedupes, filters, validates the
+contact details the engine published (syntax + DNS MX) and streams everything
+into your Supabase leads database. **No Google Maps API key is used or required.**
 
 Generate the shared secret now — Vercel and the worker must hold the same value:
 
@@ -457,7 +466,7 @@ npm test             # API tests + Lead Finder tests + scraper worker tests
 | `test:leadfinder` | lead filters, email safety, dedupe keys, job counters |
 | `verify:no-google` | no Google Maps API dependency anywhere in the lead path |
 | `verify:engine` | the engine pin agrees with `worker/Dockerfile`, the adapter's flags, the licence and the docs |
-| `test:worker` | the whole worker — coverage planning, the engine adapter (real subprocess + JSONL streaming), dedupe, filters, emails and the job pipeline — against an offline `google-maps-scraper` CLI double. No browser, no network |
+| `test:worker` | the whole worker — coverage planning, the engine adapter (real subprocess + JSONL streaming), dedupe, filters, contact validation and the job pipeline — against an offline `google-maps-scraper` CLI double. No browser, and no network beyond the MX stub |
 | `verify:migrations` | every migration parses (`pip install pglast` to enable; skipped otherwise) |
 
 To run the **full app** (frontend + serverless API + cron routes) locally you
@@ -512,6 +521,8 @@ through the app's secure control plane and runs the scraping engine itself.
 
 ```
 search_jobs:  queued → searching → collecting → enriching → finding_emails → complete
+              (finding_emails resolves public social profiles; emails already
+               arrived with the leads, straight from the scraping engine)
                     ↘ (3 failed attempts, quota refunded) ────────────────→ failed
 email_jobs:   scheduled → processing → sent
                         ↘ retry ×3 (5 min apart) → failed
@@ -629,12 +640,14 @@ Dockerfile and the adapter drift apart.
 | Engine exits immediately with `flag provided but not defined` | The pinned engine and the adapter disagree about a flag. Run `npm run verify:engine`: it compares every flag in `worker/vendor/engine.json` with the ones `worker/gmaps_engine.py` sends. |
 | Engine works in Docker but not on your laptop | Playwright's Chromium and its system libraries are missing. Install them the way the image does (`playwright install chromium --with-deps`), or just use the Docker image — it is what Railway runs. |
 | `python worker/run_tests.py` fails with `ModuleNotFoundError: requests` | Install the worker's two runtime dependencies first: `pip install -r worker/requirements.txt`. The offline suite needs no browser and no engine binary. |
-| Search completes with 0 leads | No businesses matched. Widen the radius or use a broader location. Quota is refunded automatically. |
+| Search completes with 0 leads | No businesses matched. Broaden the location or the business type. Quota is refunded automatically. |
 | Job stuck in `collecting` | Wait one cron cycle — the lease expires after 2 minutes and the job resumes from its cursor. Check `/api/internal/metrics` with the cron secret. |
 | Emails scheduled but not sending | Confirm **Settings → Cron Jobs** shows `/api/cron/tick`, and that the campaign has a connected SMTP sender. Opening the app also drives a tick. |
 | Cron never runs | Vercel Cron requires a **production** deployment; preview deployments do not schedule jobs. |
 | Magic link errors | Supabase → Authentication → URL Configuration must list your Vercel domain with `/**`. |
 | Payment succeeded, plan unchanged | Check Razorpay → Webhooks delivery log; `RAZORPAY_WEBHOOK_SECRET` must match exactly. |
+| Checkout fails with `The ID provided is invalid or could not be found.` | Razorpay plan ids only exist inside the account/mode that created them, so a plan cached under another key (test ↔ live, or a rotated account) is unusable. `ensureRazorpayPlan` now stores the key that created the plan (`billing_plans.razorpay_key_id`, migration 010), re-checks an unowned id with Razorpay before trusting it, and — if a subscription is still rejected — forgets the cache, provisions a fresh plan and retries once. Verify `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` are both from the same account **and** the same mode, apply migration 010, then retry the checkout. |
+| Several phones/emails are missing from a lead | The engine only returns what the business published, and validation drops anything malformed or role-based. Run `supabase/migrations/010_contact_details_and_plan_cache.sql` so `leads.emails` / `leads.phones` exist; before it, only the primary contact is stored. |
 | AI returns 403 | The account is on Free. AI is Growth+ — upgrade, then retry. |
 
 ---
@@ -653,10 +666,11 @@ These are real constraints, stated plainly rather than hidden:
 2. **The scraper runs on Railway.** Chromium cannot run reliably in Vercel's
    serverless functions, so the worker is a separate Railway service — the only
    second deployment in this architecture, dedicated entirely to Lead Finder.
-3. **Worker radius is viewport-based.** The worker geocodes the location with
-   Nominatim and turns the requested radius into a grid of Google Maps
-   viewports at a matching zoom. Maps may still return edge results; it is not
-   a contractual geo-fence.
+3. **Coverage radius is viewport-based and fixed.** The user no longer picks a
+   radius: the API applies its own default (25 km) and the worker geocodes the
+   location with Nominatim and turns that into a grid of Google Maps viewports
+   at a matching zoom. A search therefore always covers the whole location —
+   Maps may still return edge results, so it is not a contractual geo-fence.
 4. **Scraping Google Maps may conflict with Google's Terms of Service.** The
    upstream project carries the same warning. Use lawful public-business
    research practices, do not bypass CAPTCHAs/access controls, and obtain legal
@@ -693,7 +707,7 @@ These are real constraints, stated plainly rather than hidden:
   selected by any endpoint.
 - Webhooks are HMAC-verified and processed exactly once; the browser is never
   trusted for plan activation.
-- The email finder enforces an SSRF guard, validating every redirect hop and
+- The public social-profile lookup enforces an SSRF guard, validating every redirect hop and
   refusing private, loopback and link-local addresses.
 - Rate limiting is database-backed, so it holds across all serverless instances.
 - The scraper carries only `SCRAPER_WORKER_SECRET`; every write also needs the

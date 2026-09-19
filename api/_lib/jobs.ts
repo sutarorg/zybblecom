@@ -1,5 +1,4 @@
 import { decryptSecret, HttpError, log, sb } from "./core.ts";
-import { findEmail, sanitizeEmailResult } from "./email-finder.ts";
 import {
   evaluateEnrichmentFilters,
   parseFilters,
@@ -17,10 +16,10 @@ import { sendEmail } from "./smtp.ts";
 //
 // Lead *discovery* never happens in a serverless function: it needs a real
 // browser, which is exactly what the google-maps-scraper-based Railway worker
-// runs (see worker/gmaps_engine.py and worker/scraper.py). Vercel only orchestrates: it creates jobs,
-// stores the batches the worker streams back, and — if a worker dies after
-// discovery — finishes the remaining stages (enrichment, email discovery,
-// completion) here, because those are plain HTTP and DNS lookups.
+// runs (see worker/gmaps_engine.py and worker/scraper.py). Vercel only
+// orchestrates: it creates jobs, stores the batches the worker streams back
+// (emails included — the engine is the only email source) and, if a worker dies
+// after discovery, finishes the remaining recovery stages here.
 //
 // Every slice is lease-protected, bounded by a deadline and idempotent, so
 // the work is resumable and safe to run from cron and from the open app.
@@ -34,7 +33,7 @@ const LEASE_SECONDS = 120;
  *  bounded browser slices to finish its coverage, and each slice resumes from
  *  the cursor saved in the job payload. */
 export const MAX_ATTEMPTS = 6;
-const EMAIL_BATCH = 4;
+const CONTACT_BATCH = 25;
 
 export interface Budget {
   /** Epoch ms after which the current invocation must stop working. */
@@ -244,76 +243,31 @@ export async function finalizeSearchJob(opts: {
   return { collected, filteredOut: filteredOut.length, discarded: discard.length, refunded: Number(refunded ?? 0) };
 }
 
-/** Stage: discover and verify publicly listed emails, in bounded batches. */
+/**
+ * Stage: close out a job whose worker died mid-enrichment.
+ *
+ * Emails are already stored — the engine returns them with the business, and
+ * the ingestion endpoint validates them. This stage only normalises whatever
+ * is still missing (a legacy row with a null status) and finalises the job.
+ * No address is ever fetched, guessed or derived here.
+ */
 async function stageFindEmails(job: SearchJobRow, budget: Budget) {
   const { data: pending } = await sb
     .from("leads")
-    .select("id,website")
+    .select("id")
     .eq("job_id", job.id)
     .is("email_status", null)
     .limit(500);
-
   const queue = pending ?? [];
-  if (queue.length === 0) {
-    await finalizeSearchJob({
-      jobId: job.id,
-      userId: job.user_id,
-      quantity: job.quantity,
-      filters: job.filters,
-      sortBy: job.sort_by,
-    });
-    return;
-  }
-
-  const { count: total } = await sb
-    .from("leads")
-    .select("id", { count: "exact", head: true })
-    .eq("job_id", job.id);
-  const totalLeads = total ?? queue.length;
 
   let index = 0;
-  let emailFound = Number((job as unknown as Record<string, unknown>).email_found_count ?? 0);
-
   while (index < queue.length && timeLeft(budget) > 12_000) {
-    const batch = queue.slice(index, index + EMAIL_BATCH);
-    await Promise.all(
-      batch.map(async (lead) => {
-        if (!lead.website) {
-          // No website: the business is kept, the address is simply unknown.
-          await sb.from("leads").update({ email_status: "unknown" }).eq("id", lead.id);
-          return;
-        }
-        try {
-          const found = await findEmail(lead.website);
-          const safe = sanitizeEmailResult({
-            email: found?.email ?? null,
-            email_status: found?.status ?? "unknown",
-            email_source_url: found?.sourceUrl ?? null,
-            social_profiles: found?.socialProfiles ?? [],
-          });
-          if (safe.email) emailFound += 1;
-          await sb
-            .from("leads")
-            .update({
-              email: safe.email,
-              email_status: safe.email_status,
-              email_source_url: safe.email_source_url,
-              ...(safe.social_profiles.length ? { social_profiles: safe.social_profiles } : {}),
-            })
-            .eq("id", lead.id);
-        } catch {
-          // A single unreachable site must never fail the whole job.
-          await sb.from("leads").update({ email_status: "unknown" }).eq("id", lead.id);
-        }
-      }),
-    );
+    const batch = queue.slice(index, index + CONTACT_BATCH);
+    await sb
+      .from("leads")
+      .update({ email_status: "unknown" })
+      .in("id", batch.map((lead) => lead.id));
     index += batch.length;
-
-    const done = totalLeads - (queue.length - index);
-    await setJob(job.id, {
-      progress: Math.min(98, 78 + Math.round((done / Math.max(1, totalLeads)) * 20)),
-      email_found_count: emailFound,
-    });
     await sb.rpc("extend_search_job_lease", {
       p_job: job.id,
       p_lease_token: job.lease_token,

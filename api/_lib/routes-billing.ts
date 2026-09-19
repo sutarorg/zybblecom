@@ -12,9 +12,8 @@ import {
 import { json as jsonResponse, type Router } from "./http.ts";
 import {
   cancelSubscription,
-  createSubscription,
-  ensureRazorpayPlan,
   getSubscription,
+  startSubscription,
   verifyCheckoutSignature,
   verifyWebhookSignature,
 } from "./razorpay.ts";
@@ -47,15 +46,43 @@ async function markWebhook(eventId: string, status: "processed" | "failed", erro
     .eq("id", eventId);
 }
 
-async function applyRazorpayState(userId: string, rzpSubId: string, source: string) {
-  const rzp = await getSubscription(rzpSubId);
+/**
+ * Which Zybble plan a Razorpay plan id belongs to.
+ *
+ * `billing_plans` is the cache, but it can miss: a subscription may have been
+ * created before a key rotation, or by a key whose plan row was re-provisioned
+ * since. The checkout row (written when the subscription was created) is the
+ * authoritative record of the plan the user actually paid for, so it is the
+ * fallback — never a guess.
+ */
+async function planForRazorpayPlan(rzpSubId: string, razorpayPlanId: string): Promise<string> {
   const { data: planRow } = await sb
     .from("billing_plans")
     .select("id")
-    .eq("razorpay_plan_id", rzp.plan_id)
+    .eq("razorpay_plan_id", razorpayPlanId)
     .maybeSingle();
-  if (!planRow?.id) throw new HttpError(500, "Unknown Razorpay plan mapping.");
-  const plan = planRow.id;
+  if (planRow?.id) return planRow.id as string;
+
+  const { data: checkout } = await sb
+    .from("billing_checkouts")
+    .select("plan")
+    .eq("razorpay_subscription_id", rzpSubId)
+    .maybeSingle();
+  if (checkout?.plan) {
+    // Re-cache the mapping so later webhook lookups are a plain hit.
+    await sb
+      .from("billing_plans")
+      .update({ razorpay_plan_id: razorpayPlanId, updated_at: new Date().toISOString() })
+      .eq("id", checkout.plan)
+      .is("razorpay_plan_id", null);
+    return checkout.plan as string;
+  }
+  throw new HttpError(500, "Unknown Razorpay plan mapping.");
+}
+
+async function applyRazorpayState(userId: string, rzpSubId: string, source: string) {
+  const rzp = await getSubscription(rzpSubId);
+  const plan = await planForRazorpayPlan(rzpSubId, rzp.plan_id);
   const periodEnd = rzp.current_end
     ? new Date(rzp.current_end * 1000).toISOString()
     : new Date(Date.now() + 30 * 86_400_000).toISOString();
@@ -105,8 +132,10 @@ export function registerBilling(r: Router) {
     // The current plan stays active while checkout is pending; it is only
     // retired once Razorpay confirms the replacement.
     const existing = await subFor(user.id);
-    const rzpPlanId = await ensureRazorpayPlan(plan);
-    const rzp = await createSubscription(rzpPlanId);
+    // Provisions the plan for the configured key, and repairs a stale cache
+    // (e.g. the plan was created with a different key/mode) instead of
+    // failing the checkout.
+    const rzp = await startSubscription(plan);
     const { error: checkoutInsertError } = await sb.from("billing_checkouts").insert({
       razorpay_subscription_id: rzp.id,
       user_id: user.id,

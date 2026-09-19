@@ -207,7 +207,8 @@ const pythonSources = [
   "worker/gmaps_engine.py",
   "worker/scraper.py",
   "worker/worker.py",
-  "worker/email_finder.py",
+  "worker/engine_contacts.py",
+  "worker/site_enrichment.py",
   "worker/coverage.py",
   "worker/smoke_test.py",
 ];
@@ -220,6 +221,21 @@ for (const path of pythonSources) {
   for (const banned of [/^\s*(from|import)\s+selenium/m, /webdriver/, /GoogleMapScraper/, /from\s+vendor\s+import/, /FakeDriver/]) {
     if (banned.test(source)) fail("retired", `${path} still references the retired Selenium/GoogleMapScraper stack (${banned})`);
   }
+}
+
+// Emails have exactly one source: the pinned engine's `-email` extraction.
+// Nothing in Zybble may own an address-discovery path of its own.
+for (const path of ["api/_lib/contacts.ts", "worker/engine_contacts.py"]) {
+  if (!exists(path)) fail("email policy", `${path} is missing — email validation lives there`);
+}
+for (const path of ["api/_lib/email-finder.ts", "worker/email_finder.py"]) {
+  if (exists(path)) fail("email policy", `${path} must be gone: Zybble does not discover emails itself`);
+}
+const engineSource = read("worker/gmaps_engine.py");
+if (!/-email/.test(engineSource) || !/extract_email: bool = True/.test(engineSource)) {
+  fail("email policy", "the engine must request the business-published addresses by default (-email)");
+} else {
+  ok.push("engine-owned email extraction");
 }
 
 // ── 7. Every engine knob is documented ────────────────────────────────────────

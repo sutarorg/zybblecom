@@ -15,6 +15,18 @@
 
 html {
   scroll-behavior: smooth;
+  /* Decorative backdrops are wider than the viewport on purpose. Clipping the
+     axis here keeps a stray element from ever producing a sideways scroll on
+     mobile; `clip` (unlike `hidden`) does not create a scroll container, so
+     sticky headers and anchor scrolling keep working. */
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+}
+
+@supports not (overflow: clip) {
+  html {
+    overflow-x: hidden;
+  }
 }
 
 body {
@@ -24,6 +36,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* Long words, URLs and generated content never widen the layout. */
+  overflow-wrap: break-word;
 }
 
 ::selection {

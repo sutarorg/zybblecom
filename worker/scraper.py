@@ -52,6 +52,11 @@ from coverage import (
     iter_batches,
     plan_from_state,
 )
+from engine_contacts import (
+    normalize_phones,
+    primary_email,
+    verify_engine_emails,
+)
 from filters import LeadFilters, evaluate_discovery
 from gmaps_engine import (
     EngineFailure,
@@ -104,7 +109,6 @@ LIMIT_SOURCE_QUERY = 300
 LIMIT_ID = 500
 LIMIT_SOCIAL = 500
 MAX_SOCIALS = 10
-MAX_EMAIL_CANDIDATES = 5
 
 DAY_ORDER = (
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
@@ -133,9 +137,14 @@ class ChallengeError(RuntimeError):
 class Place:
     """One business, exactly as published on Google Maps.
 
-    ``json()`` is the payload contract with ``POST /api/worker/jobs/:id/leads``;
-    ``email_candidates`` is worker-internal (addresses the engine read on the
-    business's own website) and is never sent unverified.
+    ``json()`` is the payload contract with ``POST /api/worker/jobs/:id/leads``.
+
+    ``emails`` are the addresses the pinned ``gosom/google-maps-scraper`` engine
+    read on the business's own website (``-email``); they are validated and
+    MX-checked by :mod:`engine_contacts` before they ever reach the payload.
+    ``phones`` keeps every valid number the listing published instead of
+    flattening them to one. Zybble never guesses or independently discovers an
+    address, so an absent email simply stays absent.
     """
 
     company: str
@@ -158,7 +167,9 @@ class Place:
     social_profiles: list[str] = field(default_factory=list)
     source_query: str = ""
     description: Optional[str] = None
-    email_candidates: list[str] = field(default_factory=list)
+    emails: list[str] = field(default_factory=list)
+    email_status: str = "unknown"
+    phones: list[str] = field(default_factory=list)
 
     def json(self) -> dict:
         return {
@@ -169,6 +180,7 @@ class Place:
             "state": self.state,
             "country": self.country,
             "phone": self.phone,
+            "phones": list(self.phones),
             "website": self.website,
             "maps_url": self.maps_url,
             "rating": self.rating,
@@ -182,6 +194,8 @@ class Place:
             "social_profiles": list(self.social_profiles),
             "source_query": self.source_query,
             "description": self.description,
+            "emails": list(self.emails),
+            "email_status": self.email_status,
         }
 
 
@@ -338,11 +352,6 @@ def _clip(value: Any, limit: int) -> str:
     return text[:limit].rstrip()
 
 
-def site_key(website: str) -> str:
-    """Host-only key for a website, used to attach engine-found email candidates."""
-    return (website or "").strip().lower().split("//")[-1].split("/")[0].split("?")[0]
-
-
 def _optional(value: Any, limit: int) -> Optional[str]:
     text = _clip(value, limit)
     return text or None
@@ -484,17 +493,17 @@ def entry_to_place(entry: dict, source_query: str = "") -> Optional[Place]:
     if not maps_url and place_id:
         maps_url = _clip(f"https://www.google.com/maps/place/?q=place_id:{place_id}", LIMIT_MAPS_URL)
 
-    emails: list[str] = []
-    raw_emails = entry.get("emails")
-    if isinstance(raw_emails, (list, tuple)):
-        for raw in raw_emails:
-            text = _clip(raw, 320).lower()
-            if text and "@" in text and text not in emails:
-                emails.append(text)
-            if len(emails) >= MAX_EMAIL_CANDIDATES:
-                break
-    elif isinstance(raw_emails, str) and "@" in raw_emails:
-        emails = [_clip(raw_emails, 320).lower()]
+    # Emails come from the engine only (gosom/google-maps-scraper -email), and
+    # only in the shape that engine emits: a list of addresses it read on the
+    # business's own website. Any other key is ignored, so no other source can
+    # ever introduce an address.
+    email_pairs = verify_engine_emails(entry.get("emails"))
+    emails = [address for address, _status in email_pairs]
+    primary, email_status = primary_email(email_pairs)
+
+    # Several published numbers are kept as a list; the first one stays the
+    # primary `phone` for compatibility with every existing surface.
+    phones = normalize_phones(entry.get("phone"), entry.get("phones"))
 
     if not latitude and not longitude:
         match = _COORD_RE.search(maps_url or "")
@@ -508,7 +517,7 @@ def entry_to_place(entry: dict, source_query: str = "") -> Optional[Place]:
         city=city,
         state=state,
         country=country,
-        phone=_optional(entry.get("phone"), LIMIT_PHONE),
+        phone=_optional(phones[0] if phones else None, LIMIT_PHONE),
         website=_optional(entry.get("web_site") or entry.get("website"), LIMIT_WEBSITE),
         maps_url=maps_url,
         rating=_rating(entry),
@@ -522,7 +531,9 @@ def entry_to_place(entry: dict, source_query: str = "") -> Optional[Place]:
         social_profiles=[],
         source_query=_clip(source_query, LIMIT_SOURCE_QUERY),
         description=_optional(entry.get("description"), LIMIT_DESCRIPTION),
-        email_candidates=emails[:MAX_EMAIL_CANDIDATES],
+        emails=emails,
+        email_status=email_status,
+        phones=phones,
     )
 
 
@@ -582,9 +593,6 @@ class ScrapeResult:
     exhausted: bool = False
     message: str = ""
     runs: list[EngineRun] = field(default_factory=list)
-    #: website host → addresses the engine read on that site (only when the
-    #: engine's own email extraction is enabled). Verified before use.
-    email_candidates: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def stats(self) -> ScrapeStats:
@@ -643,7 +651,6 @@ def run_scrape(
     filtered_keys = set(state.filtered_keys)
 
     collected: list[Place] = []
-    email_candidates: dict[str, list[str]] = {}
     runs: list[EngineRun] = []
     batch_size = targets_per_run(targets_per_batch)
     last_percent = [0.0]
@@ -727,12 +734,6 @@ def run_scrape(
                 seen_links.add(canonical)
             stats.unique += 1
             collected.append(place)
-            if place.email_candidates and place.website:
-                site = site_key(place.website)
-                bucket = email_candidates.setdefault(site, [])
-                for address in place.email_candidates:
-                    if address not in bucket:
-                        bucket.append(address)
             if on_place:
                 on_place(place, stats.unique, wanted)
             emit(
@@ -799,7 +800,6 @@ def run_scrape(
         exhausted=bool(state.target_index >= plan.total or stats.unique >= wanted),
         message=message,
         runs=runs,
-        email_candidates=email_candidates,
     )
 
 
@@ -858,7 +858,6 @@ __all__ = [
     "map_open_status",
     "place_key",
     "run_scrape",
-    "site_key",
     "split_address",
     "targets_per_run",
 ]
