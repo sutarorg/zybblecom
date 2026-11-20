@@ -19,7 +19,7 @@ export function Header() {
           <Link href="/login" className="login-link">
             Log in
           </Link>
-          <Action href="/pricing">Get started</Action>
+          <Action href="/signup">Get started</Action>
         </div>
         <MobileMenu />
       </div>
