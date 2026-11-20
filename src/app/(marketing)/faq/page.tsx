@@ -1,15 +1,11 @@
 import { questions } from "@/config/questions";
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro } from "@/components/shared/page";
 import { Accordions } from "@/components/ui/accordion";
 import { Action } from "@/components/ui/primitives";
 const description =
   "Get clear answers about Zybble’s AI clipping workflow, vertical MP4 exports, one-time credit packs, and regional prices.";
-export const metadata = pageMetadata(
-  "/faq",
-  "Frequently Asked Questions",
-  description,
-);
+export const metadata = marketingMetadata("/faq");
 const topics = [...new Set(questions.map((question) => question.topic))];
 export default function FAQ() {
   return (

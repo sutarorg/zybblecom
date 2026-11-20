@@ -844,17 +844,21 @@
   color: #5633bd;
   font-size: 0.73rem;
 }
-.ws-summary-balance svg {
-  flex: none;
-}
-.ws-summary-balance dl {
-  flex: 1;
-  min-width: 0;
-}
-.ws-summary-balance dl > div {
+.ws-summary-balance > div {
   display: flex;
-  gap: 6px;
+  width: 100%;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+.ws-summary-balance dt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.ws-summary-balance dt svg {
+  flex: none;
 }
 .ws-summary-balance dd {
   font-weight: 800;
@@ -2562,6 +2566,10 @@
   align-self: center;
 }
 
+.ws-studio .ws-choice[data-choice="captions"] > div {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .ws-generation-side,
 .ws-style-preview {
   display: grid;
@@ -2569,10 +2577,53 @@
   gap: var(--studio-gap, 14px);
 }
 .ws-style-preview {
+  gap: 12px;
+  background: linear-gradient(150deg, #faf7ff, #fff 58%);
+  border-color: #e9def8;
+}
+.ws-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
 }
 .ws-style-preview h2 {
-  font-size: 1rem;
+  font-size: 1.05rem;
+}
+.ws-preview-sample {
+  border: 1px solid #e6dcfa;
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: #5133a0;
+  background: #f3edff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.ws-preview-canvas {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: clamp(8px, 2vw, 18px);
+  border: 1px solid #eae2fa;
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 50% 18%, #f9f6ff, #eee7fb);
+}
+.ws-preview-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.ws-preview-settings li {
+  color: #52536a;
+  border: 1px solid #ebe6f5;
+  border-radius: 6px;
+  padding: 3px 7px;
+  background: #fff;
+  font-size: 0.7rem;
+  font-weight: 650;
 }
 .ws-preview-stage {
   position: relative;
@@ -2583,6 +2634,7 @@
   width: min(100%, 440px);
   aspect-ratio: 16 / 9;
   border: 2px solid #c4b3ee;
+  box-shadow: 0 6px 20px #30225129;
   border-radius: 12px;
   background: #251b38;
 }
@@ -2643,12 +2695,6 @@
 [data-caption="minimal"] .ws-preview-caption {
   font-size: 0.74rem;
   font-weight: 500;
-}
-.ws-source-separator {
-  text-align: center;
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: #585a74;
 }
 .ws-password-input {
   display: flex;

@@ -1,5 +1,5 @@
 import { site } from "@/config/site";
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import {
   FeatureGrid,
   FinalCTA,
@@ -13,11 +13,7 @@ import { PricingSection } from "@/components/pricing/pricing";
 import { FAQSection } from "@/components/sections/faq";
 import { JsonLd } from "@/components/shared/structured-data";
 
-export const metadata = pageMetadata(
-  "/",
-  "AI Video Repurposing for Creators",
-  site.description,
-);
+export const metadata = marketingMetadata("/");
 export default function Home() {
   return (
     <>

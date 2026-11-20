@@ -1,17 +1,13 @@
 import Link from "next/link";
 import { features } from "@/config/product";
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro } from "@/components/shared/page";
 import { Action, IconTile } from "@/components/ui/primitives";
 import { FinalCTA, Showcase } from "@/components/sections/product-sections";
 
 const description =
   "Explore how Zybble finds highlights in long videos, automatically reframes the speaker, adds AI captions, and exports vertical MP4 clips.";
-export const metadata = pageMetadata(
-  "/features",
-  "AI Clip Generator Features",
-  description,
-);
+export const metadata = marketingMetadata("/features");
 export default function Features() {
   return (
     <>

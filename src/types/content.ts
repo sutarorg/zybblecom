@@ -2,6 +2,7 @@ export type Article = {
   slug: string;
   title: string;
   description: string;
+  keywords: readonly string[];
   category: string;
   author: { name: string; url?: string };
   publishedAt: string;

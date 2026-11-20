@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { marketingSeo } from "@/config/marketing-seo";
 import { site } from "@/config/site";
 
 export function pageMetadata(
@@ -7,6 +8,8 @@ export function pageMetadata(
   description: string,
   options: {
     noindex?: boolean;
+    keywords?: readonly string[];
+    exactTitle?: boolean;
     article?: {
       publishedTime: string;
       author: string;
@@ -15,7 +18,8 @@ export function pageMetadata(
   } = {},
 ): Metadata {
   const url = `${site.url}${path}`;
-  const socialTitle = `${title} | Zybble`;
+  const exactTitle = options.exactTitle || Boolean(options.article);
+  const socialTitle = exactTitle ? title : `${title} | Zybble`;
   const images = options.article?.thumbnail
     ? [
         {
@@ -34,8 +38,9 @@ export function pageMetadata(
         },
       ];
   return {
-    title,
+    title: exactTitle ? { absolute: title } : title,
     description,
+    keywords: options.keywords ? [...options.keywords] : undefined,
     alternates: { canonical: url },
     openGraph: options.article
       ? {
@@ -69,4 +74,16 @@ export function pageMetadata(
           ? { index: false, follow: true }
           : undefined,
   };
+}
+
+export function marketingMetadata(
+  path: keyof typeof marketingSeo,
+  noindex?: boolean,
+) {
+  const [title, description, keywords] = marketingSeo[path];
+  return pageMetadata(path, title, description, {
+    exactTitle: true,
+    keywords: keywords.split(", "),
+    noindex,
+  });
 }

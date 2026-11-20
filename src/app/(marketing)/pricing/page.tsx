@@ -1,14 +1,10 @@
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro } from "@/components/shared/page";
 import { PricingSection } from "@/components/pricing/pricing";
 import { FAQSection } from "@/components/sections/faq";
 const description =
   "Compare Zybble’s Starter, Creator, and Studio credit packs. Pay once for AI video processing credits that never expire. No subscriptions or recurring charges.";
-export const metadata = pageMetadata(
-  "/pricing",
-  "One-Time AI Video Credit Packs",
-  description,
-);
+export const metadata = marketingMetadata("/pricing");
 export default function Pricing() {
   return (
     <>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BookOpenText, Search } from "lucide-react";
 import { categories, articles } from "@/config/editorial";
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { EmptyState, PageIntro } from "@/components/shared/page";
 import { ArticleCard } from "@/components/marketing/article-card";
 import { Action } from "@/components/ui/primitives";
@@ -16,10 +16,10 @@ type Props = {
 };
 export async function generateMetadata({ searchParams }: Props) {
   const query = await searchParams;
-  return pageMetadata("/blog", "Video Repurposing Blog", description, {
-    noindex:
-      !articles.length || Boolean(query.q || query.category || query.page),
-  });
+  return marketingMetadata(
+    "/blog",
+    !articles.length || Boolean(query.q || query.category || query.page),
+  );
 }
 export default async function Blog({ searchParams }: Props) {
   const params = await searchParams;

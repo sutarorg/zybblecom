@@ -8,6 +8,12 @@ import {
 export const workflowArticles = [
   editorialArticle({
     slug: "content-repurposing-workflow",
+    keywords: [
+      "content repurposing workflow",
+      "creator content pipeline",
+      "content review process",
+      "batch repurposing",
+    ],
     title:
       "Build a content repurposing workflow that won’t publish the wrong version",
     description:
@@ -83,6 +89,12 @@ export const workflowArticles = [
   }),
   editorialArticle({
     slug: "podcast-to-blog-post",
+    keywords: [
+      "podcast to blog post",
+      "podcast transcript editing",
+      "podcast content repurposing",
+      "episode sources",
+    ],
     title: "Podcast to blog post: turn a conversation into a useful article",
     description:
       "Turn a podcast transcript into a self-contained article with a query-driven outline, attributed examples, and a repeatable fact-checking pass.",
@@ -156,6 +168,12 @@ export const workflowArticles = [
   }),
   editorialArticle({
     slug: "blog-to-linkedin-carousel",
+    keywords: [
+      "blog to LinkedIn carousel",
+      "document post",
+      "social carousel layout",
+      "repurpose blog content",
+    ],
     title:
       "How to turn a blog post into a LinkedIn carousel without copying paragraphs",
     description:
@@ -231,6 +249,12 @@ export const workflowArticles = [
   }),
   editorialArticle({
     slug: "agency-video-repurposing",
+    keywords: [
+      "agency video repurposing",
+      "client approval workflow",
+      "video handoff",
+      "agency clip production",
+    ],
     title:
       "Video repurposing for agencies: scope, client approvals, and delivery",
     description:
@@ -304,6 +328,12 @@ export const workflowArticles = [
   }),
   editorialArticle({
     slug: "video-repurposing-cost",
+    keywords: [
+      "video repurposing cost",
+      "cost per approved clip",
+      "content production budget",
+      "AI clipping costs",
+    ],
     title: "Video repurposing costs: compare tools by cost per approved clip",
     description:
       "Compare subscriptions, source-minute pricing and manual editing using the same pilot, with examples that separate software fees from real delivery costs.",

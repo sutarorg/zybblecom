@@ -8,6 +8,12 @@ import {
 export const videoArticles = [
   editorialArticle({
     slug: "repurpose-youtube-video",
+    keywords: [
+      "YouTube content repurposing",
+      "video to social posts",
+      "long video to shorts",
+      "YouTube repurposing plan",
+    ],
     title:
       "How to turn one YouTube video into 20 posts without repeating yourself",
     description:
@@ -83,6 +89,12 @@ export const videoArticles = [
   }),
   editorialArticle({
     slug: "podcast-clips",
+    keywords: [
+      "podcast clips",
+      "podcast clip selection",
+      "podcast highlights",
+      "video podcast repurposing",
+    ],
     title: "How to make podcast clips that work without the full episode",
     description:
       "Choose self-contained podcast moments, protect guest context, and build a practical clip-editing and review process for your show.",
@@ -158,6 +170,12 @@ export const videoArticles = [
   }),
   editorialArticle({
     slug: "short-video-captions",
+    keywords: [
+      "short video captions",
+      "auto caption editing",
+      "SRT and VTT",
+      "caption accessibility",
+    ],
     title:
       "Short video captions: a practical guide to readability and accessibility",
     description:
@@ -228,6 +246,12 @@ export const videoArticles = [
   }),
   editorialArticle({
     slug: "vertical-video-framing",
+    keywords: [
+      "vertical video framing",
+      "speaker crop",
+      "9:16 video",
+      "reframe video for shorts",
+    ],
     title:
       "Vertical video framing: when to follow the speaker, center crop, or keep the full frame",
     description:

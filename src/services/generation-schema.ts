@@ -15,10 +15,14 @@ export const frames = {
   center: "Center crop",
   none: "Full frame",
 } as const;
-export const captionStyles = {
+export const selectableCaptions = {
   bold: "Bold",
   karaoke: "Karaoke",
   minimal: "Minimal",
+} as const;
+// Historical records and saved preferences may still contain the retired style.
+export const captionStyles = {
+  ...selectableCaptions,
   clean: "Clean",
 } as const;
 export const PROMPT_LIMIT = 500;

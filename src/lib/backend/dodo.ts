@@ -2,20 +2,23 @@ import "server-only";
 import DodoPayments from "dodopayments";
 import { authSettings } from "./supabase";
 import type { Currency } from "@/config/credit-packs";
-import { checkoutReadiness, testMode } from "./dodo-readiness";
+import {
+  checkoutReadiness,
+  productionCheckoutOrigin,
+  testMode,
+} from "./dodo-readiness";
 
 export { testMode };
 export function dodoSettings() {
-  const bearerToken = process.env.DODO_PAYMENTS_API_KEY;
-  const webhookKey = process.env.DODO_WEBHOOK_SECRET;
+  const bearerToken = process.env.DODO_PAYMENTS_API_KEY?.trim();
+  const webhookKey = process.env.DODO_WEBHOOK_SECRET?.trim();
   const config = authSettings();
   if (
     !config ||
     !bearerToken ||
     !webhookKey ||
     process.env.DODO_MODE !== testMode ||
-    process.env.VERCEL_ENV === "production" ||
-    config.origin === "https://zybble.com"
+    productionCheckoutOrigin(process.env)
   )
     return null;
   return {

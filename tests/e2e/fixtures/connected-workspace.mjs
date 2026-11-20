@@ -54,20 +54,15 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
       await summary
         .getByText("2 credits (local estimate)", { exact: true })
         .waitFor();
-      const available = summary
-        .locator(".ws-summary-balance dl > div")
-        .filter({ hasText: "Available credits" })
-        .locator("dd");
       assert.equal(
-        await available.textContent(),
-        balance === null ? "Credit balance unavailable." : String(balance),
+        await summary.getByText("Available credits", { exact: true }).count(),
+        0,
       );
+      const insufficient = summary.getByText("You don't have enough credits", {
+        exact: true,
+      });
       if (balance === 1) {
-        await summary
-          .getByText(
-            "You don’t have enough available credits for this request.",
-          )
-          .waitFor();
+        await insufficient.waitFor();
         const title = page.getByLabel("Project title");
         await title.fill("Local fixture draft");
         await summary
@@ -76,6 +71,8 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
         await page.waitForURL(`${origin}/credits#credit-packs`);
         await page.goBack();
         assert.equal(await title.inputValue(), "Local fixture draft");
+      } else {
+        assert.equal(await insufficient.count(), 0);
       }
       assert(
         await summary

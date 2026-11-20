@@ -131,7 +131,7 @@ try {
   await dialog.getByRole("button", { name: "Close navigation" }).press("Enter");
   await dialog.waitFor({ state: "hidden" });
 
-  const count = { count: 4, duration: 3, ratio: 4, reframe: 3, captions: 4 };
+  const count = { count: 4, duration: 3, ratio: 4, reframe: 3, captions: 3 };
   const rows = {
     count: "Clip count",
     duration: "Clip length",
@@ -166,12 +166,26 @@ try {
     await summary.getByText("AI guidance", { exact: true }).count(),
     0,
   );
-  await summary
-    .getByText("Add a video to estimate the processing cost.", { exact: true })
-    .waitFor();
-  await summary
-    .getByText("Credit balance unavailable.", { exact: true })
-    .waitFor();
+  const cost = summary.locator(".ws-summary-balance");
+  assert.equal(
+    await cost
+      .locator("dt")
+      .allTextContents()
+      .then((labels) => labels.map((item) => item.trim()).join(",")),
+    "Estimated cost",
+  );
+  assert.equal(await cost.locator("dd").textContent(), "0");
+  assert.equal(
+    await summary.getByText("Available credits", { exact: true }).count(),
+    0,
+  );
+  await page.getByRole("heading", { name: "Preview", exact: true }).waitFor();
+  assert.equal(
+    await page
+      .getByText("This still image doesn’t track motion", { exact: false })
+      .count(),
+    0,
+  );
   const preview = page.locator(".ws-preview-stage");
   for (const [ratio, name] of [
     ["9:16", "Vertical"],
@@ -195,30 +209,19 @@ try {
       .evaluate((image) => getComputedStyle(image).objectFit),
     "contain",
   );
-  await page.getByRole("radio", { name: "Clean", exact: true }).check();
-  assert.equal(await preview.locator("figcaption").count(), 0);
+  assert.equal(
+    await page.getByRole("radio", { name: "Clean", exact: true }).count(),
+    0,
+  );
+  await page.getByRole("radio", { name: "Minimal", exact: true }).check();
+  assert.equal(await preview.locator("figcaption span").count(), 6);
   await page.getByRole("radio", { name: "Karaoke", exact: true }).check();
   assert.equal(await preview.locator("figcaption mark").count(), 2);
-  const link = page.getByLabel("Paste a video link");
-  const linkStatus = page.locator("#source-link-hint");
+  assert.equal(await page.getByLabel("Paste a video link").count(), 0);
   assert.equal(
     await page.getByRole("button", { name: "Use video link" }).count(),
     0,
   );
-  await link.fill("https://vimeo.com/1234");
-  await page
-    .getByText(
-      "Enter an HTTPS link to a supported single video, without login credentials.",
-    )
-    .waitFor();
-  assert.equal(await link.getAttribute("aria-invalid"), "true");
-  await link.fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-  await linkStatus.filter({ hasText: "The video wasn’t fetched" }).waitFor();
-  assert.equal(await link.getAttribute("aria-invalid"), null);
-  await link.clear();
-  await linkStatus
-    .filter({ hasText: "Only the link format is checked here." })
-    .waitFor();
   assert(
     await page.getByRole("button", { name: "Generate My Shorts" }).isDisabled(),
   );
@@ -263,7 +266,7 @@ try {
   }
   assert.deepEqual(problems, []);
   console.log(
-    "64 route screenshots; desktop and drawer navigation; all 18 choices and keyboard wrapping; prompt limit; four FAQs; settings links; no console errors or mutations.",
+    "64 route screenshots; desktop and drawer navigation; all 17 choices and keyboard wrapping; prompt limit; four FAQs; settings links; no console errors or mutations.",
   );
 } finally {
   await browser.close();

@@ -3,6 +3,9 @@ import { resolveAuthSettings } from "./auth-config";
 
 type Env = Readonly<Record<string, string | undefined>>;
 export const testMode = "test_mode" as const;
+export const productionCheckoutOrigin = (env: Env) =>
+  env.VERCEL_ENV === "production" ||
+  resolveAuthSettings(env)?.origin === "https://zybble.com";
 const productVariable = (packId: string, currency: Currency) =>
   `DODO_PRODUCT_${packId.toUpperCase()}_${currency}`;
 const catalog = creditPacks.flatMap((pack) =>
@@ -48,7 +51,7 @@ export function checkoutReadiness(
   );
   requireVar("SUPABASE_SECRET_KEY");
   requireVar("AUTH_STATE_SECRET", (secret) => secret.length >= 32);
-  requireVar("DODO_MODE", (mode) => mode === testMode);
+  requireVar("DODO_MODE", () => env.DODO_MODE === testMode);
   requireVar("DODO_PAYMENTS_API_KEY");
   requireVar("DODO_WEBHOOK_SECRET");
   const name = productVariable(packId, currency);
@@ -68,9 +71,7 @@ export function checkoutReadiness(
   )
     ? env.VERCEL_ENV
     : "local";
-  const production =
-    environment === "production" ||
-    resolveAuthSettings(env)?.origin === "https://zybble.com";
+  const production = productionCheckoutOrigin(env);
   const enabled = env.DODO_CHECKOUT_ENABLED === "1";
   return {
     ready:

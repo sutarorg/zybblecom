@@ -110,7 +110,7 @@ try {
   const paths = [
     ...sitemap.matchAll(/<loc>https?:\/\/[^/]+(\/blog\/[^<]+)<\/loc>/g),
   ].map(([, path]) => path);
-  assert.equal(paths.length, 9); // The next editorial batch needs its own original image.
+  assert.equal(paths.length, 19);
   for (const path of paths) {
     await go(path.slice(1));
     const thumbnail = page.locator(".article-cover");
