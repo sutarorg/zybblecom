@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { resolveAuthSettings } from "../../src/lib/backend/auth-config";
 import {
   createFrontendServices,
   accountDestination,
@@ -16,15 +17,21 @@ test("reset password checks length and mismatch without a recovery session", () 
   const form = new FormData();
   assert.ok(validateAuth("reset", form).password);
   assert.ok(validateAuth("reset", form).confirmPassword);
-  form.set("password", "too short");
+  form.set("password", "short7!");
   form.set("confirmPassword", passphrase);
   assert.deepEqual(validateAuth("reset", form), {
-    password: "Use 15–128 characters.",
+    password: "Use 8–128 characters.",
     confirmPassword: "Your passwords don’t match.",
   });
   form.set("password", passphrase);
   assert.deepEqual(validateAuth("reset", form), {});
-  assert.equal(validNewPassword("🦉".repeat(15)), true);
+  form.set("password", "Example8");
+  form.set("confirmPassword", "Example8");
+  assert.deepEqual(validateAuth("reset", form), {});
+  assert.equal(validNewPassword("x".repeat(7)), false);
+  assert.equal(validNewPassword("🦉".repeat(8)), true);
+  assert.equal(validNewPassword("x".repeat(128)), true);
+  assert.equal(validNewPassword("x".repeat(129)), false);
 });
 
 test("unconnected services never return success or session data", async () => {
@@ -84,4 +91,63 @@ test("validation short-circuits before the adapter and errors never expose throw
   assert.match(serviceMessage("network"), /connection/);
   assert.equal(accountDestination(false), "/onboarding");
   assert.equal(accountDestination(true), "/dashboard");
+});
+
+test("auth supports integration public aliases but requires explicit origin and server-only secrets", () => {
+  const env = {
+    NEXT_PUBLIC_SUPABASE_URL: "https://fixture.supabase.co/",
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_fixture",
+    SUPABASE_SECRET_KEY: "sb_secret_fixture",
+    AUTH_STATE_SECRET: "a".repeat(32),
+    APP_ORIGIN: " https://staging.example.invalid/ ",
+  };
+  assert.deepEqual(resolveAuthSettings(env), {
+    url: "https://fixture.supabase.co",
+    key: env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    secret: env.SUPABASE_SECRET_KEY,
+    recoveryKey: env.AUTH_STATE_SECRET,
+    origin: "https://staging.example.invalid",
+    secure: true,
+  });
+  assert.equal(
+    resolveAuthSettings({
+      ...env,
+      SUPABASE_PUBLISHABLE_KEY: "configured-preferred",
+    })?.key,
+    "configured-preferred",
+  );
+  assert.equal(
+    resolveAuthSettings({ ...env, SUPABASE_SECRET_KEY: undefined }),
+    null,
+  );
+  assert.equal(resolveAuthSettings({ ...env, APP_ORIGIN: undefined }), null);
+  assert.equal(
+    resolveAuthSettings({
+      ...env,
+      APP_ORIGIN: "https://staging.example.invalid/?junk",
+    }),
+    null,
+  );
+  assert.equal(
+    resolveAuthSettings({ ...env, AUTH_STATE_SECRET: "too short" }),
+    null,
+  );
+  assert.equal(
+    resolveAuthSettings({
+      ...env,
+      SUPABASE_URL: "https://fixture.supabase.co/rest/v1",
+    }),
+    null,
+  );
+  assert.equal(
+    resolveAuthSettings({ ...env, SUPABASE_URL: "http://fixture.supabase.co" }),
+    null,
+  );
+  assert.equal(
+    resolveAuthSettings({
+      ...env,
+      SUPABASE_PUBLISHABLE_KEY: "sb_secret_fixture",
+    }),
+    null,
+  );
 });

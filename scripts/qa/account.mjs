@@ -176,17 +176,15 @@ try {
   await page.getByText("Acknowledge the terms to continue.").waitFor();
   await page.getByLabel("Full name").fill(" ");
   await page.getByLabel("Email address").fill("qa@example.invalid");
-  await page.getByLabel("Password", { exact: true }).fill("too short");
+  await page.getByLabel("Password", { exact: true }).fill("short7!");
   await page.getByRole("checkbox").focus();
-  await page.getByText("Use 15–128 characters.", { exact: true }).waitFor();
+  await page.getByText("Use 8–128 characters.", { exact: true }).waitFor();
   await page
     .getByText("Enter your full name (up to 100 characters).")
     .waitFor();
   await checkLayout(390, "signup-validation");
   await page.getByLabel("Full name").fill("Browser check");
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("browser-validation-only");
+  await page.getByLabel("Password", { exact: true }).fill("Example8");
   await page.getByText("Length requirement met.", { exact: false }).waitFor();
   await page.getByRole("checkbox").check();
   await signup.click();

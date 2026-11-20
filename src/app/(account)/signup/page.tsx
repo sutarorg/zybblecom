@@ -7,6 +7,9 @@ import {
 } from "@/components/account/account-shell";
 import { AuthForm } from "@/components/account/auth-form";
 import { pageMetadata } from "@/lib/seo/metadata";
+// Auth can be configured at runtime even when it was absent at build time.
+export const dynamic = "force-dynamic";
+
 export const metadata = pageMetadata(
   "/signup",
   "Create an account",
