@@ -45,7 +45,7 @@ export async function respond(handler: () => Promise<unknown>) {
     );
   }
 }
-export function sameOrigin(request: Request) {
+export function sameOrigin(request: Request, contentType = "application/json") {
   const settings = authSettings();
   if (!settings) throw new ApiError("unavailable", 503);
   if (
@@ -53,7 +53,7 @@ export function sameOrigin(request: Request) {
     request.headers.get("sec-fetch-site") === "cross-site"
   )
     throw new ApiError("unauthorized", 403);
-  if (request.headers.get("content-type")?.split(";")[0] !== "application/json")
+  if (request.headers.get("content-type")?.split(";")[0] !== contentType)
     throw new ApiError("validation", 415);
 }
 export async function readBytes(request: Request, limit: number) {
@@ -103,8 +103,8 @@ export async function readBody(request: Pick<Request, "body">, limit = 8192) {
     reader.releaseLock();
   }
 }
-export async function readJSON(request: Request) {
-  const text = await readBody(request);
+export async function readJSON(request: Request, limit?: number) {
+  const text = await readBody(request, limit);
   try {
     return JSON.parse(text) as unknown;
   } catch {

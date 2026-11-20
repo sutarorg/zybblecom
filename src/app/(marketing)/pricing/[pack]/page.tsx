@@ -26,7 +26,7 @@ export default async function PackPage({ params }: Props) {
   const selected = creditPacks.find((item) => item.id === pack);
   if (!selected) notFound();
   const { currency } = await requestPricing();
-  const enabled = checkoutEnabled();
+  const enabled = checkoutEnabled(selected.id, currency);
   const session = enabled ? await accountServer.getSession() : null;
   return (
     <>
@@ -61,7 +61,9 @@ export default async function PackPage({ params }: Props) {
                 {session?.ok && session.value ? (
                   <CheckoutButton packId={selected.id} />
                 ) : (
-                  <Action href="/login">Sign in to continue</Action>
+                  <Action href={`/login?pack=${selected.id}`}>
+                    Sign in to continue
+                  </Action>
                 )}
               </>
             ) : (

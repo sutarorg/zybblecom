@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/backend/http";
 import { verifySession } from "@/lib/backend/session";
 import { creditActivity, creditSummary } from "@/lib/backend/credit-reads";
 import { storedPreferences } from "./settings-schema";
+import { avatarUrl } from "@/lib/backend/avatars";
 import { archivedClip } from "@/lib/backend/media";
 import { clipLocator } from "@/lib/media/providers";
 import type { Clip, Result } from "./workspace-contracts";
@@ -38,8 +39,12 @@ async function read<T>(fn: () => Promise<T>): Promise<Result<T>> {
 export const workspace = createWorkspaceServices({
   getProfile: () =>
     read(async () => {
-      const { profile } = await verifySession();
-      return { name: profile.full_name, email: profile.email };
+      const { profile, user } = await verifySession();
+      return {
+        name: profile.full_name,
+        email: profile.email,
+        avatarUrl: await avatarUrl(user.id),
+      };
     }),
   getPreferences: () =>
     read(async () => {

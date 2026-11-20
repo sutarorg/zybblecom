@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { Heading, Notice, Panel, DataList } from "@/components/admin/ui";
 import { SettingsEditor } from "@/components/admin/settings-editor";
-import { adminRead } from "@/services/admin/server";
+import { checkoutReadiness } from "@/lib/backend/dodo-readiness";
+import { adminSession, adminRead } from "@/services/admin/server";
 import { money, num, duration } from "@/services/admin/format";
 import { bytesText } from "@/services/workspace-format";
 import { creditPacks } from "@/config/credit-packs";
@@ -63,7 +64,20 @@ const sections = [
 ] as const;
 const on = (value: boolean) => (value ? "Enabled" : "Disabled");
 export default async function Settings() {
-  const r = await adminRead("settings");
+  const [r, session] = await Promise.all([
+    adminRead("settings"),
+    adminSession(),
+  ]);
+  const checkout =
+    session.ok && session.value.permissions.includes("settings")
+      ? creditPacks.flatMap((pack) =>
+          (["USD", "INR"] as const).map((currency) => ({
+            name: `${pack.name} ${currency}`,
+            ...checkoutReadiness(process.env, pack.id, currency),
+          })),
+        )
+      : [];
+  const deployment = checkout[0];
   const s = r.ok ? r.value : null;
   const records: Record<
     SettingSection,
@@ -119,6 +133,44 @@ export default async function Settings() {
         }
       />
       {!r.ok && r.error !== "unavailable" && <Notice error={r.error} />}
+      {deployment && (
+        <Panel
+          title="Checkout readiness"
+          description="Runtime configuration only. Does not test credentials or payment. Compare this commit and deployment time with the last scoped variable change in Vercel; other environments must be checked separately."
+        >
+          <DataList
+            items={[
+              ["Environment", deployment.environment],
+              ["Deployment commit", deployment.version ?? "Not reported"],
+              ["Test checkout switch", deployment.enabled ? "On" : "Off"],
+              ...checkout.map(
+                (entry) =>
+                  [
+                    entry.name,
+                    entry.ready
+                      ? "Configuration ready"
+                      : [
+                          entry.production
+                            ? "Test checkout blocked in production"
+                            : null,
+                          !entry.enabled
+                            ? "DODO_CHECKOUT_ENABLED is not 1"
+                            : null,
+                          entry.missing.length
+                            ? `Missing: ${entry.missing.join(", ")}`
+                            : null,
+                          entry.invalid.length
+                            ? `Invalid: ${entry.invalid.join(", ")}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · "),
+                  ] as const,
+              ),
+            ]}
+          />
+        </Panel>
+      )}
       <div className="ad-settings-grid">
         {sections.map(({ key, title, desc, icon: Icon }) => (
           <Panel

@@ -7,19 +7,32 @@ export function pageMetadata(
   description: string,
   options: {
     noindex?: boolean;
-    article?: { publishedTime: string; author: string };
+    article?: {
+      publishedTime: string;
+      author: string;
+      thumbnail?: { src: string; alt: string };
+    };
   } = {},
 ): Metadata {
   const url = `${site.url}${path}`;
   const socialTitle = `${title} | Zybble`;
-  const images = [
-    {
-      url: "/social-card.png",
-      width: 1200,
-      height: 630,
-      alt: "Zybble — AI video repurposing",
-    },
-  ];
+  const images = options.article?.thumbnail
+    ? [
+        {
+          url: options.article.thumbnail.src,
+          width: 1200,
+          height: 675,
+          alt: options.article.thumbnail.alt,
+        },
+      ]
+    : [
+        {
+          url: "/social-card.png",
+          width: 1200,
+          height: 630,
+          alt: "Zybble — AI video repurposing",
+        },
+      ];
   return {
     title,
     description,

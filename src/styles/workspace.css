@@ -2551,3 +2551,123 @@
   > div {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+
+.ws-shell:not(.ws-collapsed) .ws-sidebar > .ws-collapse {
+  position: absolute;
+  inset-block-start: 18px;
+  inset-inline-end: 18px;
+}
+.ws-shell.ws-collapsed .ws-sidebar > .ws-collapse {
+  margin-block-start: auto;
+  align-self: center;
+}
+
+.ws-generation-side,
+.ws-style-preview {
+  display: grid;
+  min-width: 0;
+  gap: var(--studio-gap, 14px);
+}
+.ws-style-preview {
+  gap: 8px;
+}
+.ws-style-preview h2 {
+  font-size: 1rem;
+}
+.ws-preview-stage {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  justify-self: center;
+  margin: 0;
+  width: min(100%, 440px);
+  aspect-ratio: 16 / 9;
+  border: 2px solid #c4b3ee;
+  border-radius: 12px;
+  background: #251b38;
+}
+.ws-preview-stage[data-aspect="9:16"] {
+  width: min(100%, 184px);
+  aspect-ratio: 9 / 16;
+}
+.ws-preview-stage[data-aspect="1:1"] {
+  width: min(100%, 256px);
+  aspect-ratio: 1;
+}
+.ws-preview-stage[data-aspect="4:5"] {
+  width: min(100%, 224px);
+  aspect-ratio: 4 / 5;
+}
+.ws-preview-image {
+  object-fit: cover;
+}
+.ws-preview-stage[data-reframe="auto"] .ws-preview-image {
+  object-position: 34% 50%;
+}
+.ws-preview-stage[data-reframe="none"]::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  background: center / cover url("/images/generation-sample-16x9.webp");
+  filter: blur(12px) brightness(0.66);
+}
+.ws-preview-stage[data-reframe="none"] .ws-preview-image {
+  object-fit: contain;
+}
+.ws-preview-caption {
+  position: absolute;
+  inset-inline: 5%;
+  bottom: 16%;
+  margin: 0 auto;
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 5px;
+  text-align: center;
+  color: white;
+  background: #141021e8;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.ws-preview-caption mark {
+  background: transparent;
+  color: #5bf6ff;
+}
+[data-caption="bold"] .ws-preview-caption {
+  bottom: 45%;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+[data-caption="bold"] .ws-preview-caption mark {
+  color: #ffe65e;
+}
+[data-caption="minimal"] .ws-preview-caption {
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+.ws-source-separator {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #585a74;
+}
+.ws-password-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ws-password-input input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.ws-avatar-settings,
+.ws-studio-profile > .ws-form-panel + .ws-form-panel {
+  margin-block-end: var(--studio-gap);
+}
+.ws-studio-profile > .ws-form-panel + .ws-form-panel {
+  margin-block-start: var(--studio-gap);
+}
+.ws-avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

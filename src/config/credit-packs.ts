@@ -9,6 +9,14 @@ export type CreditPack = {
   features: readonly string[];
 };
 
+const sharedFeatures = [
+  "Up to 20 generated clips per source video",
+  "AI captions",
+  "Smart vertical framing",
+  "MP4 downloads",
+  "Credits never expire",
+] as const;
+
 export const creditPacks: readonly CreditPack[] = [
   {
     id: "starter",
@@ -16,14 +24,6 @@ export const creditPacks: readonly CreditPack[] = [
     description: "For your first batch of shorts.",
     credits: 30,
     pricesMinor: { USD: 900, INR: 29900 },
-    features: [
-      "30 minutes of standard video processing",
-      "Up to 20 generated clips per source video",
-      "AI captions",
-      "Smart vertical reframing",
-      "MP4 downloads",
-      "Credits never expire",
-    ],
   },
   {
     id: "creator",
@@ -32,13 +32,6 @@ export const creditPacks: readonly CreditPack[] = [
     description: "For a regular publishing rhythm.",
     credits: 120,
     pricesMinor: { USD: 1900, INR: 99900 },
-    features: [
-      "Everything in Starter",
-      "All available caption styles",
-      "AI-ranked highlights",
-      "Higher processing allowance",
-      "Credits never expire",
-    ],
   },
   {
     id: "studio",
@@ -47,12 +40,11 @@ export const creditPacks: readonly CreditPack[] = [
     description: "For a larger video library.",
     credits: 300,
     pricesMinor: { USD: 3900, INR: 249900 },
-    features: [
-      "Everything in Creator",
-      "Bulk processing when available",
-      "Priority processing, subject to availability",
-      "Extended project organization",
-      "Credits never expire",
-    ],
   },
-];
+].map((pack) => ({
+  ...pack,
+  features: [
+    `${pack.credits} minutes of standard video processing`,
+    ...sharedFeatures,
+  ],
+}));

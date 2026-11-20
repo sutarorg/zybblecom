@@ -11,7 +11,8 @@ import {
   validNewPassword,
 } from "../../src/lib/services/validation";
 
-const passphrase = "local validation passphrase";
+const passphrase = "Local fixture 8";
+const legacyPassword = "local legacy validation passphrase";
 
 test("reset password checks length and mismatch without a recovery session", () => {
   const form = new FormData();
@@ -20,7 +21,7 @@ test("reset password checks length and mismatch without a recovery session", () 
   form.set("password", "short7!");
   form.set("confirmPassword", passphrase);
   assert.deepEqual(validateAuth("reset", form), {
-    password: "Use 8–128 characters.",
+    password: "Use 8–16 characters.",
     confirmPassword: "Your passwords don’t match.",
   });
   form.set("password", passphrase);
@@ -30,8 +31,8 @@ test("reset password checks length and mismatch without a recovery session", () 
   assert.deepEqual(validateAuth("reset", form), {});
   assert.equal(validNewPassword("x".repeat(7)), false);
   assert.equal(validNewPassword("🦉".repeat(8)), true);
-  assert.equal(validNewPassword("x".repeat(128)), true);
-  assert.equal(validNewPassword("x".repeat(129)), false);
+  assert.equal(validNewPassword("x".repeat(16)), true);
+  assert.equal(validNewPassword("x".repeat(17)), false);
 });
 
 test("unconnected services never return success or session data", async () => {
@@ -74,7 +75,10 @@ test("validation short-circuits before the adapter and errors never expose throw
   );
   assert.equal(called, 0);
   assert.deepEqual(
-    await services.login({ email: "qa@example.invalid", password: passphrase }),
+    await services.login({
+      email: "qa@example.invalid",
+      password: legacyPassword,
+    }),
     { ok: false, error: "network" },
   );
   assert.equal(called, 1);

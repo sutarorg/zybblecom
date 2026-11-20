@@ -1,3 +1,5 @@
+import { authSettings } from "@/lib/backend/supabase";
+import { contactSettings } from "@/lib/backend/contact-config";
 import { CircleHelp, Wallet } from "lucide-react";
 import { pageMetadata } from "@/lib/seo/metadata";
 import { PageIntro, ResourceCard } from "@/components/shared/page";
@@ -5,6 +7,7 @@ import { ContactForm } from "@/components/marketing/contact-form";
 const description =
   "Find contact options for Zybble, prepare a product or pricing question, and get immediate answers from the help centre.";
 export const metadata = pageMetadata("/contact", "Contact Zybble", description);
+export const dynamic = "force-dynamic";
 export default function Contact() {
   return (
     <>
@@ -20,7 +23,9 @@ export default function Contact() {
       />
       <section className="section compact">
         <div className="container contact-layout">
-          <ContactForm />
+          <ContactForm
+            connected={Boolean(authSettings() && contactSettings(process.env))}
+          />
           <aside className="contact-aside" aria-label="Other ways to get help">
             <ResourceCard
               href="/help"

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { articles } from "@/config/editorial";
@@ -20,6 +21,7 @@ export async function generateMetadata({ params }: Props) {
     article: {
       publishedTime: article.publishedAt,
       author: article.author.name,
+      thumbnail: article.thumbnail,
     },
   });
 }
@@ -43,18 +45,22 @@ export default async function BlogArticle({ params }: Props) {
           mainEntityOfPage: url,
           datePublished: article.publishedAt,
           author: {
-            "@type": "Person",
+            "@type": "Organization",
             name: article.author.name,
             ...(article.author.url ? { url: article.author.url } : {}),
           },
           publisher: { "@type": "Organization", name: site.name },
-          image: `${site.url}/social-card.png`,
+          image: `${site.url}${article.thumbnail.src}`,
         }}
       />
       <article>
         <PageIntro
           path={path}
           label={article.category}
+          breadcrumb={{
+            parent: { name: "Blog", path: "/blog" },
+            current: article.title,
+          }}
           title={article.title}
           description={article.description}
         />
@@ -67,6 +73,14 @@ export default async function BlogArticle({ params }: Props) {
               </time>
               <span>{readingTime(article)} min read</span>
             </div>
+            <Image
+              className="article-thumbnail article-cover"
+              src={article.thumbnail.src}
+              alt={article.thumbnail.alt}
+              width={1200}
+              height={675}
+              sizes="(max-width: 768px) 95vw, 760px"
+            />
             {article.sections.length > 2 && (
               <nav
                 className="section-index article-toc"
@@ -90,6 +104,23 @@ export default async function BlogArticle({ params }: Props) {
                 </section>
               ))}
             </div>
+            <section
+              className="article-sources"
+              aria-label="References and further reading"
+            >
+              <h2>References and further reading</h2>
+              <ul>
+                {article.links.map(({ href, label }) => (
+                  <li key={href}>
+                    {href.startsWith("/") ? (
+                      <Link href={href}>{label}</Link>
+                    ) : (
+                      <a href={href}>{label}</a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
             <nav className="filter-row" aria-label="Share this article">
               <a
                 className="filter"

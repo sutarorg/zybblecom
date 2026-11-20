@@ -26,8 +26,89 @@ const known = "job_q8w2e4r6t1y3u5i7o9p0";
 const unknown = "job_abcdefghijklmnopqrst";
 const received = [];
 const signupPasswords = [];
+const stubId = "6c3b041b-0d89-4bf6-b5dd-524d00372897";
+const stubEmail = "fixture@example.invalid";
+const stubUser = {
+  id: stubId,
+  aud: "authenticated",
+  role: "authenticated",
+  email: stubEmail,
+  email_confirmed_at: "2026-11-20T00:00:00Z",
+  created_at: "2026-11-20T00:00:00Z",
+  user_metadata: {},
+  app_metadata: { provider: "email" },
+};
+const exp = Math.floor(Date.now() / 1000) + 3600;
+const base64 = (value) =>
+  Buffer.from(JSON.stringify(value)).toString("base64url");
+// Non-production token only; the isolated HTTP fixture owns Auth verification.
+const fixtureToken = `${base64({ alg: "HS256", typ: "JWT" })}.${base64({ sub: stubId, session_id: stubId, role: "authenticated", exp })}.test`;
+let loginPassword = "long established password";
+let wallet = 0;
+const passwordUpdates = [];
 const stub = createServer(async (req, response) => {
   const path = new URL(req.url, "http://127.0.0.1").pathname;
+  const send = (status, payload) =>
+    response
+      .writeHead(status, { "Content-Type": "application/json" })
+      .end(JSON.stringify(payload));
+  const body = async () => {
+    let text = "";
+    for await (const chunk of req) text += chunk;
+    return JSON.parse(text);
+  };
+  if (path === "/auth/v1/token" && req.method === "POST") {
+    const input = await body();
+    if (input.email !== stubEmail || input.password !== loginPassword)
+      return send(400, {
+        error_code: "invalid_credentials",
+        msg: "Synthetic incorrect password",
+      });
+    return send(200, {
+      access_token: fixtureToken,
+      refresh_token: "fixture-refresh",
+      token_type: "bearer",
+      expires_in: 3600,
+      expires_at: exp,
+      user: stubUser,
+    });
+  }
+  if (
+    path === "/auth/v1/user" &&
+    req.headers.authorization === `Bearer ${fixtureToken}`
+  ) {
+    if (req.method === "GET") return send(200, stubUser);
+    if (req.method === "PUT") {
+      const input = await body();
+      // Deliberately ignore current_password here: application must verify it even
+      // when the hosted provider's optional current-password setting is off.
+      passwordUpdates.push(input);
+      loginPassword = input.password;
+      return send(200, stubUser);
+    }
+  }
+  if (path === "/auth/v1/logout" && req.method === "POST")
+    return response.writeHead(204).end();
+  if (
+    path === "/rest/v1/profiles" &&
+    req.method === "GET" &&
+    req.headers.authorization === `Bearer ${fixtureToken}`
+  )
+    return send(200, {
+      id: stubId,
+      full_name: "Browser QA Fixture",
+      email: stubEmail,
+      onboarding_completed: true,
+      suspended_at: null,
+      preferences: {},
+    });
+  if (
+    path === "/rest/v1/rpc/get_credit_summary" &&
+    req.headers.authorization === `Bearer ${fixtureToken}`
+  )
+    return wallet === null
+      ? send(500, { message: "Synthetic wallet outage" })
+      : send(200, { available: wallet, reserved: 0, consumed: 0 });
   if (
     req.method !== "POST" ||
     ![
@@ -39,9 +120,7 @@ const stub = createServer(async (req, response) => {
     response.writeHead(404).end();
     return;
   }
-  let text = "";
-  for await (const chunk of req) text += chunk;
-  const input = JSON.parse(text);
+  const input = await body();
   let payload;
   if (path === "/auth/v1/signup") {
     signupPasswords.push(input.password);
@@ -132,7 +211,149 @@ try {
   assert.deepEqual((await verification.json()).data, {
     verificationRequired: true,
   });
-  assert.deepEqual(signupPasswords, ["Example8"]);
+  assert.equal((await signup("s".repeat(16))).status, 200);
+  assert.equal((await signup("s".repeat(17))).status, 400);
+  assert.deepEqual(signupPasswords, ["Example8", "s".repeat(16)]);
+  const submit = (path, input, site = origin, type = "application/json") =>
+    fetch(`${origin}${path}`, {
+      method: "POST",
+      headers: { Origin: site, "Content-Type": type },
+      body: type === "application/json" ? JSON.stringify(input) : input,
+    });
+  const contact = {
+    name: "Browser check",
+    email: "fixture@example.invalid",
+    topic: "Product question",
+    message: "Synthetic request only.",
+    website: "",
+  };
+  assert.equal((await submit("/api/contact", contact)).status, 503);
+  assert.equal(
+    (
+      await submit("/api/contact", {
+        ...contact,
+        to: "arbitrary@example.invalid",
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await submit("/api/contact", { ...contact, message: "x".repeat(20_000) }))
+      .status,
+    413,
+  );
+  assert.equal(
+    (await submit("/api/contact", contact, "https://other.example.invalid"))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await submit(
+        "/api/settings/avatar",
+        "not-an-image",
+        origin,
+        "application/octet-stream",
+      )
+    ).status,
+    401,
+  );
+  const change = {
+    currentPassword: "long established password",
+    password: "Example8",
+    confirmPassword: "Example8",
+  };
+  assert.equal((await submit("/api/auth/change-password", change)).status, 401);
+  assert.equal(
+    (
+      await submit("/api/auth/change-password", {
+        ...change,
+        confirmPassword: "Example9",
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await submit("/api/auth/change-password", {
+        ...change,
+        email: contact.email,
+      })
+    ).status,
+    400,
+  );
+  const login = await submit("/api/auth/login", {
+    email: stubEmail,
+    password: loginPassword,
+  });
+  assert.equal(login.status, 200);
+  const cookies = login.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";", 1)[0]);
+  assert(cookies.length > 0);
+  const passwordChange = (payload) =>
+    fetch(`${origin}/api/auth/change-password`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": "application/json",
+        Cookie: cookies.join("; "),
+      },
+      body: JSON.stringify(payload),
+    });
+  assert.equal(
+    (await passwordChange({ ...change, currentPassword: "incorrect" })).status,
+    401,
+  );
+  assert.deepEqual(passwordUpdates, []);
+  assert.equal(
+    (
+      await passwordChange({
+        ...change,
+        password: "z".repeat(17),
+        confirmPassword: "z".repeat(17),
+      })
+    ).status,
+    400,
+  );
+  assert.equal((await passwordChange(change)).status, 200);
+  assert.deepEqual(passwordUpdates, [
+    {
+      password: change.password,
+      current_password: change.currentPassword,
+      code_challenge: null,
+      code_challenge_method: null,
+    },
+  ]);
+  assert.equal(
+    (
+      await submit("/api/auth/login", {
+        email: stubEmail,
+        password: change.currentPassword,
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await submit("/api/auth/login", {
+        email: stubEmail,
+        password: change.password,
+      })
+    ).status,
+    200,
+  );
+  if (process.env.CONNECTED_BROWSER_QA === "1") {
+    const { connectedWorkspace } =
+      await import("./fixtures/connected-workspace.mjs");
+    await connectedWorkspace({
+      origin,
+      cookies,
+      setWallet: (amount) => {
+        wallet = amount;
+      },
+    });
+  }
   const deliver = (
     id,
     { badSignature = false, wrongCorrelation = false } = {},
@@ -194,7 +415,7 @@ try {
     "Unauthorized routes must not access the receipt stub",
   );
   console.log(
-    "Auth and media HTTP smoke passed: runtime auth configuration, eight-character signup, raw signatures, receipts, and anonymous guards.",
+    "Auth and media HTTP smoke passed: runtime configuration, signup bounds, current-password enforcement, contact validation, raw signatures, receipts and anonymous guards.",
   );
 } finally {
   if (child.exitCode === null && child.signalCode === null) {

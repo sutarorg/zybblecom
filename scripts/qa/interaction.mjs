@@ -73,7 +73,7 @@ import { launchBrowser } from "./browser.mjs";
     .getByText("A 40-minute recording uses 40 credits", { exact: false })
     .waitFor();
   await page.goto(origin + "/contact");
-  const draft = page.getByRole("button", { name: "Check my draft" });
+  const draft = page.getByRole("button", { name: "Submit Message" });
   await draft.click();
   assert.equal(
     await page
@@ -111,17 +111,55 @@ import { launchBrowser } from "./browser.mjs";
   await draft.click();
   await page
     .getByRole("status")
-    .getByText("No message was sent.", { exact: false })
+    .getByText("Your message could not be sent. Please try again.", {
+      exact: false,
+    })
     .waitFor();
   await page.goto(origin + "/blog");
-  await page.getByRole("searchbox").fill("framing");
+  await page.getByRole("searchbox").fill("not-a-published-topic");
   await page.getByRole("button", { name: "Search" }).click();
-  await page.waitForURL("**/blog?q=framing");
+  await page.waitForURL("**/blog?q=not-a-published-topic");
   await page.getByRole("heading", { name: "No matching articles" }).waitFor();
   await page.getByRole("link", { name: "Clear filters" }).click();
+  await page.getByRole("heading", { name: "From the journal" }).waitFor();
+  await page.getByRole("link", { name: "Next page" }).click();
+  await page.waitForURL("**/blog?page=2");
+  assert(
+    (await page.getByRole("link", { name: /^Read article:/ }).count()) > 0,
+  );
   await page
-    .getByRole("heading", { name: "No articles published yet" })
+    .getByRole("link", { name: "Video repurposing", exact: true })
+    .click();
+  await page.waitForURL("**/blog?category=Video+repurposing");
+  assert.equal(
+    await page.getByRole("link", { name: /^Read article:/ }).count(),
+    4,
+  );
+  await page.getByRole("searchbox").fill("captions");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("heading", { name: "Search results" }).waitFor();
+  await page
+    .getByRole("link", { name: /^Read article: Short video captions/ })
+    .click();
+  await page.waitForURL("**/blog/short-video-captions");
+  await page
+    .getByRole("heading", { level: 1, name: /^Short video captions/ })
     .waitFor();
+  await page.waitForFunction(() =>
+    document.title.includes("Short video captions"),
+  );
+  assert.match(await page.title(), /Short video captions/);
+  // Inspect metadata from a fresh article request, not a streaming transition.
+  await page.reload();
+  assert.match(
+    await page.locator('link[rel="canonical"]').getAttribute("href"),
+    /\/blog\/short-video-captions$/,
+  );
+  assert.match(
+    await page.locator('meta[property="og:image"]').getAttribute("content"),
+    /short-video-captions\.webp$/,
+  );
+  await page.getByRole("heading", { name: "Related articles" }).waitFor();
   await page.goto(origin + "/pricing");
   assert.deepEqual(await page.locator(".pack-price strong").allTextContents(), [
     "$9",

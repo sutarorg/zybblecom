@@ -41,6 +41,25 @@ try {
     "insert into auth.users values ($1,'owner@example.invalid','{\"role\":\"admin\"}'),($2,'other@example.invalid',null),($3,'admin@example.invalid',null)",
     [owner, other, admin],
   );
+  const avatarKey = `avatars/${owner}/${id()}.webp`;
+  await assert.rejects(
+    q("update profiles set avatar_object_key=$1 where id=$2", [
+      avatarKey,
+      other,
+    ]),
+    /creator_avatar_owner_path/,
+  );
+  const avatarAccess = await q(`select
+    has_column_privilege('authenticated','profiles','avatar_object_key','update') as user_write,
+    has_column_privilege('service_role','profiles','avatar_object_key','update') as server_write`);
+  assert.deepEqual(avatarAccess.rows[0], {
+    user_write: false,
+    server_write: true,
+  });
+  await q("update profiles set avatar_object_key=$1 where id=$2", [
+    avatarKey,
+    owner,
+  ]);
   await q("update auth.users set email='updated@example.invalid' where id=$1", [
     owner,
   ]);

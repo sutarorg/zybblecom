@@ -172,6 +172,7 @@ export default async function Dashboard() {
             </p>
           </header>
           <DashboardPicker
+            available={balance.ok ? balance.value.available : null}
             maxBytes={policy.ok ? policy.value.maxBytes : undefined}
           />
           <p className="dash-upload-note">

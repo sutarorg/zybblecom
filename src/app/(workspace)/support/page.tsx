@@ -3,7 +3,7 @@ import { Action } from "@/components/ui/primitives";
 import { WorkspaceHeading } from "@/components/workspace/ui";
 import { workspace } from "@/services/workspace-server";
 import { SupportForm } from "@/components/workspace/support-form";
-export const metadata = { title: "Help & support" };
+export const metadata = { title: "Help" };
 const questions = [
   [
     "What kind of video can I select?",

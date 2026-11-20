@@ -11,12 +11,14 @@ export function PageIntro({
   description,
   path,
   actions,
+  breadcrumb,
 }: {
   label: string;
   title: ReactNode;
   description: string;
   path: string;
   actions?: ReactNode;
+  breadcrumb?: { parent: { name: string; path: string }; current: string };
 }) {
   return (
     <section className="page-intro">
@@ -24,7 +26,15 @@ export function PageIntro({
         <nav className="breadcrumb" aria-label="Breadcrumb">
           <Link href="/">Home</Link>
           <ChevronRight size={13} aria-hidden="true" />
-          <span aria-current="page">{label}</span>
+          {breadcrumb && (
+            <>
+              <Link href={breadcrumb.parent.path}>
+                {breadcrumb.parent.name}
+              </Link>
+              <ChevronRight size={13} aria-hidden="true" />
+            </>
+          )}
+          <span aria-current="page">{breadcrumb?.current ?? label}</span>
         </nav>
         <Eyebrow pill>{label}</Eyebrow>
         <h1>{title}</h1>
@@ -37,10 +47,20 @@ export function PageIntro({
           "@type": "BreadcrumbList",
           itemListElement: [
             { "@type": "ListItem", position: 1, name: "Home", item: site.url },
+            ...(breadcrumb
+              ? [
+                  {
+                    "@type": "ListItem",
+                    position: 2,
+                    name: breadcrumb.parent.name,
+                    item: `${site.url}${breadcrumb.parent.path}`,
+                  },
+                ]
+              : []),
             {
               "@type": "ListItem",
-              position: 2,
-              name: label,
+              position: breadcrumb ? 3 : 2,
+              name: breadcrumb?.current ?? label,
               item: `${site.url}${path}`,
             },
           ],

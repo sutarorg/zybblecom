@@ -19,7 +19,7 @@ export const captionStyles = {
   bold: "Bold",
   karaoke: "Karaoke",
   minimal: "Minimal",
-  clean: "No burned-in captions",
+  clean: "Clean",
 } as const;
 export const PROMPT_LIMIT = 500;
 export type GenerationOptions = {
@@ -84,3 +84,13 @@ export function validateVideo(
 }
 export const validTitle = (title: string) =>
   title.trim().length >= 1 && title.trim().length <= 100;
+
+export const standardSourceSeconds = 180 * 60;
+export function estimateSourceCredits(seconds: number | undefined) {
+  return seconds !== undefined &&
+    Number.isFinite(seconds) &&
+    seconds > 0 &&
+    seconds <= standardSourceSeconds
+    ? Math.ceil(seconds / 60)
+    : null;
+}

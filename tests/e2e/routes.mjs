@@ -13,7 +13,10 @@ const widths = [320, 375, 390, 430, 768, 1024, 1280, 1440, 1600];
 const capture = new Set([320, 390, 768, 1024, 1280, 1440]);
 const axe = loadTool("axe-core");
 const sample = {
-  "/blog/[slug]": [["/blog/unpublished", 404]],
+  "/blog/[slug]": [
+    ["/blog/unpublished", 404],
+    ["/blog/repurpose-youtube-video", 200],
+  ],
   "/pricing/[pack]": [
     ["/pricing/starter", 200],
     ["/pricing/creator", 200],
@@ -37,6 +40,8 @@ const handlers = {
   "/api/webhooks/clipsdk": ["POST", "/api/webhooks/clipsdk", 503],
   "/api/auth/[operation]": ["POST", "/api/auth/login", 503],
   "/api/auth/callback": ["GET", "/api/auth/callback", 503],
+  "/api/contact": ["POST", "/api/contact", 503],
+  "/api/settings/avatar": ["POST", "/api/settings/avatar", 503],
   "/api/checkout": ["POST", "/api/checkout", 503],
   "/api/credits/history": ["GET", "/api/credits/history", 503],
   "/api/credits/wallet": ["GET", "/api/credits/wallet", 503],

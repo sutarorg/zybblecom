@@ -1,10 +1,10 @@
 import "server-only";
 import DodoPayments from "dodopayments";
 import { authSettings } from "./supabase";
-import { creditPacks } from "@/config/credit-packs";
-import { getDodoProductId } from "@/lib/pricing/region";
+import type { Currency } from "@/config/credit-packs";
+import { checkoutReadiness, testMode } from "./dodo-readiness";
 
-export const testMode = "test_mode" as const;
+export { testMode };
 export function dodoSettings() {
   const bearerToken = process.env.DODO_PAYMENTS_API_KEY;
   const webhookKey = process.env.DODO_WEBHOOK_SECRET;
@@ -13,7 +13,9 @@ export function dodoSettings() {
     !config ||
     !bearerToken ||
     !webhookKey ||
-    process.env.DODO_MODE !== testMode
+    process.env.DODO_MODE !== testMode ||
+    process.env.VERCEL_ENV === "production" ||
+    config.origin === "https://zybble.com"
   )
     return null;
   return {
@@ -28,15 +30,5 @@ export function dodoSettings() {
     }),
   };
 }
-export function checkoutEnabled() {
-  const ids = creditPacks.flatMap((p) => [
-    getDodoProductId(p.id, "USD"),
-    getDodoProductId(p.id, "INR"),
-  ]);
-  return Boolean(
-    process.env.DODO_CHECKOUT_ENABLED === "1" &&
-    ids.every((id) => id && /^pdt_[A-Za-z0-9_-]+$/.test(id)) &&
-    new Set(ids).size === 6 &&
-    dodoSettings(),
-  );
-}
+export const checkoutEnabled = (packId: string, currency: Currency) =>
+  checkoutReadiness(process.env, packId, currency).ready;

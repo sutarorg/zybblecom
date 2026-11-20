@@ -33,7 +33,7 @@ const ciEnv = { ...process.env, NEXT_TELEMETRY_DISABLED: "1" };
 // Never inherit a configured application environment into disconnected tests.
 for (const key of Object.keys(ciEnv)) {
   if (
-    /^((NEXT_PUBLIC_)?SUPABASE_|AUTH_STATE_SECRET$|APP_ORIGIN$|DODO_|CLIPSDK_|R2_|VERCEL($|_)|ZYBBLE_MAINTENANCE$|SITE_URL$|ORIGIN$)/.test(
+    /^((NEXT_PUBLIC_)?SUPABASE_|AUTH_STATE_SECRET$|APP_ORIGIN$|DODO_|RESEND_API_KEY$|CONTACT_|CLIPSDK_|R2_|VERCEL($|_)|ZYBBLE_MAINTENANCE$|SITE_URL$|ORIGIN$)/.test(
       key,
     )
   )

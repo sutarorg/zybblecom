@@ -1,3 +1,4 @@
+import { creditPacks } from "@/config/credit-packs";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { AccountFrame } from "@/components/account/account-shell";
@@ -11,11 +12,21 @@ export const metadata = pageMetadata(
   "Choose how you want to get started with Zybble.",
   { noindex: true },
 );
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pack?: string | string[] }>;
+}) {
+  const { pack } = await searchParams;
+  const checkoutPack = creditPacks.find((item) => item.id === pack)?.id;
+  const destination = checkoutPack
+    ? `/credits?pack=${checkoutPack}#credit-packs`
+    : "/dashboard";
   await connection();
   const session = await accountServer.getSession();
-  if (session.ok && session.value?.onboardingComplete) redirect("/dashboard");
-  if (session.ok && !session.value) redirect("/login");
+  if (session.ok && session.value?.onboardingComplete) redirect(destination);
+  if (session.ok && !session.value)
+    redirect(checkoutPack ? `/login?pack=${checkoutPack}` : "/login");
   if (
     !session.ok &&
     ["unauthorized", "expired_session"].includes(session.error)
@@ -27,7 +38,10 @@ export default async function OnboardingPage() {
     );
   return (
     <AccountFrame onboarding legal={false}>
-      <Onboarding connected={session.ok && session.value !== null} />
+      <Onboarding
+        destination={destination}
+        connected={session.ok && session.value !== null}
+      />
     </AccountFrame>
   );
 }

@@ -62,9 +62,6 @@ export function HeroArt() {
           />
           <div className="phone-shade" aria-hidden="true" />
           <div className="phone-top" aria-hidden="true">
-            <span>
-              <i /> SHORT PREVIEW
-            </span>
             <span>9:16</span>
           </div>
           <div className="phone-caption" aria-hidden="true">

@@ -10,6 +10,8 @@ export type Article = {
     title: string;
     paragraphs: readonly string[];
   }[];
+  thumbnail: { src: string; alt: string };
+  links: readonly { href: string; label: string }[];
   featured?: boolean;
 };
 export type VerifiedClip = {

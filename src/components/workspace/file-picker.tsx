@@ -9,12 +9,14 @@ export function FilePicker({
   maxBytes,
   dashboard = false,
   disabled = false,
+  onBeforePick,
 }: {
   file: File | null;
   onFile: (value: File | null) => void;
   maxBytes?: number;
   dashboard?: boolean;
   disabled?: boolean;
+  onBeforePick?: () => boolean;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -23,6 +25,7 @@ export function FilePicker({
   const [error, setError] = useState("");
   function select(files: FileList | null) {
     if (disabled || !files?.length) return;
+    if (onBeforePick && !onBeforePick()) return;
     if (files.length !== 1) {
       setError("Choose one video per project.");
       return;
@@ -90,7 +93,9 @@ export function FilePicker({
         type="button"
         disabled={disabled}
         aria-describedby={id}
-        onClick={() => input.current?.click()}
+        onClick={() => {
+          if (!onBeforePick || onBeforePick()) input.current?.click();
+        }}
       >
         {file ? "Replace video" : "Browse files"}
       </button>

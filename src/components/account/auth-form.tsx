@@ -56,9 +56,11 @@ const fieldLabels: Record<AuthField, string> = {
 export function AuthForm({
   mode,
   connected = false,
+  checkoutPack,
 }: {
   mode: AuthMode;
   connected?: boolean;
+  checkoutPack?: string;
 }) {
   const router = useRouter();
   const hydrated = useSyncExternalStore(subscribe, client, server);
@@ -148,7 +150,11 @@ export function AuthForm({
             navigating = true;
             startTransition(() =>
               router.replace(
-                accountDestination(login.value.onboardingComplete),
+                checkoutPack
+                  ? login.value.onboardingComplete
+                    ? `/credits?pack=${checkoutPack}#credit-packs`
+                    : `/onboarding?pack=${checkoutPack}`
+                  : accountDestination(login.value.onboardingComplete),
               ),
             );
           }
@@ -353,7 +359,7 @@ export function AuthForm({
                 >
                   {passwordReady
                     ? "Length requirement met. Avoid reused passwords."
-                    : `Use ${passwordPolicy.min}–${passwordPolicy.max} characters. Try a unique passphrase.`}
+                    : `Use ${passwordPolicy.min}–${passwordPolicy.max} characters.`}
                 </p>
               )}
               {error && (
@@ -408,7 +414,9 @@ function PasswordInput({
         type={visible ? "text" : "password"}
         autoComplete={autoComplete}
         required
-        maxLength={autoComplete === "current-password" ? 1024 : 256}
+        maxLength={
+          autoComplete === "current-password" ? 1024 : passwordPolicy.max
+        }
         autoCapitalize="none"
         spellCheck={false}
         placeholder={

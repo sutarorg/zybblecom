@@ -14,6 +14,7 @@ const routes = [
   "/pricing/studio",
   "/blog",
   "/blog/unpublished",
+  "/blog/repurpose-youtube-video",
   "/resources",
   "/help",
   "/contact",
