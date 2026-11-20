@@ -1,0 +1,16 @@
+@import "tailwindcss";
+@import "./foundation.css";
+@import "./marketing.css";
+@import "./interior.css";
+@import "./account-system.css";
+
+@theme inline {
+  --font-sans: var(--font-jakarta), "Segoe UI", sans-serif;
+  --color-brand: #6338f5;
+  --color-violet: #873bff;
+  --color-pink: #e65ebb;
+  --color-ink: #17182c;
+  --color-muted: #62677d;
+  --color-line: #ecebf4;
+  --color-lavender: #f5f2ff;
+}
