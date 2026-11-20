@@ -126,6 +126,10 @@ export function AuthForm({
       );
       return;
     }
+    if (!connected) {
+      setNotice("unavailable");
+      return;
+    }
     running.current = true;
     setBusy(true);
     const email = () => readField(data, "email");

@@ -13,7 +13,11 @@ export type Result<T> =
   | { ok: false; error: Exclude<WorkspaceError, ServiceError> };
 export type Page<T> = { items: readonly T[]; nextCursor: string | null };
 export type ProjectStatus =
-  "uploading" | "uploaded" | "processing" | "completed" | "failed";
+  | "uploading"
+  | "uploaded"
+  | "processing"
+  | "completed"
+  | "failed";
 export type Project = {
   id: string;
   title: string;
@@ -58,7 +62,12 @@ export type Clip = {
   canEditMetadata: boolean;
 };
 export type JobPhase =
-  "preparing" | "submitted" | "processing" | "saving" | "completed" | "failed";
+  | "preparing"
+  | "submitted"
+  | "processing"
+  | "saving"
+  | "completed"
+  | "failed";
 export type Job = {
   id: string;
   phase: JobPhase;
@@ -99,7 +108,12 @@ export type LedgerEntry = {
       amountMinor: number;
       currency: Currency;
       paymentState:
-        "pending" | "confirmed" | "cancelled" | "failed" | "refunded";
+        | "pending"
+        | "confirmed"
+        | "cancelled"
+        | "failed"
+        | "refunded"
+        | "review";
       grantedCredits?: number;
     }
   | {

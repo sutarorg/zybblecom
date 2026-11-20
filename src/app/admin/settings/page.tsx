@@ -142,7 +142,7 @@ export default async function Settings() {
                 <DataList
                   items={creditPacks.map((p) => [
                     p.name,
-                    `${p.credits} credits · ${money({ amountMinor: p.prices.USD * 100, currency: "USD", minorUnit: 2 })} · ${money({ amountMinor: p.prices.INR * 100, currency: "INR", minorUnit: 2 })}`,
+                    `${p.credits} credits · ${money({ amountMinor: p.pricesMinor.USD, currency: "USD", minorUnit: 2 })} · ${money({ amountMinor: p.pricesMinor.INR, currency: "INR", minorUnit: 2 })}`,
                   ])}
                 />
               </>

@@ -117,7 +117,7 @@ import { launchBrowser } from "./browser.mjs";
     headers: { "x-vercel-ip-country": "IN" },
   });
   const html = await india.text();
-  for (const price of ["₹799", "₹1,699", "₹3,499"])
+  for (const price of ["₹299", "₹999", "₹2,499"])
     assert.ok(html.includes(price), price);
   const otherMarket = await page.request.get(origin + "/pricing", {
     headers: { "x-vercel-ip-country": "GB" },

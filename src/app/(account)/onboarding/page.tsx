@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { AccountFrame } from "@/components/account/account-shell";
 import { ServiceUnavailable } from "@/components/system/unavailable";
 import { Onboarding } from "@/components/account/onboarding";
-import { frontendServices } from "@/lib/services";
+import { accountServer } from "@/lib/services/account-server";
 import { pageMetadata } from "@/lib/seo/metadata";
 export const metadata = pageMetadata(
   "/onboarding",
@@ -13,7 +13,7 @@ export const metadata = pageMetadata(
 );
 export default async function OnboardingPage() {
   await connection();
-  const session = await frontendServices.getSession();
+  const session = await accountServer.getSession();
   if (session.ok && session.value?.onboardingComplete) redirect("/dashboard");
   if (session.ok && !session.value) redirect("/login");
   if (

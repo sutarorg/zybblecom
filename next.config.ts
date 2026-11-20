@@ -5,6 +5,11 @@ const config: NextConfig = {
   poweredByHeader: false,
   async headers() {
     const sensitive = [
+      "/api/:path*",
+      "/login",
+      "/signup",
+      "/onboarding",
+      "/forgot-password",
       "/auth/callback",
       "/reset-password",
       "/verify-email",
@@ -17,7 +22,7 @@ const config: NextConfig = {
       "/support",
       "/admin/:path*",
     ];
-    return sensitive.map((source) => ({
+    return [...sensitive, "/pricing/:path*"].map((source) => ({
       source,
       headers: [
         { key: "Referrer-Policy", value: "no-referrer" },

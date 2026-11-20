@@ -1,3 +1,4 @@
+import { checkoutEnabled } from "@/lib/backend/dodo";
 import { Check, Coins, History, LockKeyhole, Zap } from "lucide-react";
 import { Action, IconTile } from "@/components/ui/primitives";
 import { PriceDisplay } from "@/components/pricing/pricing";
@@ -102,8 +103,9 @@ export default async function Credits() {
           ))}
         </div>
         <p className="ws-muted">
-          No subscription. Checkout is not connected in this preview; reviewing
-          a pack does not start a payment.
+          {checkoutEnabled()
+            ? "No subscription. Test checkout only; no live payments are collected."
+            : "No subscription. Checkout is not connected in this preview; reviewing a pack does not start a payment."}
         </p>
       </section>
     </>

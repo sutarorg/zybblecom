@@ -38,6 +38,7 @@ export type CallbackOutcome =
 export type PaymentStatus =
   | { kind: "pending" }
   | { kind: "not_completed" }
+  | { kind: "review" }
   | {
       kind: "confirmed";
       packId: string;

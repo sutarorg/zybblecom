@@ -6,7 +6,7 @@ import {
 } from "@/components/account/account-shell";
 import { AuthForm } from "@/components/account/auth-form";
 import { Action } from "@/components/ui/primitives";
-import { frontendServices } from "@/lib/services";
+import { accountServer } from "@/lib/services/account-server";
 import { serviceMessage } from "@/lib/services/messages";
 import { pageMetadata } from "@/lib/seo/metadata";
 export const metadata = pageMetadata(
@@ -17,7 +17,7 @@ export const metadata = pageMetadata(
 );
 export default async function ResetPassword() {
   await connection();
-  const recovery = await frontendServices.getRecoveryState();
+  const recovery = await accountServer.getRecoveryState();
   if (recovery.ok && recovery.value.active)
     return (
       <AccountFrame>
