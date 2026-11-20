@@ -23,11 +23,11 @@ export default async function Page({
     notFound();
   if (source && !source.ok && source.error === "not_found") notFound();
   return (
-    <>
+    <div className="ws-studio ws-studio-create">
       <WorkspaceHeading
         label="CREATE"
-        title="New project"
-        description="Choose a long-form video and decide how you’d like your shorts to look."
+        title="Create a new project"
+        description="Choose your video, customize your shorts and let Zybble find your best moments."
       />
       <WorkspaceIssue result={policy} />
       {source && <WorkspaceIssue result={source} />}
@@ -37,6 +37,6 @@ export default async function Page({
         preferences={preferences.ok ? preferences.value : null}
         balance={balance.ok ? balance.value : null}
       />
-    </>
+    </div>
   );
 }

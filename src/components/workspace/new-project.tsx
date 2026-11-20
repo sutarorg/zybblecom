@@ -65,7 +65,7 @@ function Choices<T extends string | number>({
 }) {
   const id = useId();
   return (
-    <fieldset className="ws-choice">
+    <fieldset className="ws-choice" data-choice={name}>
       <legend>{label}</legend>
       <div>
         {options.map(([key, text]) => (
@@ -77,7 +77,25 @@ function Choices<T extends string | number>({
               checked={value === key}
               onChange={() => change(key)}
             />
-            <span>{text}</span>
+            <span>
+              {name === "ratio" && (
+                <i
+                  className="ws-choice-illustration"
+                  data-ratio={key}
+                  aria-hidden="true"
+                />
+              )}
+              {name === "captions" && (
+                <i
+                  className="ws-caption-illustration"
+                  data-caption={key}
+                  aria-hidden="true"
+                >
+                  {key === "clean" ? "—" : "Aa"}
+                </i>
+              )}
+              {text}
+            </span>
           </label>
         ))}
       </div>
@@ -192,11 +210,14 @@ export function NewProject({
   return (
     <div className="ws-config-grid">
       <div className="ws-config-body">
-        <section className="ws-panel">
+        <section className="ws-panel ws-source-panel">
           <div className="ws-section-heading">
             <div>
               <span className="ws-section-tag">STEP 01</span>
-              <h2>Source video</h2>
+              <h2>Your source video</h2>
+              <p>
+                Start with a podcast, interview, webinar or any long-form video.
+              </p>
             </div>
             <Film size={21} aria-hidden="true" />
           </div>
@@ -325,7 +346,8 @@ export function NewProject({
           <div className="ws-section-heading">
             <div>
               <span className="ws-section-tag">STEP 02</span>
-              <h2>Clip settings</h2>
+              <h2>Customize your shorts</h2>
+              <p>Choose how Zybble should find and format your clips.</p>
             </div>
             <Sparkles size={20} aria-hidden="true" />
           </div>
@@ -392,7 +414,7 @@ export function NewProject({
               id="clip-prompt"
               rows={3}
               maxLength={PROMPT_LIMIT}
-              placeholder="Find standalone explanations or moments with practical tips."
+              placeholder="Tell Zybble what kind of moments to look for…"
               value={options.prompt}
               onChange={(e) => update("prompt", e.target.value)}
               aria-describedby="prompt-hint"
@@ -413,7 +435,7 @@ export function NewProject({
         <div className="ws-section-heading">
           <div>
             <span className="ws-section-tag">STEP 03</span>
-            <h2>Generation summary</h2>
+            <h2>Your generation summary</h2>
           </div>
           <Check size={20} aria-hidden="true" />
         </div>

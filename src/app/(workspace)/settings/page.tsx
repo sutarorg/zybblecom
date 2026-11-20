@@ -16,14 +16,14 @@ export const metadata = { title: "Settings" };
 export default async function Settings() {
   const profile = await getProfile();
   return (
-    <>
+    <div className="ws-studio ws-studio-settings">
       <WorkspaceHeading
         label="ACCOUNT"
         title="Settings"
         description="Manage your account details and creator preferences."
       />
       <WorkspaceIssue result={profile} />
-      <div className="ws-detail-grid">
+      <div className="ws-detail-grid ws-settings-overview">
         <section className="ws-panel">
           <div className="ws-section-heading">
             <div>
@@ -52,20 +52,17 @@ export default async function Settings() {
             </div>
           </div>
         </section>
-        <section
-          className="ws-panel ws-settings-links"
-          aria-label="Settings pages"
-        >
+        <section className="ws-settings-links" aria-label="Settings pages">
           {[
             {
               title: "Profile",
-              text: "Name, sign-in email and account avatar",
+              text: "Manage your display name and account information.",
               icon: UserRound,
               href: "/settings/profile",
             },
             {
               title: "Preferences",
-              text: "Defaults for your next project",
+              text: "Set the defaults for your future video projects.",
               icon: SlidersHorizontal,
               href: "/settings/preferences",
             },
@@ -73,7 +70,7 @@ export default async function Settings() {
             <Link key={href} href={href}>
               <IconTile icon={icon} />
               <div>
-                <strong>{title}</strong>
+                <h2>{title}</h2>
                 <p>{text}</p>
               </div>
               <ChevronRight size={18} aria-hidden="true" />
@@ -81,6 +78,6 @@ export default async function Settings() {
           ))}
         </section>
       </div>
-    </>
+    </div>
   );
 }

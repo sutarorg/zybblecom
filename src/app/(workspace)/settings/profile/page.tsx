@@ -12,11 +12,11 @@ export const metadata = { title: "Profile" };
 export default async function Profile() {
   const result = await getProfile();
   return (
-    <>
+    <div className="ws-studio ws-studio-account ws-studio-profile">
       <WorkspaceHeading
         label="SETTINGS"
         title="Profile"
-        description="View your account avatar and manage your display name."
+        description="Manage your personal account information."
       />
       <WorkspaceIssue result={result} />
       {result.ok ? (
@@ -30,7 +30,8 @@ export default async function Profile() {
               )}
             </span>
             <div>
-              <strong>Account avatar</strong>
+              <span className="ws-section-tag">Account avatar</span>
+              <h2>{result.value.name || "Profile"}</h2>
               <p>
                 {result.value.avatarUrl
                   ? "Current profile image"
@@ -52,6 +53,6 @@ export default async function Profile() {
           }
         />
       )}
-    </>
+    </div>
   );
 }

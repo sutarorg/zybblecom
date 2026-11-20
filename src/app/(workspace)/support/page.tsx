@@ -1,4 +1,4 @@
-import { BookOpen, LifeBuoy } from "lucide-react";
+import { BookOpen, ChevronDown, LifeBuoy } from "lucide-react";
 import { Action } from "@/components/ui/primitives";
 import { WorkspaceHeading } from "@/components/workspace/ui";
 import { workspace } from "@/services/workspace-server";
@@ -25,13 +25,13 @@ const questions = [
 export default async function Support() {
   const capability = await workspace.run("getSupportCapabilities");
   return (
-    <>
+    <div className="ws-studio ws-studio-support">
       <WorkspaceHeading
         label="HELP CENTRE"
-        title="Help & Support"
-        description="Find answers about preparing a video, generating clips and managing credits."
+        title="How can we help?"
+        description="Find answers about your videos, generations and credits."
       />
-      <div className="ws-detail-grid">
+      <div className="ws-detail-grid ws-support-grid">
         <section className="ws-panel">
           <div className="ws-section-heading">
             <div>
@@ -43,7 +43,10 @@ export default async function Support() {
           <div className="ws-faq">
             {questions.map(([q, a]) => (
               <details key={q}>
-                <summary>{q}</summary>
+                <summary>
+                  {q}
+                  <ChevronDown size={17} aria-hidden="true" />
+                </summary>
                 <p>{a}</p>
               </details>
             ))}
@@ -56,13 +59,16 @@ export default async function Support() {
           <div className="ws-section-heading">
             <div>
               <span className="ws-section-tag">GET IN TOUCH</span>
-              <h2>Support request</h2>
+              <h2>Still need a hand?</h2>
             </div>
             <LifeBuoy size={21} aria-hidden="true" />
           </div>
+          <p className="ws-support-intro">
+            Send our team a message and describe what you need help with.
+          </p>
           <SupportForm connected={capability.ok && capability.value.canSend} />
         </section>
       </div>
-    </>
+    </div>
   );
 }
