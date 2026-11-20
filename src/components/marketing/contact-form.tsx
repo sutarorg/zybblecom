@@ -6,10 +6,11 @@ const subscribe = () => () => {};
 const clientReady = () => true;
 const serverReady = () => false;
 
-type Result = "idle" | "reviewed" | "sending" | "sent" | "error";
-export function ContactForm({ endpoint }: { endpoint?: string }) {
+type Result = "idle" | "sending" | "sent" | "error";
+export function ContactForm({ connected }: { connected: boolean }) {
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const [result, setResult] = useState<Result>("idle");
+  const busy = useRef(false);
   const resultRef = useRef<HTMLDivElement>(null);
   const announce = (next: Result) => {
     setResult(next);
@@ -17,24 +18,34 @@ export function ContactForm({ endpoint }: { endpoint?: string }) {
   };
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy.current) return;
     const form = event.currentTarget;
     const fields = Object.fromEntries(new FormData(form));
-    if (!endpoint) {
-      announce("reviewed");
+    if (!connected) {
+      announce("error");
       return;
     }
+    busy.current = true;
     setResult("sending");
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fields),
       });
-      if (!response.ok) throw new Error("Submission failed");
+      const result = await response.json();
+      if (
+        !response.ok ||
+        result.success !== true ||
+        result.data?.accepted !== true
+      )
+        throw new Error("Submission failed");
       form.reset();
       announce("sent");
     } catch {
       announce("error");
+    } finally {
+      busy.current = false;
     }
   }
   return (
@@ -46,12 +57,21 @@ export function ContactForm({ endpoint }: { endpoint?: string }) {
         if (result !== "idle" && result !== "sending") setResult("idle");
       }}
     >
-      <h2>{endpoint ? "Send a message" : "Prepare a message"}</h2>
+      <h2>Send a message</h2>
       <p id="contact-instructions">
-        {endpoint
+        {connected
           ? "All fields are required. Please don’t include passwords or payment details."
-          : "Message delivery isn’t available yet. You can check your draft here; nothing is sent or saved."}
+          : "Message delivery isn’t available right now. Nothing will be sent or saved."}
       </p>
+      <div hidden>
+        <label htmlFor="contact-website">Leave this blank</label>
+        <input
+          id="contact-website"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+        />
+      </div>
       <div className="form-fields">
         <label htmlFor="contact-name">
           Name <span>(required)</span>
@@ -117,15 +137,11 @@ export function ContactForm({ endpoint }: { endpoint?: string }) {
         type="submit"
         aria-describedby="contact-instructions"
       >
-        {result === "sending"
-          ? "Sending…"
-          : endpoint
-            ? "Send message"
-            : "Check my draft"}
+        {result === "sending" ? "Sending…" : "Submit Message"}
         <ArrowRight size={17} aria-hidden="true" />
       </button>
       <noscript>
-        <p>Enable JavaScript to check this form.</p>
+        <p>Enable JavaScript to send a message.</p>
       </noscript>
       <div
         ref={resultRef}
@@ -137,23 +153,17 @@ export function ContactForm({ endpoint }: { endpoint?: string }) {
             : `notice ${result === "error" ? "notice-error" : ""}`
         }
       >
-        {result === "reviewed" && (
-          <>
-            <Check size={18} aria-hidden="true" />
-            Your draft passed validation. No message was sent.
-          </>
-        )}
         {result === "sent" && (
           <>
             <Check size={18} aria-hidden="true" />
-            Your message was sent.
+            Your message has been sent successfully. Thank you for contacting
+            Zybble.
           </>
         )}
         {result === "error" && (
           <>
             <CircleAlert size={18} aria-hidden="true" />
-            Your message wasn’t sent. Your draft is still here; please try
-            again.
+            Your message could not be sent. Please try again.
           </>
         )}
       </div>

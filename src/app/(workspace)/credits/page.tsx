@@ -8,14 +8,20 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Action, IconTile } from "@/components/ui/primitives";
+import { CheckoutButton } from "@/components/pricing/checkout-button";
 import { PriceDisplay } from "@/components/pricing/pricing";
 import { creditPacks } from "@/config/credit-packs";
 import { requestPricing } from "@/lib/pricing/region";
 import { WorkspaceHeading, WorkspaceIssue } from "@/components/workspace/ui";
 import { getBalance } from "@/services/workspace-server";
 import { creditsText } from "@/services/workspace-format";
-export const metadata = { title: "Credits & purchases" };
-export default async function Credits() {
+export const metadata = { title: "Credits" };
+export default async function Credits({
+  searchParams,
+}: {
+  searchParams: Promise<{ pack?: string | string[] }>;
+}) {
+  const { pack: activePack } = await searchParams;
   const [balance, { currency }] = await Promise.all([
     getBalance(),
     requestPricing(),
@@ -44,7 +50,7 @@ export default async function Credits() {
     <div className="ws-studio ws-studio-billing">
       <WorkspaceHeading
         label="BILLING"
-        title="Credits & Purchases"
+        title="Credits"
         description="Manage your processing credits and choose the right pack for your content workflow."
         action={
           <Action href="/credits/history" variant="secondary" arrow={false}>
@@ -99,12 +105,13 @@ export default async function Credits() {
                 <Coins size={18} aria-hidden="true" />
                 <strong>{pack.credits} credits</strong>
               </div>
-              <Action
-                href={`/pricing/${pack.id}`}
+              {activePack === pack.id && <p role="status">Selected pack</p>}
+              <CheckoutButton
+                packId={pack.id}
+                label="Buy Now"
+                enabled={checkoutEnabled(pack.id, currency)}
                 variant={pack.id === "creator" ? "primary" : "secondary"}
-              >
-                Review {pack.name}
-              </Action>
+              />
               <ul>
                 {pack.features.map((feature) => (
                   <li key={feature}>
@@ -125,9 +132,9 @@ export default async function Credits() {
               your quote before generating.
             </p>
             <p className="ws-muted">
-              {checkoutEnabled()
+              {creditPacks.some((pack) => checkoutEnabled(pack.id, currency))
                 ? "No subscription. Test checkout only; no live payments are collected."
-                : "No subscription. Checkout is not connected in this preview; reviewing a pack does not start a payment."}
+                : "No subscription. Checkout is not available in this environment. No payment will be collected."}
             </p>
           </div>
         </aside>

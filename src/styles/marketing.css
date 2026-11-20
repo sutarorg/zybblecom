@@ -180,6 +180,7 @@
   gap: 6px;
 }
 .phone-top {
+  justify-content: flex-end;
   top: 5%;
   font-size: clamp(0.31rem, 0.62vw, 0.57rem);
   font-weight: 800;
@@ -194,12 +195,6 @@
   align-items: center;
   gap: 3px;
   white-space: nowrap;
-}
-.phone-top i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #f0a4ec;
 }
 .phone-caption {
   position: absolute;
@@ -1215,4 +1210,34 @@
     padding-inline: 9px;
     font-size: 0.75rem;
   }
+}
+.article-thumbnail {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.featured-article .article-thumbnail {
+  margin-block-end: 8px;
+}
+.article-cover {
+  margin-block: 20px;
+}
+.article-read {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: underline;
+}
+.article-sources {
+  margin-block: 24px;
+}
+.article-sources ul {
+  padding-inline-start: 20px;
+  list-style: disc;
+}
+.article-sources a {
+  text-decoration: underline;
+  overflow-wrap: anywhere;
 }

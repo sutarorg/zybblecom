@@ -2,7 +2,11 @@ import { passwordPolicy } from "@/config/account";
 
 export type AuthMode = "login" | "signup" | "forgot" | "reset" | "verify";
 export type AuthField =
-  "fullName" | "email" | "password" | "confirmPassword" | "terms";
+  | "fullName"
+  | "email"
+  | "password"
+  | "confirmPassword"
+  | "terms";
 export type FieldErrors = Partial<Record<AuthField, string>>;
 export const fieldsByMode: Record<AuthMode, readonly AuthField[]> = {
   login: ["email", "password"],
@@ -14,8 +18,7 @@ export const fieldsByMode: Record<AuthMode, readonly AuthField[]> = {
 export const validEmail = (value: string) =>
   value.trim().length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 export const validNewPassword = (value: string) =>
-  Array.from(value).length >= passwordPolicy.min &&
-  Array.from(value).length <= passwordPolicy.max;
+  value.length >= passwordPolicy.min && value.length <= passwordPolicy.max;
 export const readField = (data: FormData, field: AuthField) =>
   String(data.get(field) ?? "");
 

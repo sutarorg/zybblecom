@@ -28,6 +28,11 @@ try {
   page.on("request", (request) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method()))
       problems.push(`${request.method()} ${request.url()}`);
+    if (
+      /^https?:/.test(request.url()) &&
+      new URL(request.url()).origin !== new URL(origin).origin
+    )
+      problems.push(`Unexpected external request: ${request.url()}`);
   });
   const viewport = (width) =>
     page.setViewportSize({ width, height: width < 768 ? 844 : 960 });
@@ -77,6 +82,26 @@ try {
     exact: true,
   });
   assert.equal(await collapsedProjects.getAttribute("title"), "Projects");
+  const expand = sidebar.getByRole("button", { name: "Expand sidebar" });
+  const railBounds = await sidebar.boundingBox();
+  const expandBounds = await expand.boundingBox();
+  assert(
+    railBounds &&
+      expandBounds &&
+      railBounds.y + railBounds.height - expandBounds.y < 85,
+  );
+  assert.equal(
+    await sidebar
+      .getByRole("link", { name: "Credits", exact: true })
+      .getAttribute("title"),
+    "Credits",
+  );
+  assert.equal(
+    await sidebar
+      .getByRole("link", { name: "Help", exact: true })
+      .getAttribute("title"),
+    "Help",
+  );
   await capture("1440-collapsed");
   await sidebar.getByRole("button", { name: "Expand sidebar" }).press("Enter");
   await capture("1440-expanded");
@@ -136,7 +161,64 @@ try {
   assert.equal((await prompt.inputValue()).length, 500);
   await page.getByText("500/500", { exact: true }).waitFor();
   await prompt.fill("Look for clear, independent explanations.");
-  await page.getByText("Quote unavailable", { exact: true }).waitFor();
+  const summary = page.locator(".ws-summary");
+  assert.equal(
+    await summary.getByText("AI guidance", { exact: true }).count(),
+    0,
+  );
+  await summary
+    .getByText("Add a video to estimate the processing cost.", { exact: true })
+    .waitFor();
+  await summary
+    .getByText("Credit balance unavailable.", { exact: true })
+    .waitFor();
+  const preview = page.locator(".ws-preview-stage");
+  for (const [ratio, name] of [
+    ["9:16", "Vertical"],
+    ["1:1", "Square"],
+    ["4:5", "Portrait"],
+    ["16:9", "Landscape"],
+  ]) {
+    await page.getByRole("radio", { name: `${ratio} · ${name}` }).check();
+    const expected = ratio.replace(":", " / ");
+    assert.equal(
+      await preview.evaluate(
+        (element) => getComputedStyle(element).aspectRatio,
+      ),
+      expected,
+    );
+  }
+  await page.getByRole("radio", { name: "Full frame", exact: true }).check();
+  assert.equal(
+    await preview
+      .locator("img")
+      .evaluate((image) => getComputedStyle(image).objectFit),
+    "contain",
+  );
+  await page.getByRole("radio", { name: "Clean", exact: true }).check();
+  assert.equal(await preview.locator("figcaption").count(), 0);
+  await page.getByRole("radio", { name: "Karaoke", exact: true }).check();
+  assert.equal(await preview.locator("figcaption mark").count(), 2);
+  const link = page.getByLabel("Paste a video link");
+  const linkStatus = page.locator("#source-link-hint");
+  assert.equal(
+    await page.getByRole("button", { name: "Use video link" }).count(),
+    0,
+  );
+  await link.fill("https://vimeo.com/1234");
+  await page
+    .getByText(
+      "Enter an HTTPS link to a supported single video, without login credentials.",
+    )
+    .waitFor();
+  assert.equal(await link.getAttribute("aria-invalid"), "true");
+  await link.fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  await linkStatus.filter({ hasText: "The video wasn’t fetched" }).waitFor();
+  assert.equal(await link.getAttribute("aria-invalid"), null);
+  await link.clear();
+  await linkStatus
+    .filter({ hasText: "Only the link format is checked here." })
+    .waitFor();
   assert(
     await page.getByRole("button", { name: "Generate My Shorts" }).isDisabled(),
   );
@@ -163,10 +245,10 @@ try {
   for (const pack of ["starter", "creator", "studio"]) {
     const response = await page.request.get(`${origin}/pricing/${pack}`);
     assert.equal(response.status(), 200);
-    assert.equal(
-      await page.locator(`.ws-packs a[href="/pricing/${pack}"]`).count(),
-      1,
-    );
+    const card = page.locator(`.ws-packs .pack-${pack}`);
+    const buy = card.getByRole("button", { name: "Buy Now", exact: true });
+    assert(await buy.isDisabled());
+    assert.equal(await card.locator(`a[href="/pricing/${pack}"]`).count(), 0);
   }
   await page.getByRole("link", { name: "View History" }).click();
   await page.waitForURL("**/credits/history");

@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { ArrowUpRight, BookOpenText } from "lucide-react";
-import { IconTile } from "@/components/ui/primitives";
+import Image from "next/image";
+import { ArrowUpRight } from "lucide-react";
 import type { Article } from "@/types/content";
 import { publicationDate, readingTime } from "@/lib/utils/editorial";
 
@@ -15,7 +15,18 @@ export function ArticleCard({
     <article
       className={`card resource-card article-card ${featured ? "featured-article" : ""}`}
     >
-      <IconTile icon={BookOpenText} />
+      <Image
+        className="article-thumbnail"
+        src={article.thumbnail.src}
+        alt={article.thumbnail.alt}
+        width={1200}
+        height={675}
+        sizes={
+          featured
+            ? "(max-width: 768px) 95vw, 1060px"
+            : "(max-width: 768px) 95vw, 360px"
+        }
+      />
       <p className="overline">
         {featured ? "Featured · " : ""}
         {article.category}
@@ -33,6 +44,13 @@ export function ArticleCard({
         </time>
         <span>{readingTime(article)} min read</span>
       </p>
+      <Link
+        className="article-read"
+        href={`/blog/${article.slug}`}
+        aria-label={`Read article: ${article.title}`}
+      >
+        Read article <ArrowUpRight size={16} aria-hidden="true" />
+      </Link>
     </article>
   );
 }

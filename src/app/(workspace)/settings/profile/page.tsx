@@ -1,10 +1,12 @@
+import { AvatarUpload } from "@/components/workspace/avatar-upload";
+import { ChangePassword } from "@/components/workspace/change-password";
+import { avatarsEnabled } from "@/lib/backend/avatars";
 import { UserRound } from "lucide-react";
 import { Action } from "@/components/ui/primitives";
 import {
   WorkspaceEmpty,
   WorkspaceHeading,
   WorkspaceIssue,
-  MediaImage,
 } from "@/components/workspace/ui";
 import { ProfileForm } from "@/components/workspace/settings-forms";
 import { getProfile } from "@/services/workspace-server";
@@ -20,27 +22,17 @@ export default async function Profile() {
       />
       <WorkspaceIssue result={result} />
       {result.ok ? (
-        <section className="ws-panel ws-form-panel">
-          <div className="ws-profile-badge">
-            <span className="ws-avatar">
-              {result.value.avatarUrl ? (
-                <MediaImage src={result.value.avatarUrl} />
-              ) : (
-                <UserRound aria-hidden="true" />
-              )}
-            </span>
-            <div>
-              <span className="ws-section-tag">Account avatar</span>
-              <h2>{result.value.name || "Profile"}</h2>
-              <p>
-                {result.value.avatarUrl
-                  ? "Current profile image"
-                  : "No profile image set"}
-              </p>
-            </div>
-          </div>
-          <ProfileForm profile={result.value} />
-        </section>
+        <>
+          <section className="ws-panel ws-form-panel">
+            <AvatarUpload
+              name={result.value.name}
+              current={result.value.avatarUrl}
+              enabled={avatarsEnabled()}
+            />
+            <ProfileForm profile={result.value} />
+          </section>
+          <ChangePassword email={result.value.email} />
+        </>
       ) : (
         <WorkspaceEmpty
           icon={UserRound}

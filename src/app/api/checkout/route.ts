@@ -20,13 +20,15 @@ const schema = z.strictObject({
 export async function POST(request: Request) {
   return respond(async () => {
     sameOrigin(request);
-    if (!checkoutEnabled()) throw new ApiError("unavailable", 503);
     const parsed = schema.safeParse(await readJSON(request));
     if (!parsed.success) throw new ApiError("validation", 400);
     const { user, profile } = await verifySession(true);
-    await limitActor("checkout_user", user.id, 5, 600);
     const { packId, requestKey } = parsed.data;
     const { countryCode, currency } = await requestPricing();
+    if (!checkoutEnabled(packId, currency))
+      throw new ApiError("unavailable", 503);
+    if (!profile.onboarding_completed) throw new ApiError("unauthorized", 403);
+    await limitActor("checkout_user", user.id, 5, 600);
     const pack = creditPacks.find((p) => p.id === packId)!;
     const product = getDodoProductId(packId, currency)!;
     const { client, origin } = dodoSettings()!;
@@ -44,18 +46,16 @@ export async function POST(request: Request) {
       },
     };
     const db = privilegedDB();
-    const { error } = await db
-      .from("credit_purchases")
-      .insert({
-        id: requestKey,
-        user_id: user.id,
-        pack_slug: packId,
-        credits: pack.credits,
-        amount_minor: pack.pricesMinor[currency],
-        currency,
-        provider_mode: testMode,
-        dodo_product_id: product,
-      });
+    const { error } = await db.from("credit_purchases").insert({
+      id: requestKey,
+      user_id: user.id,
+      pack_slug: packId,
+      credits: pack.credits,
+      amount_minor: pack.pricesMinor[currency],
+      currency,
+      provider_mode: testMode,
+      dodo_product_id: product,
+    });
     if (error)
       throw new ApiError(
         error.code === "23505" ? "conflict" : "unavailable",

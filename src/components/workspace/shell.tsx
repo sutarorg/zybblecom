@@ -40,11 +40,11 @@ const primary = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/projects", label: "Projects", icon: FolderOpen },
   { path: "/clips", label: "My Clips", icon: Clapperboard },
-  { path: "/credits", label: "Credits & Purchases", icon: Coins },
+  { path: "/credits", label: "Credits", icon: Coins },
 ];
 const secondary = [
   { path: "/settings", label: "Settings", icon: Settings },
-  { path: "/support", label: "Help & Support", icon: CircleHelp },
+  { path: "/support", label: "Help", icon: CircleHelp },
 ];
 const subpages: Record<string, string> = {
   new: "New project",
@@ -212,18 +212,19 @@ export function WorkspaceShell({
         <aside className="ws-sidebar">
           <div className="ws-brand">
             <Brand />
-            <button
-              type="button"
-              title={compact ? "Expand sidebar" : "Collapse sidebar"}
-              aria-label={compact ? "Expand sidebar" : "Collapse sidebar"}
-              className="ws-icon-button ws-collapse"
-              onClick={() => setCompact(!compact)}
-            >
-              <ChevronsLeft size={17} aria-hidden="true" />
-            </button>
           </div>
           {navigation()}
           {sidebarBottom()}
+          <button
+            type="button"
+            title={compact ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={compact ? "Expand sidebar" : "Collapse sidebar"}
+            className="ws-icon-button ws-collapse"
+            aria-expanded={!compact}
+            onClick={() => setCompact((value) => !value)}
+          >
+            <ChevronsLeft size={17} aria-hidden="true" />
+          </button>
         </aside>
         <dialog
           ref={dialog}

@@ -40,7 +40,9 @@ export async function PricingSection({
   preview?: boolean;
 }) {
   const { currency } = await requestPricing();
-  const enabled = checkoutEnabled();
+  const enabled = creditPacks.some((pack) =>
+    checkoutEnabled(pack.id, currency),
+  );
   return (
     <section className={`section pricing-section ${preview ? "tinted" : ""}`}>
       <div className="container">

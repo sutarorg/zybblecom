@@ -178,7 +178,10 @@ try {
   await page.getByLabel("Email address").fill("qa@example.invalid");
   await page.getByLabel("Password", { exact: true }).fill("short7!");
   await page.getByRole("checkbox").focus();
-  await page.getByText("Use 8–128 characters.", { exact: true }).waitFor();
+  await page
+    .locator(".account-field-error")
+    .getByText("Use 8–16 characters.", { exact: true })
+    .waitFor();
   await page
     .getByText("Enter your full name (up to 100 characters).")
     .waitFor();

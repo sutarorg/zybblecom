@@ -39,7 +39,13 @@ const contentIcons = [
 ];
 const goalIcons = [Camera, Play, Captions, Video, Layers];
 type Step = 0 | 1 | 2 | 3;
-export function Onboarding({ connected }: { connected: boolean }) {
+export function Onboarding({
+  connected,
+  destination,
+}: {
+  connected: boolean;
+  destination: string;
+}) {
   const [step, setStep] = useState<Step>(0);
   const [preferences, setPreferences] = useState<OnboardingPreferences>({});
   const [error, setError] = useState<string>();
@@ -65,7 +71,7 @@ export function Onboarding({ connected }: { connected: boolean }) {
     startTransition(async () => {
       try {
         const result = await frontendServices.completeOnboarding(preferences);
-        if (result.ok) startTransition(() => router.replace("/dashboard"));
+        if (result.ok) startTransition(() => router.replace(destination));
         else setError(serviceMessage(result.error));
       } finally {
         locked.current = false;
