@@ -28,6 +28,13 @@ const sample = {
   "/admin/jobs/[jobId]": [["/admin/jobs/unavailable", 200]],
 };
 const handlers = {
+  "/api/admin/jobs/[jobId]/provider": [
+    "GET",
+    "/api/admin/jobs/unavailable/provider",
+    503,
+  ],
+  "/api/clips/download": ["POST", "/api/clips/download", 503],
+  "/api/webhooks/clipsdk": ["POST", "/api/webhooks/clipsdk", 503],
   "/api/auth/[operation]": ["POST", "/api/auth/login", 503],
   "/api/auth/callback": ["GET", "/api/auth/callback", 503],
   "/api/checkout": ["POST", "/api/checkout", 503],

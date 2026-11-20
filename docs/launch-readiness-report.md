@@ -72,3 +72,11 @@ Reviewed representative public, account, creator and admin states from 320–144
 - [Desktop admin preview](launch-readiness-shots/1440-admin.jpg)
 
 The full raw captures, route results and logs are generated into the ignored `test-results/launch-readiness/` tree. The latest Chromium run returned exit code 0; all 14 runner stages and all 17 contracts passed. The same runner intentionally does not run hosted journeys.
+
+## Follow-up: R2 and ClipSDK wiring
+
+The preceding audit describes the earlier audited commit. This follow-up adds server-side R2 and ClipSDK configuration, owner-scoped private archived-clip playback/download, a signed and deduplicated receipt for known ClipSDK jobs, and an administrator-only provider status read. See [the staging setup](video-processing-flow.md), [exact variable names](environment-variables.md), and [API contracts](api-reference.md).
+
+Local verification: production build, lint/typecheck, 21 contracts (including R2 signing and ClipSDK signature/payload checks), six migrations in embedded PostgreSQL (including receipt replay and archived media RLS), and `node tests/e2e/media-http.mjs` against a loopback-only synthetic PostgREST endpoint. The Chromium route matrix exercised 56 page states across nine widths and all ten handlers with providers disabled. These checks do not prove live provider access or native video behavior. No hosted project, bucket, paid job, payment, or deployment was changed.
+
+The production decision remains **NO-GO**. The upload and trusted verification path, credit-bound dispatch, durable reconciliation and archival worker, and live staging playback and failure recovery are still missing or unverified. The new code does not create clips and cannot submit a paid request.

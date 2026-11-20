@@ -243,6 +243,55 @@ try {
     "update generation_jobs set status='provider_succeeded', clipsdk_job_id='test-provider-job' where id=$1",
     [job],
   );
+  const knownProvider = "job_q8w2e4r6t1y3u5i7o9p0";
+  const receipt = "select record_clipsdk_receipt($1,$2) as accepted";
+  assert.equal(
+    (await a.query(receipt, [knownProvider, "job.succeeded"])).rows[0].accepted,
+    false,
+  );
+  await assert.rejects(
+    a.query(receipt, [knownProvider, "job.running"]),
+    /INVALID_CLIPSDK_RECEIPT/,
+  );
+  await q("update generation_jobs set clipsdk_job_id=$1 where id=$2", [
+    knownProvider,
+    job,
+  ]);
+  const deliveries = await Promise.all(
+    [a, b].map((provider) =>
+      provider.query(receipt, [knownProvider, "job.succeeded"]),
+    ),
+  );
+  assert(deliveries.every((delivery) => delivery.rows[0].accepted));
+  assert.deepEqual(
+    (
+      await q(
+        "select provider_event_id, processing_status, payload_sanitized from webhook_events where provider='clipsdk'",
+      )
+    ).rows,
+    [
+      {
+        provider_event_id: `${knownProvider}:succeeded`,
+        processing_status: "pending_reconciliation",
+        payload_sanitized: { jobId: job, providerJobId: knownProvider },
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await q(
+        "select status, reservation_status from generation_jobs where id=$1",
+        [job],
+      )
+    ).rows,
+    [{ status: "provider_succeeded", reservation_status: "reserved" }],
+  );
+  await q("set role authenticated");
+  await assert.rejects(
+    q(receipt, [knownProvider, "job.succeeded"]),
+    /permission denied/,
+  );
+  await q("reset role");
   assert.equal(
     (await a.query("select settle_generation_credits($1,81) as settled", [job]))
       .rows[0].settled,
@@ -275,6 +324,32 @@ try {
     ).rows,
     [{ balance: 59, reserved_balance: 0 }],
   );
+  const [archiveClip, archiveAsset] = [id(), id()];
+  await q("update generation_jobs set status='completed' where id=$1", [job]);
+  await q(
+    `insert into media_assets(id,user_id,project_id,asset_type,bucket_name,object_key,mime_type,upload_status,storage_status)
+    values($1,$2,$3,'generated_video','private-fixture','clips/archive.mp4','video/mp4','verified','ready')`,
+    [archiveAsset, owner, quotes[win].project],
+  );
+  await q(
+    `insert into clips(id,user_id,project_id,generation_job_id,rank,title,start_seconds,end_seconds,duration_seconds,video_asset_id,status)
+    values($1,$2,$3,$4,1,'Archive fixture',0,30,30,$5,'ready')`,
+    [archiveClip, owner, quotes[win].project, job, archiveAsset],
+  );
+  const visibleClip =
+    "select id,video_asset_id from clips where id=$1 and status='ready'";
+  await q("set role authenticated");
+  await q("select set_config('request.jwt.claim.sub',$1,false)", [owner]);
+  assert.deepEqual((await q(visibleClip, [archiveClip])).rows, [
+    { id: archiveClip, video_asset_id: archiveAsset },
+  ]);
+  await assert.rejects(
+    q("select object_key from media_assets where id=$1", [archiveAsset]),
+    /permission denied/,
+  );
+  await q("select set_config('request.jwt.claim.sub',$1,false)", [other]);
+  assert.deepEqual((await q(visibleClip, [archiveClip])).rows, []);
+  await q("reset role");
   await assert.rejects(
     a.query("select adjust_user_credits($1,$2,5,$3,'Valid reason')", [
       other,

@@ -152,6 +152,8 @@ try {
   }
   if (outcomes.build?.startsWith("FAIL"))
     throw new Error("Cannot test a failed build");
+  if (!browserOnly)
+    await step("media-http", node, ["tests/e2e/media-http.mjs"]);
   const withoutIngress = await startApp("app-untrusted-geo", {
     ...ciEnv,
     PRICING_COUNTRY_HEADER: "0",

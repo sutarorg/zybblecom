@@ -24,3 +24,9 @@ Missing configuration fails closed. Profile/settings writes, support intake, upl
 - `POST /api/settings/preferences`: `{ "defaultAspect": "9:16", "defaultCaptions": "bold" }`, using the existing four ratios and four caption modes. Uses an owner-scoped authenticated RPC and returns the saved choices. Job notification delivery is not implemented and this endpoint does not enable it.
 
 Both endpoints require the configured origin, a verified active account session, JSON request size limits and private/no-store responses. The disconnected preview does not accept writes.
+
+### Archived media and ClipSDK receipts (staging)
+
+- `POST /api/clips/download`: same-origin JSON `{ projectId, clipId, asset }`, where `asset` is `mp4`, `srt`, `vtt`, or `thumbnail`. Only a verified active owner can obtain a short-lived GET link for a ready archive asset attached to a completed, settled job. Missing or inaccessible resources return no signed URL.
+- `POST /api/webhooks/clipsdk`: verifies the HMAC over timestamp and exact raw body. Correlates the known provider job and records an idempotent, sanitized terminal receipt. An accepted receipt is **not** a job outcome or a credit transaction. Unknown jobs are retryable rather than bound from incoming data.
+- `GET /api/admin/jobs/:jobId/provider`: verified administrator only, with a rate limit. Accepts Zybble's internal job UUID, reads the correlated ClipSDK job, and returns `{ status, stage }`. Does not expose provider URLs, response messages, or usage, and does not update application state.
