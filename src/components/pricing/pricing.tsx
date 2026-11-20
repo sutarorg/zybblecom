@@ -1,3 +1,4 @@
+import { checkoutEnabled } from "@/lib/backend/dodo";
 import {
   Check,
   CircleDollarSign,
@@ -24,7 +25,7 @@ export function PriceDisplay({
     style: "currency",
     currency,
     maximumFractionDigits: 0,
-  }).format(pack.prices[currency]);
+  }).format(pack.pricesMinor[currency] / 100);
   return (
     <p className="pack-price">
       <strong>{price}</strong>
@@ -39,6 +40,7 @@ export async function PricingSection({
   preview?: boolean;
 }) {
   const { currency } = await requestPricing();
+  const enabled = checkoutEnabled();
   return (
     <section className={`section pricing-section ${preview ? "tinted" : ""}`}>
       <div className="container">
@@ -107,13 +109,14 @@ export async function PricingSection({
           </li>
           <li>
             <LockKeyhole size={17} aria-hidden="true" />
-            Secure checkout at launch
+            {enabled ? "Hosted test checkout" : "Secure checkout at launch"}
           </li>
         </ul>
         {!preview && (
           <p className="launch-note">
-            Checkout is not available yet. No payments are collected on this
-            site.
+            {enabled
+              ? "Test checkout is enabled. No live payments are collected."
+              : "Checkout is not available yet. No payments are collected on this site."}
           </p>
         )}
       </div>

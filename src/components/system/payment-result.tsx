@@ -18,6 +18,18 @@ export function PaymentResult({
 }) {
   const confirmed =
     result.ok && result.value.kind === "confirmed" ? result.value : null;
+  if (result.ok && result.value.kind === "review")
+    return (
+      <SystemPanel
+        icon={CircleAlert}
+        tone="orange"
+        label="CHECKOUT STATUS"
+        title="This payment needs review."
+        description="Don’t start another payment for this order. Contact support so we can check it."
+      >
+        <Action href="/support">Contact support</Action>
+      </SystemPanel>
+    );
   const incomplete = result.ok && result.value.kind === "not_completed";
   if (incomplete)
     return (

@@ -1,4 +1,7 @@
 import "@/styles/workspace.css";
+import { redirect } from "next/navigation";
+import { accountServer } from "@/lib/services/account-server";
+import { authSettings } from "@/lib/backend/supabase";
 import { connection } from "next/server";
 import { WorkspaceShell } from "@/components/workspace/shell";
 import { getBalance, getProfile } from "@/services/workspace-server";
@@ -13,7 +16,19 @@ export default async function Layout({
   children: React.ReactNode;
 }) {
   await connection();
-  // Session 5: verify the session before any private read. In this phase neither adapter returns data.
+  if (authSettings()) {
+    const session = await accountServer.getSession();
+    if (!session.ok)
+      redirect(
+        session.error === "verification_required"
+          ? "/verify-email"
+          : session.error === "unavailable"
+            ? "/maintenance"
+            : "/unauthorized",
+      );
+    if (!session.value) redirect("/login");
+    if (!session.value.onboardingComplete) redirect("/onboarding");
+  }
   const [profile, balance] = await Promise.all([getProfile(), getBalance()]);
   return (
     <WorkspaceShell

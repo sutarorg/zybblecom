@@ -1,3 +1,4 @@
+import { authSettings } from "@/lib/backend/supabase";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 import {
@@ -21,7 +22,7 @@ export default function Forgot() {
         title="Forgot your password?"
         description="Enter the email address you used for Zybble. If it matches an account, we can send a reset link once account services are available."
       />
-      <AuthForm mode="forgot" />
+      <AuthForm mode="forgot" connected={Boolean(authSettings())} />
       <p className="account-switch">
         <Link href="/login">Back to log in</Link>
       </p>

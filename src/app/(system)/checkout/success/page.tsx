@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { PaymentResult } from "@/components/system/payment-result";
 import { PageLoader } from "@/components/system/loading";
-import { frontendServices } from "@/lib/services";
+import { purchaseStatus } from "@/lib/backend/purchase-status";
 import { pageMetadata } from "@/lib/seo/metadata";
 export const metadata = pageMetadata(
   "/checkout/success",
@@ -28,8 +28,8 @@ export default function Success({ searchParams }: { searchParams: Params }) {
 async function CheckoutStatus({ searchParams }: { searchParams: Params }) {
   const { reference } = await searchParams;
   // The reference is a locator only; account ownership and payment/grant must be checked by the server adapter.
-  const result = await frontendServices.getPaymentStatus({
-    reference: typeof reference === "string" ? reference : undefined,
-  });
+  const result = await purchaseStatus(
+    typeof reference === "string" ? reference : undefined,
+  );
   return <PaymentResult result={result} />;
 }

@@ -1,3 +1,4 @@
+import { authSettings } from "@/lib/backend/supabase";
 import Link from "next/link";
 import { LogIn } from "lucide-react";
 import {
@@ -21,7 +22,7 @@ export default function Login() {
         title="Welcome back."
         description="Log in to pick up where you left off."
       />
-      <AuthForm mode="login" />
+      <AuthForm mode="login" connected={Boolean(authSettings())} />
       <p className="account-switch">
         New to Zybble? <Link href="/signup">Create an account</Link>
       </p>

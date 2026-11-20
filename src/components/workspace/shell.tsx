@@ -107,7 +107,9 @@ export function WorkspaceShell({
     if (busy) return;
     setBusy(true);
     setError(undefined);
-    const result = await frontendServices.logout();
+    const result = profile
+      ? await frontendServices.logout()
+      : ({ ok: false, error: "unavailable" } as const);
     setBusy(false);
     if (result.ok) {
       setFile(null);

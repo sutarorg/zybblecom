@@ -1,3 +1,6 @@
+import { checkoutEnabled } from "@/lib/backend/dodo";
+import { accountServer } from "@/lib/services/account-server";
+import { CheckoutButton } from "@/components/pricing/checkout-button";
 import { notFound } from "next/navigation";
 import { Check, LockKeyhole } from "lucide-react";
 import { creditPacks } from "@/config/credit-packs";
@@ -23,6 +26,8 @@ export default async function PackPage({ params }: Props) {
   const selected = creditPacks.find((item) => item.id === pack);
   if (!selected) notFound();
   const { currency } = await requestPricing();
+  const enabled = checkoutEnabled();
+  const session = enabled ? await accountServer.getSession() : null;
   return (
     <>
       <PageIntro
@@ -44,13 +49,30 @@ export default async function PackPage({ params }: Props) {
                 </li>
               ))}
             </ul>
-            <div className="notice">
-              <LockKeyhole size={19} aria-hidden="true" />
-              <p>
-                <strong>Checkout isn’t open yet.</strong> No payment details are
-                needed, and you haven’t been charged.
-              </p>
-            </div>
+            {enabled ? (
+              <>
+                <div className="notice">
+                  <LockKeyhole size={19} aria-hidden="true" />
+                  <p>
+                    Test mode only. You’ll continue to Dodo’s hosted checkout.
+                    No real payment will be collected.
+                  </p>
+                </div>
+                {session?.ok && session.value ? (
+                  <CheckoutButton packId={selected.id} />
+                ) : (
+                  <Action href="/login">Sign in to continue</Action>
+                )}
+              </>
+            ) : (
+              <div className="notice">
+                <LockKeyhole size={19} aria-hidden="true" />
+                <p>
+                  <strong>Checkout isn’t open yet.</strong> No payment details
+                  are needed, and you haven’t been charged.
+                </p>
+              </div>
+            )}
             <Action href="/pricing" variant="secondary" arrow={false}>
               Back to pack comparison
             </Action>

@@ -5,7 +5,7 @@ export type CreditPack = {
   badge?: string;
   description: string;
   credits: number;
-  prices: Record<Currency, number>;
+  pricesMinor: Record<Currency, number>;
   features: readonly string[];
 };
 
@@ -14,10 +14,10 @@ export const creditPacks: readonly CreditPack[] = [
     id: "starter",
     name: "Starter",
     description: "For your first batch of shorts.",
-    credits: 60,
-    prices: { USD: 9, INR: 799 },
+    credits: 30,
+    pricesMinor: { USD: 900, INR: 29900 },
     features: [
-      "60 minutes of standard video processing",
+      "30 minutes of standard video processing",
       "Up to 20 generated clips per source video",
       "AI captions",
       "Smart vertical reframing",
@@ -30,8 +30,8 @@ export const creditPacks: readonly CreditPack[] = [
     name: "Creator",
     badge: "Most popular",
     description: "For a regular publishing rhythm.",
-    credits: 160,
-    prices: { USD: 19, INR: 1699 },
+    credits: 120,
+    pricesMinor: { USD: 1900, INR: 99900 },
     features: [
       "Everything in Starter",
       "All available caption styles",
@@ -45,8 +45,8 @@ export const creditPacks: readonly CreditPack[] = [
     name: "Studio",
     badge: "Best value",
     description: "For a larger video library.",
-    credits: 400,
-    prices: { USD: 39, INR: 3499 },
+    credits: 300,
+    pricesMinor: { USD: 3900, INR: 249900 },
     features: [
       "Everything in Creator",
       "Bulk processing when available",

@@ -1,3 +1,4 @@
+import { authSettings } from "@/lib/backend/supabase";
 import Link from "next/link";
 import { UserRoundPlus } from "lucide-react";
 import {
@@ -21,7 +22,7 @@ export default function Signup() {
         title="Create your account."
         description="Set up your workspace for turning long videos into short clips."
       />
-      <AuthForm mode="signup" />
+      <AuthForm mode="signup" connected={Boolean(authSettings())} />
       <p className="account-switch">
         Already have an account? <Link href="/login">Log in</Link>
       </p>

@@ -1,0 +1,15 @@
+project_id = "zybble"
+[auth]
+site_url = "http://localhost:3000"
+minimum_password_length = 15
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+[auth.email]
+enable_confirmations = true
+
+[auth.email.template.confirmation]
+subject = "Verify your Zybble email"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Zybble password"
+content_path = "./supabase/templates/recovery.html"

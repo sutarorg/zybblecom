@@ -1,0 +1,16 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path = public, extensions;
+select plan(10);
+select ok(not has_table_privilege('anon','public.profiles','SELECT'),'anonymous cannot read profiles');
+select ok(not has_table_privilege('authenticated','public.user_roles','SELECT'),'roles not directly exposed');
+select ok(not has_column_privilege('authenticated','public.media_assets','object_key','SELECT'),'private object keys not exposed');
+select ok(not has_column_privilege('authenticated','public.credit_purchases','dodo_payment_id','SELECT'),'payment identifiers not exposed');
+select ok(not has_column_privilege('authenticated','public.profiles','suspended_at','UPDATE'),'suspension not editable by user');
+select ok(not has_table_privilege('authenticated','public.credit_wallets','UPDATE'),'wallet not editable by user');
+select ok(not has_table_privilege('service_role','public.credit_transactions','DELETE'),'service cannot delete ledger rows');
+select ok(not has_table_privilege('service_role','public.admin_audit_logs','UPDATE'),'service cannot change audit rows');
+select ok(not has_function_privilege('authenticated','public.grant_purchase_credits(uuid,text,text,text,integer,text,integer,text)','EXECUTE'),'fulfillment server only');
+select ok(not has_function_privilege('authenticated','public.reserve_generation_credits(uuid,uuid,uuid)','EXECUTE'),'reserve server only');
+select * from finish();
+rollback;

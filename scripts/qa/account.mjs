@@ -243,7 +243,7 @@ try {
   await page.waitForURL("**/credits/history?filter=purchases");
   await page.goto(origin + "/checkout/cancelled");
   await page.getByRole("link", { name: "Retry checkout" }).click();
-  await page.getByRole("link", { name: "Creator · 160 credits" }).click();
+  await page.getByRole("link", { name: "Creator · 120 credits" }).click();
   await page.waitForURL("**/pricing/creator");
   assert.deepEqual(mutations, []);
   assert.deepEqual(errors, []);
