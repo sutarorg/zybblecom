@@ -19,3 +19,9 @@ Copy `.env.example` to `.env.local` for local development. Deploy secrets throug
 | `CLIPSDK_WEBHOOK_SECRET`                                          | Sensitive signing secret for `POST /api/webhooks/clipsdk`. Include the whole `whsec_` value.                                                    |
 
 Missing configuration disables the affected provider path. These settings do not enable uploads, billable generation, reconciliation, or archiving. See [video processing](video-processing-flow.md) for staging prerequisites.
+
+### If the auth forms say account services are not connected
+
+An Arena connector or a Supabase project by itself does not configure the deployed app. In Vercel's project **Environment Variables** screen, check the target environment and branch for `APP_ORIGIN`, `AUTH_STATE_SECRET`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`. The server also accepts `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` as fallbacks for the URL and publishable key only. Never use a public variable for either secret. Use an explicit application origin and a separate random `AUTH_STATE_SECRET` with at least 32 characters. Redeploy after changing the variables.
+
+In the hosted Supabase project's **Authentication → Sign In / Providers → Email** settings, set the minimum password length to **8** to match the Zybble signup/reset policy. The checked-in `supabase/config.toml` controls the local stack only; it does not update hosted projects.

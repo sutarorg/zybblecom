@@ -14,4 +14,4 @@ export const goalOptions = [
   "LinkedIn videos",
   "Multiple platforms",
 ] as const;
-export const passwordPolicy = { min: 15, max: 128 } as const;
+export const passwordPolicy = { min: 8, max: 128 } as const;

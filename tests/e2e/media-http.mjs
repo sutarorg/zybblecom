@@ -25,10 +25,16 @@ await new Promise((resolve) => probe.close(resolve));
 const known = "job_q8w2e4r6t1y3u5i7o9p0";
 const unknown = "job_abcdefghijklmnopqrst";
 const received = [];
+const signupPasswords = [];
 const stub = createServer(async (req, response) => {
+  const path = new URL(req.url, "http://127.0.0.1").pathname;
   if (
     req.method !== "POST" ||
-    req.url !== "/rest/v1/rpc/record_clipsdk_receipt"
+    ![
+      "/rest/v1/rpc/record_clipsdk_receipt",
+      "/rest/v1/rpc/take_request_limit",
+      "/auth/v1/signup",
+    ].includes(path)
   ) {
     response.writeHead(404).end();
     return;
@@ -36,10 +42,22 @@ const stub = createServer(async (req, response) => {
   let text = "";
   for await (const chunk of req) text += chunk;
   const input = JSON.parse(text);
-  received.push(input);
+  let payload;
+  if (path === "/auth/v1/signup") {
+    signupPasswords.push(input.password);
+    payload = {
+      id: "6c3b041b-0d89-4bf6-b5dd-524d00372897",
+      email: input.email,
+    };
+  } else if (path === "/rest/v1/rpc/take_request_limit") {
+    payload = true;
+  } else {
+    received.push(input);
+    payload = input.p_provider_job === known;
+  }
   response
     .writeHead(200, { "Content-Type": "application/json" })
-    .end(JSON.stringify(input.p_provider_job === known));
+    .end(JSON.stringify(payload));
 });
 const secret = `whsec_${"s".repeat(32)}`;
 const child = spawn(
@@ -56,9 +74,9 @@ const child = spawn(
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
-      APP_ORIGIN: origin,
-      SUPABASE_URL: await bind(stub),
-      SUPABASE_PUBLISHABLE_KEY: "synthetic-public",
+      APP_ORIGIN: `${origin}/`,
+      NEXT_PUBLIC_SUPABASE_URL: await bind(stub),
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "synthetic-public",
       SUPABASE_SECRET_KEY: "synthetic-private",
       AUTH_STATE_SECRET: "a".repeat(32),
       CLIPSDK_API_KEY: "synthetic-clip-key",
@@ -82,6 +100,39 @@ try {
     await delay(125);
   }
   assert(ready, "Next did not start");
+  // Build without provider env, then supply it only to the deployed server.
+  for (const path of ["/login", "/signup", "/forgot-password"]) {
+    const page = await fetch(`${origin}${path}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    assert.equal(page.status, 200);
+    const html = await page.text();
+    assert.doesNotMatch(html, /Form details won’t be sent/, path);
+    assert(
+      !html.includes("synthetic-private") && !html.includes(secret),
+      "No server secrets in HTML",
+    );
+  }
+  const signup = (password) =>
+    fetch(`${origin}/api/auth/signup`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "fixture@example.invalid",
+        password,
+        fullName: "Local Fixture",
+        termsAccepted: true,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+  assert.equal((await signup("short7!")).status, 400);
+  assert.deepEqual(signupPasswords, []);
+  const verification = await signup("Example8");
+  assert.equal(verification.status, 200);
+  assert.deepEqual((await verification.json()).data, {
+    verificationRequired: true,
+  });
+  assert.deepEqual(signupPasswords, ["Example8"]);
   const deliver = (
     id,
     { badSignature = false, wrongCorrelation = false } = {},
@@ -143,7 +194,7 @@ try {
     "Unauthorized routes must not access the receipt stub",
   );
   console.log(
-    "Media HTTP smoke passed: raw signature, correlation, receipt contract, and anonymous guards.",
+    "Auth and media HTTP smoke passed: runtime auth configuration, eight-character signup, raw signatures, receipts, and anonymous guards.",
   );
 } finally {
   if (child.exitCode === null && child.signalCode === null) {
