@@ -4,6 +4,7 @@ import { createWorkspaceServices } from "./workspace";
 import { ApiError } from "@/lib/backend/http";
 import { verifySession } from "@/lib/backend/session";
 import { creditActivity, creditSummary } from "@/lib/backend/credit-reads";
+import { storedPreferences } from "./settings-schema";
 import type { Result } from "./workspace-contracts";
 async function read<T>(fn: () => Promise<T>): Promise<Result<T>> {
   try {
@@ -35,6 +36,11 @@ export const workspace = createWorkspaceServices({
     read(async () => {
       const { profile } = await verifySession();
       return { name: profile.full_name, email: profile.email };
+    }),
+  getPreferences: () =>
+    read(async () => {
+      const { profile } = await verifySession();
+      return storedPreferences.parse(profile.preferences);
     }),
   getBalance: () => read(creditSummary),
   listLedger: ({ filter, cursor }) =>

@@ -22,7 +22,7 @@ export const verifySession = cache(async (write = false) => {
     throw new ApiError("verification_required", 403);
   const { data: profile, error: readError } = await client
     .from("profiles")
-    .select("id,full_name,email,onboarding_completed,suspended_at")
+    .select("id,full_name,email,onboarding_completed,suspended_at,preferences")
     .eq("id", user.id)
     .single();
   if (readError || !profile) throw new ApiError("unavailable", 503);

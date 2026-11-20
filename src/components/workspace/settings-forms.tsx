@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PendingButton } from "@/components/system/loading";
-import { workspace, workspaceMessage } from "@/services/workspace";
+import { savePreferences, saveProfile } from "@/services/settings-client";
+import { workspaceMessage } from "@/services/workspace";
 import type { Preferences, Profile } from "@/services/workspace-contracts";
 import {
   aspects,
@@ -22,9 +23,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
         e.preventDefault();
         if (busy || !validTitle(name)) return;
         setBusy(true);
-        const result = await workspace.run("saveProfile", {
-          name: name.trim(),
-        });
+        const result = await saveProfile(name.trim());
         setBusy(false);
         setStatus(
           result.ok
@@ -74,7 +73,7 @@ export function PreferencesForm({ value }: { value: Preferences }) {
         e.preventDefault();
         if (busy) return;
         setBusy(true);
-        const result = await workspace.run("savePreferences", prefs);
+        const result = await savePreferences(prefs);
         setBusy(false);
         if (result.ok) setPrefs(result.value);
         setStatus(

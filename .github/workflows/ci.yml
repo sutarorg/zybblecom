@@ -1,0 +1,97 @@
+name: Zybble CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-qa:
+    name: Local launch QA (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Install browser tooling outside the app
+        run: |
+          npm install --prefix "$RUNNER_TEMP/zybble-qa" --no-save --package-lock=false playwright-core@1.58.2 axe-core@4.11.1
+          node "$RUNNER_TEMP/zybble-qa/node_modules/playwright-core/cli.js" install --with-deps chromium
+          echo "NODE_PATH=$RUNNER_TEMP/zybble-qa/node_modules" >> "$GITHUB_ENV"
+      - run: npm run test:launch
+      - name: Upload local QA output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zybble-local-qa
+          path: test-results/launch-readiness/
+          if-no-files-found: warn
+          retention-days: 7
+
+  browser-compatibility:
+    name: Browser compatibility (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    env:
+      QA_BROWSER: ${{ matrix.browser }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install browser tooling outside the app
+        run: |
+          npm install --prefix "$RUNNER_TEMP/zybble-qa" --no-save --package-lock=false playwright-core@1.58.2 axe-core@4.11.1
+          node "$RUNNER_TEMP/zybble-qa/node_modules/playwright-core/cli.js" install --with-deps "$QA_BROWSER"
+          echo "NODE_PATH=$RUNNER_TEMP/zybble-qa/node_modules" >> "$GITHUB_ENV"
+      - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zybble-${{ matrix.browser }}-failure
+          path: test-results/launch-readiness/
+          if-no-files-found: warn
+          retention-days: 7
+
+  supabase-local:
+    name: Local Supabase migration and grant checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 3.2.0
+      - name: Apply migrations on disposable local stack
+        run: supabase start > supabase-start.log 2>&1
+      - name: Run pgTAP (explicitly local)
+        run: |
+          set -o pipefail
+          supabase test db --local 2>&1 | tee supabase-pgtap.log
+      - name: Stop disposable stack
+        if: always()
+        run: supabase stop --no-backup
+      - name: Upload pgTAP output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zybble-pgtap
+          path: supabase-pgtap.log
+          if-no-files-found: warn
+          retention-days: 7

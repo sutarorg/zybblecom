@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:db": "node tests/db/credits.mjs",
-    "test:contracts": "tsx --test scripts/qa/*.test.ts scripts/qa/*.test.tsx"
+    "test:contracts": "tsx --test scripts/qa/*.test.ts scripts/qa/*.test.tsx",
+    "test:e2e": "node scripts/qa/launch.mjs --browser-only",
+    "test:launch": "node scripts/qa/launch.mjs"
   },
   "repository": {
     "type": "git",

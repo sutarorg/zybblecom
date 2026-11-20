@@ -17,15 +17,17 @@ export default function Terms() {
       description="You can explore the marketing site and try the account forms. This notice isn’t a production agreement."
     >
       <div className="system-prose">
-        <h2>No accounts or purchases are created</h2>
+        <h2>Testing accounts and checkout</h2>
         <p>
-          Acknowledging this notice on the signup page only checks the form. It
-          does not create an account, charge you, or grant credits.
+          Acknowledging this notice does not charge you or grant credits. When
+          authentication is connected, signup can create a test account. If
+          checkout is enabled, it uses Dodo test mode and does not collect real
+          payments.
         </p>
         <h2>Before the service opens</h2>
         <p>
           Production terms will need to be available for review before Zybble
-          accepts registrations or payments.
+          accepts customer registrations or live payments.
         </p>
       </div>
       <Action href="/privacy" variant="secondary">
