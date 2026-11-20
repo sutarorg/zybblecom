@@ -31,10 +31,10 @@ export default async function Projects({
   });
   const filtered = Boolean(search || status !== "all");
   return (
-    <>
+    <div className="ws-studio ws-studio-library ws-studio-projects">
       <WorkspaceHeading
         label="WORKSPACE"
-        title="Projects"
+        title="Your Projects"
         description="Manage your source videos and find the clips they’ve generated."
         action={
           <Action href="/projects/new" arrow={false}>
@@ -43,9 +43,9 @@ export default async function Projects({
           </Action>
         }
       />
-      <section className="ws-panel ws-library">
+      <section className="ws-library" aria-label="Project library">
         <form
-          className="ws-filter"
+          className="ws-filter ws-panel"
           aria-label="Filter projects"
           action="/projects"
         >
@@ -111,33 +111,37 @@ export default async function Projects({
           </>
         ) : (
           <WorkspaceEmpty
-            className="ws-library-empty"
+            className={`ws-library-empty ws-library-${!result.ok ? "unavailable" : filtered ? "no-results" : "first-run"}`}
             icon={FolderOpen}
             title={
               result.ok
                 ? filtered
                   ? "No matching projects"
-                  : "You haven't created any projects yet."
+                  : "Your next great clips start with a video."
                 : "Your projects aren’t available yet"
             }
             text={
               result.ok
                 ? filtered
                   ? "Clear filters or try a different search."
-                  : "Add a source video to start your first project."
+                  : "Create your first project and turn a long-form video into engaging short-form content."
                 : "Projects will appear here once your workspace is connected. You can still prepare a draft on this device."
             }
             action={
               <Action
                 href={result.ok && filtered ? "/projects" : "/projects/new"}
-                variant="secondary"
+                variant={result.ok && !filtered ? "primary" : "secondary"}
               >
-                {result.ok && filtered ? "Clear filters" : "Create a project"}
+                {result.ok
+                  ? filtered
+                    ? "Clear filters"
+                    : "Create Your First Project"
+                  : "Create a project"}
               </Action>
             }
           />
         )}
       </section>
-    </>
+    </div>
   );
 }

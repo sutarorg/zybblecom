@@ -13,6 +13,7 @@ import {
   Plus,
   Settings,
   UserRound,
+  Wallet,
   X,
   ChevronDown,
   ChevronRight,
@@ -155,7 +156,9 @@ export function WorkspaceShell({
     return (
       <div className="ws-sidebar-bottom">
         <div className="ws-sidebar-credit">
-          <Coins size={17} aria-hidden="true" />
+          <span className="ws-wallet-icon">
+            <Wallet size={17} aria-hidden="true" />
+          </span>
           <div>
             <small>Available credits</small>
             <strong>
@@ -168,7 +171,11 @@ export function WorkspaceShell({
         </Action>
         <div className="ws-sidebar-user">
           <span className="ws-avatar">
-            <UserRound size={17} aria-hidden="true" />
+            {profile?.avatarUrl ? (
+              <Avatar src={profile.avatarUrl} />
+            ) : (
+              <UserRound size={17} aria-hidden="true" />
+            )}
           </span>
           <div>
             <b>{profile?.name || "Creator workspace"}</b>

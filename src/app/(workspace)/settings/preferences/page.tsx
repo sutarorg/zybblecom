@@ -11,10 +11,10 @@ export const metadata = { title: "Preferences" };
 export default async function Preferences() {
   const result = await workspace.run("getPreferences");
   return (
-    <>
+    <div className="ws-studio ws-studio-account ws-studio-preferences">
       <WorkspaceHeading
         label="SETTINGS"
-        title="Preferences"
+        title="Creator Preferences"
         description="Set defaults for new projects without changing past exports."
       />
       <WorkspaceIssue result={result} />
@@ -34,6 +34,6 @@ export default async function Preferences() {
           }
         />
       )}
-    </>
+    </div>
   );
 }

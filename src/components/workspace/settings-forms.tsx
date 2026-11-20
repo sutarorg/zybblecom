@@ -84,46 +84,68 @@ export function PreferencesForm({ value }: { value: Preferences }) {
         );
       }}
     >
-      <div className="ws-field">
-        <label htmlFor="default-aspect">Default aspect ratio</label>
-        <select
-          id="default-aspect"
-          value={prefs.defaultAspect}
-          disabled={busy}
-          onChange={(e) =>
-            setPrefs({
-              ...prefs,
-              defaultAspect: e.target.value as Preferences["defaultAspect"],
-            })
-          }
-        >
+      <fieldset className="ws-choice" data-choice="ratio">
+        <legend>Default aspect ratio</legend>
+        <div>
           {Object.entries(aspects).map(([id, label]) => (
-            <option value={id} key={id}>
-              {id} · {label}
-            </option>
+            <label key={id}>
+              <input
+                type="radio"
+                name="default-aspect"
+                value={id}
+                checked={prefs.defaultAspect === id}
+                disabled={busy}
+                onChange={() =>
+                  setPrefs({
+                    ...prefs,
+                    defaultAspect: id as Preferences["defaultAspect"],
+                  })
+                }
+              />
+              <span>
+                <i
+                  className="ws-choice-illustration"
+                  data-ratio={id}
+                  aria-hidden="true"
+                />
+                {id} · {label}
+              </span>
+            </label>
           ))}
-        </select>
-      </div>
-      <div className="ws-field">
-        <label htmlFor="default-captions">Default captions</label>
-        <select
-          id="default-captions"
-          value={prefs.defaultCaptions}
-          disabled={busy}
-          onChange={(e) =>
-            setPrefs({
-              ...prefs,
-              defaultCaptions: e.target.value as Preferences["defaultCaptions"],
-            })
-          }
-        >
+        </div>
+      </fieldset>
+      <fieldset className="ws-choice" data-choice="captions">
+        <legend>Default captions</legend>
+        <div>
           {Object.entries(captionStyles).map(([id, label]) => (
-            <option value={id} key={id}>
-              {label}
-            </option>
+            <label key={id}>
+              <input
+                type="radio"
+                name="default-captions"
+                value={id}
+                checked={prefs.defaultCaptions === id}
+                disabled={busy}
+                onChange={() =>
+                  setPrefs({
+                    ...prefs,
+                    defaultCaptions: id as Preferences["defaultCaptions"],
+                  })
+                }
+              />
+              <span>
+                <i
+                  className="ws-caption-illustration"
+                  data-caption={id}
+                  aria-hidden="true"
+                >
+                  {id === "clean" ? "—" : "Aa"}
+                </i>
+                {label}
+              </span>
+            </label>
           ))}
-        </select>
-      </div>
+        </div>
+      </fieldset>
       {prefs.jobEmail !== undefined && (
         <label className="ws-check">
           <input

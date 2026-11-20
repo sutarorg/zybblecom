@@ -36,19 +36,23 @@ export default async function Clips({
   ]);
   const filtered = Boolean(search || since || projectId);
   return (
-    <>
+    <div className="ws-studio ws-studio-library ws-studio-clips">
       <WorkspaceHeading
-        label="LIBRARY"
+        label="YOUR LIBRARY"
         title="My Clips"
-        description="Find the shorts you’ve generated across your projects."
+        description="All the moments worth sharing, gathered in one place."
         action={
           <Action href="/projects" variant="secondary">
-            View projects
+            View Projects
           </Action>
         }
       />
-      <section className="ws-panel ws-library">
-        <form className="ws-filter" aria-label="Filter clips" action="/clips">
+      <section className="ws-library" aria-label="Clip library">
+        <form
+          className="ws-filter ws-panel"
+          aria-label="Filter clips"
+          action="/clips"
+        >
           <div>
             <label htmlFor="clip-search">Search</label>
             <div className="ws-search">
@@ -121,20 +125,20 @@ export default async function Clips({
           </>
         ) : (
           <WorkspaceEmpty
-            className="ws-library-empty"
+            className={`ws-library-empty ws-library-${!result.ok ? "unavailable" : filtered ? "no-results" : "first-run"}`}
             icon={Clapperboard}
             title={
               result.ok
                 ? filtered
                   ? "No matching clips"
-                  : "No clips yet"
+                  : "Your clip library is waiting."
                 : "Your clip library isn’t connected"
             }
             text={
               result.ok
                 ? filtered
                   ? "Try a different search or clear your filters."
-                  : "Clips will appear here after generation completes."
+                  : "Generated shorts will appear here, ready to preview and download."
                 : "When generation is connected, you’ll be able to find, preview and download your clips here."
             }
             action={
@@ -148,6 +152,6 @@ export default async function Clips({
           />
         )}
       </section>
-    </>
+    </div>
   );
 }
