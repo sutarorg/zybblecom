@@ -56,7 +56,30 @@ export function sameOrigin(request: Request) {
   if (request.headers.get("content-type")?.split(";")[0] !== "application/json")
     throw new ApiError("validation", 415);
 }
-export async function readBody(request: Request, limit = 8192) {
+export async function readBytes(request: Request, limit: number) {
+  if (!request.body) throw new ApiError("validation", 400);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return Buffer.concat(chunks, size);
+      size += value.byteLength;
+      if (size > limit) {
+        void reader.cancel().catch(() => {});
+        throw new ApiError("validation", 413);
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("validation", 400);
+  } finally {
+    reader.releaseLock();
+  }
+}
+export async function readBody(request: Pick<Request, "body">, limit = 8192) {
   if (!request.body) throw new ApiError("validation", 400);
   const reader = request.body.getReader();
   const decoder = new TextDecoder("utf-8", { fatal: true });

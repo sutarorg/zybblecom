@@ -1,3 +1,4 @@
+import { downloadClip } from "./clip-download-client";
 import type {
   WorkspaceAdapter,
   WorkspaceError,
@@ -28,8 +29,7 @@ export function createWorkspaceServices(
     subscribe: adapter.subscribe,
   };
 }
-/** Session 5 installs a server adapter scoped to verified cookies, and a separate same-origin client adapter. */
-export const workspace = createWorkspaceServices();
+export const workspace = createWorkspaceServices({ downloadClip });
 export function workspaceMessage(error: WorkspaceError) {
   if (error === "unavailable")
     return "This workspace service isn’t connected yet. No changes were made.";
