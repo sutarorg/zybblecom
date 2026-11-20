@@ -47,7 +47,7 @@ export function MobileMenu() {
           Log in
         </Link>
         <div onClick={() => setOpen(false)}>
-          <Action href="/pricing">Get started</Action>
+          <Action href="/signup">Get started</Action>
         </div>
       </nav>
     </div>

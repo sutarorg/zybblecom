@@ -151,3 +151,27 @@ test("auth supports integration public aliases but requires explicit origin and 
     null,
   );
 });
+
+test("a public auth deployment requires its HTTPS origin, not a redirected HTTP URL", () => {
+  const env = {
+    SUPABASE_URL: "https://fixture.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_fixture",
+    SUPABASE_SECRET_KEY: "sb_secret_fixture",
+    AUTH_STATE_SECRET: "a".repeat(32),
+  };
+  assert.equal(
+    resolveAuthSettings({ ...env, APP_ORIGIN: "http://zybble.com" }),
+    null,
+  );
+  const settings = resolveAuthSettings({
+    ...env,
+    APP_ORIGIN: "https://zybble.com",
+  });
+  assert.equal(settings?.origin, "https://zybble.com");
+  assert.equal(settings?.secure, true);
+  assert.equal(
+    resolveAuthSettings({ ...env, APP_ORIGIN: "http://localhost:3000" })
+      ?.secure,
+    false,
+  );
+});

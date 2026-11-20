@@ -42,6 +42,24 @@ import { launchBrowser } from "./browser.mjs";
     .click();
   await page.waitForURL("**/how-it-works");
   assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+  // The signup CTA must have the same destination from both home menus.
+  await page.goto(origin + "/");
+  await toggle.click();
+  await page
+    .getByRole("navigation", { name: "Mobile navigation" })
+    .getByRole("link", { name: "Get started", exact: true })
+    .click();
+  await page.waitForURL(origin + "/signup");
+  await page.getByRole("heading", { name: "Create your account." }).waitFor();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(origin + "/");
+  await page
+    .getByRole("banner")
+    .getByRole("link", { name: "Get started", exact: true })
+    .click();
+  await page.waitForURL(origin + "/signup");
+  await page.getByRole("heading", { name: "Create your account." }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(origin + "/help");
   await page.getByRole("searchbox").fill("reframing");
   await page.getByRole("heading", { name: "No matching answers" }).waitFor();
