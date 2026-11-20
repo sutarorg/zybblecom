@@ -18,7 +18,12 @@ import { useRouter } from "next/navigation";
 import { PendingButton } from "@/components/system/loading";
 import { useProjectUpload } from "@/hooks/use-project-upload";
 import { useCreditQuote } from "@/hooks/use-credit-quote";
-import { quoteState, workspace, workspaceMessage } from "@/services/workspace";
+import {
+  quoteContext,
+  quoteState,
+  workspace,
+  workspaceMessage,
+} from "@/services/workspace";
 import { Action } from "@/components/ui/primitives";
 import { FilePicker } from "./file-picker";
 import { useLocalDraft } from "./shell";
@@ -156,11 +161,11 @@ export function NewProject({
   ) => setOptions((previous) => ({ ...(previous ?? initial), [key]: value }));
   const error = touched && !validTitle(title);
   const params = generationParams(options);
-  const fingerprint = JSON.stringify(params);
+  const fingerprint = quoteContext(verifiedProject?.id, params);
   const currentQuote = quote?.fingerprint === fingerprint ? quote.value : null;
   const quoteStatus = useCreditQuote(currentQuote);
   async function requestQuote() {
-    if (pending || !params || !verifiedProject) return;
+    if (pending || !params || !verifiedProject || !fingerprint) return;
     setPending(true);
     setMessage("");
     const result = await workspace.run("quoteGeneration", {

@@ -4,7 +4,12 @@ import { useRouter } from "next/navigation";
 import { useCreditQuote } from "@/hooks/use-credit-quote";
 import { Action } from "@/components/ui/primitives";
 import { PendingButton } from "@/components/system/loading";
-import { quoteState, workspace, workspaceMessage } from "@/services/workspace";
+import {
+  quoteContext,
+  quoteState,
+  workspace,
+  workspaceMessage,
+} from "@/services/workspace";
 import type { CreditQuote } from "@/services/workspace-contracts";
 import type { GenerationParams } from "@/services/generation-schema";
 export function GenerateAction({
@@ -16,14 +21,22 @@ export function GenerateAction({
   settings: GenerationParams;
   retryJobId: string;
 }) {
-  const [quote, setQuote] = useState<CreditQuote | null>(null);
+  const [savedQuote, setQuote] = useState<{
+    value: CreditQuote;
+    context: string;
+  } | null>(null);
+  const context = quoteContext(projectId, settings);
+  const quote =
+    context && savedQuote?.context === `${context}:${retryJobId}`
+      ? savedQuote.value
+      : null;
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [accepted, setAccepted] = useState(false);
   const key = useRef<{ quote: string; key: string }>(null);
   const router = useRouter();
   async function check() {
-    if (pending || accepted) return;
+    if (pending || accepted || !context) return;
     setPending(true);
     setMessage("");
     const result = await workspace.run("quoteGeneration", {
@@ -32,7 +45,8 @@ export function GenerateAction({
       retryJobId,
     });
     setPending(false);
-    if (result.ok) setQuote(result.value);
+    if (result.ok)
+      setQuote({ value: result.value, context: `${context}:${retryJobId}` });
     else {
       setQuote(null);
       setMessage(workspaceMessage(result.error));

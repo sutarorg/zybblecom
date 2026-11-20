@@ -19,15 +19,16 @@ export default function Privacy() {
       <div className="system-prose">
         <h2>What happens to form inputs?</h2>
         <p>
-          Sign-in, signup, and recovery forms validate inputs in your browser.
-          They do not send passwords or email addresses to an authentication
-          service. Onboarding choices stay on the page and aren’t saved to a
-          profile.
+          In a disconnected preview, account forms validate inputs without
+          creating an account. When authentication is connected, Supabase Auth
+          processes signup, sign-in and recovery requests, and Zybble saves
+          account details and onboarding choices for your account.
         </p>
         <h2>Before accounts open</h2>
         <p>
           A production privacy policy needs to be published before account
-          services are enabled. Don’t enter a real password in the preview.
+          services are offered to customers. Use only dedicated test credentials
+          in preview environments.
         </p>
       </div>
       <Action href="/help" variant="secondary">

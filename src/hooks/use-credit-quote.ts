@@ -1,23 +1,34 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { quoteState } from "@/services/workspace";
 import type { CreditQuote } from "@/services/workspace-contracts";
+
+const serverSnapshot = () => "unverified" as const;
 export function useCreditQuote(quote: CreditQuote | null) {
-  const [checkedAt, setCheckedAt] = useState<number>(0);
-  useEffect(() => {
-    if (!quote) return;
-    const expiresAt = Date.parse(quote.expiresAt);
-    if (!Number.isFinite(expiresAt)) return;
-    const check = () => setCheckedAt(Date.now());
-    const timer = setTimeout(
-      check,
-      Math.max(0, Math.min(expiresAt - Date.now() + 20, 2_147_000_000)),
-    );
-    window.addEventListener("focus", check);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("focus", check);
-    };
-  }, [quote]);
-  return quoteState(quote, checkedAt);
+  const expires = quote ? Date.parse(quote.expiresAt) : NaN;
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!Number.isFinite(expires)) return () => {};
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const watch = () => {
+        clearTimeout(timer);
+        const remaining = expires - Date.now();
+        if (remaining > 0)
+          timer = setTimeout(watch, Math.min(remaining, 2_147_000_000));
+        notify();
+      };
+      watch();
+      window.addEventListener("focus", watch);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener("focus", watch);
+      };
+    },
+    [expires],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => quoteState(quote),
+    serverSnapshot,
+  );
 }

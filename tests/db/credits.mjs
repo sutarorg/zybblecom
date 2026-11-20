@@ -71,8 +71,68 @@ try {
       .rows[0].balance,
     120,
   );
+  // Exercise each frozen test snapshot against the real wallet transaction.
+  const matrixOwner = id();
+  await q("insert into auth.users values ($1,'matrix@example.invalid',null)", [
+    matrixOwner,
+  ]);
+  const matrix = [
+    ["starter", "USD", 900, 30],
+    ["creator", "USD", 1900, 120],
+    ["studio", "USD", 3900, 300],
+    ["starter", "INR", 29900, 30],
+    ["creator", "INR", 99900, 120],
+    ["studio", "INR", 249900, 300],
+  ];
+  let total = 0;
+  for (const [pack, currency, amount, credits] of matrix) {
+    const [pid, session, paymentId, product] = Array.from({ length: 4 }, id);
+    await q(
+      `insert into credit_purchases(id,user_id,pack_slug,credits,amount_minor,currency,provider_mode,dodo_product_id,dodo_checkout_session_id)
+      values($1,$2,$3,$4,$5,$6,'test_mode',$7,$8)`,
+      [pid, matrixOwner, pack, credits, amount, currency, product, session],
+    );
+    const fulfill =
+      "select grant_purchase_credits($1,$2,$3,$4,$5,$6,$7,'test_mode') as granted";
+    await assert.rejects(
+      a.query(fulfill, [pid, session, paymentId, product, amount, currency, 2]),
+      /PAYMENT_MISMATCH/,
+    );
+    assert.equal(
+      (
+        await a.query(fulfill, [
+          pid,
+          session,
+          paymentId,
+          product,
+          amount,
+          currency,
+          1,
+        ])
+      ).rows[0].granted,
+      true,
+    );
+    total += credits;
+    assert.equal(
+      (
+        await q("select balance from credit_wallets where user_id=$1", [
+          matrixOwner,
+        ])
+      ).rows[0].balance,
+      total,
+    );
+  }
+  assert.equal(
+    (
+      await q(
+        "select coalesce(sum(amount),0)::int as credits from credit_transactions where user_id=$1",
+        [matrixOwner],
+      )
+    ).rows[0].credits,
+    total,
+  );
   await q("update profiles set onboarding_completed=true where id=$1", [owner]);
-  async function quote(duration) {
+  async function quote(duration, expiry = "5 minutes") {
     const [project, asset, quote] = Array.from({ length: 3 }, id);
     await q(
       "insert into projects(id,user_id,title) values($1,$2,'SQL fixture')",
@@ -90,7 +150,7 @@ try {
       project,
     ]);
     await q(
-      "insert into generation_quotes(id,user_id,project_id,settings,required_credits,expires_at) values($1,$2,$3,$4,$5,now()+interval '5 minutes')",
+      "insert into generation_quotes(id,user_id,project_id,settings,required_credits,expires_at,source_asset_id,source_duration_seconds) values($1,$2,$3,$4,$5,now()+$6::interval,$7,$8)",
       [
         quote,
         owner,
@@ -104,19 +164,75 @@ try {
           captions: "bold",
         },
         Math.ceil(duration / 60),
+        expiry,
+        asset,
+        duration,
       ],
     );
-    return quote;
+    return { quote, project, asset };
   }
   const quotes = [await quote(4800), await quote(4800)];
-  const params = quotes.map((x) => [owner, x, id()]);
+  const params = quotes.map((x) => [owner, x.quote, id()]);
   const reserve = "select reserve_generation_credits($1,$2,$3) as job";
+  const changed = await quote(4800);
+  await q("update media_assets set duration_seconds=4799 where id=$1", [
+    changed.asset,
+  ]);
+  await assert.rejects(
+    a.query(reserve, [owner, changed.quote, id()]),
+    /SOURCE_QUOTE_MISMATCH/,
+  );
+  await q("update media_assets set duration_seconds=4800 where id=$1", [
+    changed.asset,
+  ]);
+  const replacement = id();
+  await q(
+    `insert into media_assets(id,user_id,project_id,asset_type,bucket_name,object_key,mime_type,duration_seconds,upload_status,storage_status)
+    values($1,$2,$3,'original_video','test',$1::uuid::text,'video/mp4',4800,'verified','ready')`,
+    [replacement, owner, changed.project],
+  );
+  await q("update projects set original_media_asset_id=$1 where id=$2", [
+    replacement,
+    changed.project,
+  ]);
+  await assert.rejects(
+    a.query(reserve, [owner, changed.quote, id()]),
+    /SOURCE_QUOTE_MISMATCH/,
+  );
+  const expired = await quote(4800, "-1 second");
+  await assert.rejects(
+    a.query(reserve, [owner, expired.quote, id()]),
+    /GENERATION_NOT_ALLOWED/,
+  );
+  assert.equal(
+    (await q("select count(*)::int as count from generation_tasks")).rows[0]
+      .count,
+    0,
+  );
+  assert.equal(
+    (
+      await q("select reserved_balance from credit_wallets where user_id=$1", [
+        owner,
+      ])
+    ).rows[0].reserved_balance,
+    0,
+  );
   const results = await Promise.allSettled(
     [a, b].map((x, i) => x.query(reserve, params[i])),
   );
   assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
   const win = results.findIndex((r) => r.status === "fulfilled");
   const job = results[win].value.rows[0].job;
+  const bound = (
+    await q(
+      "select source_asset_id,source_duration_seconds from generation_jobs where id=$1",
+      [job],
+    )
+  ).rows[0];
+  assert.deepEqual(bound, {
+    source_asset_id: quotes[win].asset,
+    source_duration_seconds: "4800",
+  });
   assert.match(results[1 - win].reason.message, /INSUFFICIENT_CREDITS/);
   assert.equal((await a.query(reserve, params[win])).rows[0].job, job);
   await assert.rejects(
@@ -226,6 +342,86 @@ try {
   assert.deepEqual(
     (await q("select kind from list_credit_activity('purchases')")).rows,
     [{ kind: "purchase" }],
+  );
+  await q("reset role");
+  const expectedFailure = await quote(60);
+  const failedJob = (
+    await a.query(reserve, [owner, expectedFailure.quote, id()])
+  ).rows[0].job;
+  await q("update generation_jobs set status='failed' where id=$1", [
+    failedJob,
+  ]);
+  const next = id();
+  await q(
+    `insert into generation_quotes(id,user_id,project_id,settings,required_credits,expires_at,source_asset_id,source_duration_seconds)
+    select $1,user_id,project_id,settings,required_credits,expires_at,source_asset_id,source_duration_seconds from generation_quotes where id=$2`,
+    [next, expectedFailure.quote],
+  );
+  await assert.rejects(
+    a.query(reserve, [owner, next, id()]),
+    /UNRESOLVED_RESERVATION/,
+  );
+  const releases = await Promise.all(
+    [a, b].map((client) =>
+      client.query("select release_generation_credits($1) as released", [
+        failedJob,
+      ]),
+    ),
+  );
+  assert.deepEqual(releases.map((r) => r.rows[0].released).sort(), [
+    false,
+    true,
+  ]);
+  assert.deepEqual(
+    (
+      await q(
+        "select balance,reserved_balance from credit_wallets where user_id=$1",
+        [owner],
+      )
+    ).rows,
+    [{ balance: 64, reserved_balance: 0 }],
+  );
+  await q("set role authenticated");
+  await q("update profiles set full_name='Owner updated' where id=$1", [owner]);
+  assert.equal(
+    (await q("update profiles set full_name='Not edited' where id=$1", [other]))
+      .rowCount,
+    0,
+  );
+  await assert.rejects(q("select save_creator_preferences('unknown','bold')"), {
+    code: "22023",
+  });
+  assert.equal(
+    (await q("select save_creator_preferences('4:5','clean') as saved")).rows[0]
+      .saved,
+    true,
+  );
+  assert.deepEqual(
+    (await q("select full_name,preferences from profiles where id=$1", [owner]))
+      .rows,
+    [
+      {
+        full_name: "Owner updated",
+        preferences: { defaultAspect: "4:5", defaultCaptions: "clean" },
+      },
+    ],
+  );
+  await q("reset role");
+  assert.deepEqual(
+    (await q("select preferences from profiles where id=$1", [other])).rows,
+    [{ preferences: {} }],
+  );
+  await q("update profiles set suspended_at=now() where id=$1", [owner]);
+  await q("set role authenticated");
+  assert.equal(
+    (await q("select save_creator_preferences('9:16','bold') as saved")).rows[0]
+      .saved,
+    false,
+  );
+  assert.equal(
+    (await q("update profiles set full_name='Not edited' where id=$1", [owner]))
+      .rowCount,
+    0,
   );
   await q("reset role; set role anon");
   await assert.rejects(q("select * from get_credit_wallet()"), {

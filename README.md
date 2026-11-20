@@ -26,3 +26,18 @@ See [the Session 4 admin handoff](docs/admin-session-4.md) for the internal cons
 - [Environment](docs/environment-variables.md) · [Security](docs/security.md) · [Deployment gates](docs/deployment.md)
 
 `npm run test:db` starts an isolated embedded PostgreSQL server and uses separate clients for concurrency checks (run as a non-root user). `npm run test:contracts` runs UI and provider contract checks. `supabase test db` requires a working local Supabase CLI stack and runs the separate pgTAP grant suite. Neither local command proves a hosted payment, account, or video run.
+
+## Launch QA
+
+See the [baseline audit](docs/launch-readiness-audit.md) and [launch decision and test report](docs/launch-readiness-report.md).
+
+From a clean worktree without application `.env` files, install browser tooling outside the app, then run the local gate:
+
+```sh
+npm ci
+npm install --prefix /tmp/zybble-qa --no-save --package-lock=false playwright-core@1.58.2 axe-core@4.11.1
+node /tmp/zybble-qa/node_modules/playwright-core/cli.js install chromium
+NODE_PATH=/tmp/zybble-qa/node_modules npm run test:launch
+```
+
+Use `CHROMIUM_PATH` for a system Chromium, or install the corresponding Playwright browser and set `QA_BROWSER=firefox` or `QA_BROWSER=webkit` with `npm run test:e2e` after `npm run build`. The launch runner starts its own loopback servers, disables provider configuration, exercises the existing QA scripts, and writes reports and screenshots under `test-results/launch-readiness/`. It returns a nonzero status for failures. It does **not** certify hosted integrations. Run `supabase start` and `supabase test db --local` separately on a disposable, Docker-backed local stack; the CI workflow includes this job.

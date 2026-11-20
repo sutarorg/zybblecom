@@ -55,3 +55,10 @@ export function quoteState(quote: CreditQuote | null, now = Date.now()) {
     return "unverified";
   return quote.available < quote.required ? "insufficient" : "ready";
 }
+
+export function quoteContext(
+  projectId: string | undefined,
+  settings: import("./generation-schema").GenerationParams | null,
+) {
+  return projectId && settings ? JSON.stringify([projectId, settings]) : null;
+}
