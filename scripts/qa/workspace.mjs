@@ -150,11 +150,11 @@ try {
   await page.getByRole("radio", { name: "10", exact: true }).check();
   await page.getByRole("radio", { name: "16:9 · Landscape" }).check();
   await page.getByRole("radio", { name: "Full frame", exact: true }).check();
-  await page.getByRole("radio", { name: "Clean" }).check();
+  await page.getByRole("radio", { name: "Minimal" }).check();
   await page.getByLabel("AI guidance").fill("Look for concise explanations.");
   assert.match(
     await page.locator(".ws-summary").innerText(),
-    /10[\s\S]*16:9 Landscape[\s\S]*Full frame[\s\S]*Clean/,
+    /10[\s\S]*16:9 Landscape[\s\S]*Full frame[\s\S]*Minimal/,
   );
   assert.equal(
     await page.getByRole("button", { name: "Generate My Shorts" }).isDisabled(),

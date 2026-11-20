@@ -26,13 +26,13 @@ import {
 } from "@/services/workspace";
 import { Action } from "@/components/ui/primitives";
 import { GenerationPreview } from "./generation-preview";
-import { supportedVideoLink, videoLinkLimit } from "@/services/video-link";
 import { FilePicker } from "./file-picker";
 import { useLocalDraft } from "./shell";
 import { useLocalVideo } from "@/hooks/use-local-video";
 import {
   aspects,
   captionStyles,
+  selectableCaptions,
   counts,
   defaultOptions,
   durationRanges,
@@ -140,14 +140,11 @@ export function NewProject({
         captions: preferences.defaultCaptions,
       }
     : defaultOptions;
-  const options = draftOptions ?? initial;
-  const [videoLink, setVideoLink] = useState("");
-  const trimmedVideoLink = videoLink.trim();
-  const linkState = !trimmedVideoLink
-    ? "empty"
-    : supportedVideoLink(trimmedVideoLink)
-      ? "supported"
-      : "invalid";
+  const chosen = draftOptions ?? initial;
+  const options =
+    chosen.captions === "clean"
+      ? { ...chosen, captions: defaultOptions.captions }
+      : chosen;
   const [touched, setTouched] = useState(false);
   const [quote, setQuote] = useState<{
     value: CreditQuote;
@@ -269,30 +266,6 @@ export function NewProject({
                 maxBytes={maxBytes}
                 disabled={locked}
               />
-              <p className="ws-source-separator" aria-hidden="true">
-                OR
-              </p>
-              <div className="ws-field">
-                <label htmlFor="source-video-link">Paste a video link</label>
-                <input
-                  id="source-video-link"
-                  type="url"
-                  maxLength={videoLinkLimit}
-                  disabled={locked}
-                  value={videoLink}
-                  aria-describedby="source-link-hint"
-                  aria-invalid={linkState === "invalid" || undefined}
-                  placeholder="Paste your public video URL here…"
-                  onChange={(event) => setVideoLink(event.target.value)}
-                />
-                <p id="source-link-hint" role="status">
-                  {linkState === "supported"
-                    ? "Link format looks valid. The video wasn’t fetched because we can’t verify its duration before charging credits. Choose a local file instead."
-                    : linkState === "invalid"
-                      ? "Enter an HTTPS link to a supported single video, without login credentials."
-                      : "Use a public link to a single video you have permission to process. Only the link format is checked here."}
-                </p>
-              </div>
               <div className="ws-field">
                 <label htmlFor="project-title">Project title</label>
                 <input
@@ -348,7 +321,8 @@ export function NewProject({
                 )}
               {!policy ? (
                 <p className="ws-muted">
-                  Uploads aren’t connected. No file leaves your device.
+                  Video upload isn’t available yet. You can preview a local file
+                  without sending it.
                 </p>
               ) : (
                 <div className="ws-upload-actions">
@@ -476,7 +450,7 @@ export function NewProject({
           <Choices
             label="Captions"
             name="captions"
-            options={entries(captionStyles)}
+            options={entries(selectableCaptions)}
             value={options.captions}
             change={(v) => update("captions", v)}
           />
@@ -548,32 +522,31 @@ export function NewProject({
               );
             })}
           </dl>
-          <div className="ws-summary-balance">
-            <Coins size={20} aria-hidden="true" />
-            <dl>
-              <div>
-                <dt>Estimated cost</dt>
-                <dd>
-                  {liveQuote
-                    ? `${costText(liveQuote.required)} (verified quote)`
-                    : estimate !== null
-                      ? `${costText(estimate)} (local estimate)`
-                      : reading?.duration &&
-                          reading.duration > standardSourceSeconds
-                        ? "Standard processing supports up to 180 minutes."
-                        : "Add a video to estimate the processing cost."}
-                </dd>
-              </div>
-              <div>
-                <dt>Available credits</dt>
-                <dd>
-                  {available === undefined
-                    ? "Credit balance unavailable."
-                    : creditsText(available)}
-                </dd>
-              </div>
-            </dl>
-          </div>
+          <dl className="ws-summary-balance">
+            <div>
+              <dt>
+                <Coins size={18} aria-hidden="true" />
+                Estimated cost
+              </dt>
+              <dd>
+                {liveQuote
+                  ? costText(liveQuote.required)
+                  : estimate === null
+                    ? file || verifiedProject
+                      ? "—"
+                      : "0"
+                    : costText(estimate)}
+                {estimate !== null && !liveQuote && (
+                  <span className="sr-only"> (local estimate)</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+          {reading?.duration && reading.duration > standardSourceSeconds ? (
+            <p className="ws-muted">
+              Standard processing supports up to 180 minutes.
+            </p>
+          ) : null}
           {verifiedProject && (
             <PendingButton
               className="button-secondary"
@@ -596,13 +569,13 @@ export function NewProject({
           </PendingButton>
           <p id="generate-reason" className="ws-muted">
             <Info size={14} aria-hidden="true" />
-            {insufficient
-              ? "You don’t have enough available credits for this request."
+            {insufficient || available === 0
+              ? "You don't have enough credits"
               : quoteStatus === "ready"
                 ? "Starting generation reserves the quoted credits."
-                : policy
-                  ? "Generation needs a verified upload, a current quote and enough credits."
-                  : "Generation needs a verified upload, an active quote and enough credits. Nothing will be charged here."}
+                : !policy && !verifiedProject
+                  ? "Generation is unavailable until video uploads are connected."
+                  : "A verified video and a current credit quote are required."}
           </p>
           {message && (
             <p role="alert" className="ws-field-error">

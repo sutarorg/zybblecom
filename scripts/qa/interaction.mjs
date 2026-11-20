@@ -133,7 +133,7 @@ import { launchBrowser } from "./browser.mjs";
   await page.waitForURL("**/blog?category=Video+repurposing");
   assert.equal(
     await page.getByRole("link", { name: /^Read article:/ }).count(),
-    4,
+    6,
   );
   await page.getByRole("searchbox").fill("captions");
   await page.getByRole("button", { name: "Search" }).click();
@@ -146,9 +146,10 @@ import { launchBrowser } from "./browser.mjs";
     .getByRole("heading", { level: 1, name: /^Short video captions/ })
     .waitFor();
   await page.waitForFunction(() =>
-    document.title.includes("Short video captions"),
+    document.title.startsWith("Short video captions"),
   );
-  assert.match(await page.title(), /Short video captions/);
+  assert.match(await page.title(), /^Short video captions/);
+  assert(!(await page.title()).endsWith("| Zybble"));
   // Inspect metadata from a fresh article request, not a streaming transition.
   await page.reload();
   assert.match(

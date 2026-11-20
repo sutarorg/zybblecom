@@ -1,17 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useCases } from "@/config/product";
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro } from "@/components/shared/page";
 import { IconTile } from "@/components/ui/primitives";
 import { FinalCTA } from "@/components/sections/product-sections";
 const description =
   "Find practical ways to repurpose podcasts, YouTube videos, lessons, client recordings, and webinars into short-form clips.";
-export const metadata = pageMetadata(
-  "/use-cases",
-  "Video Repurposing for Creators and Teams",
-  description,
-);
+export const metadata = marketingMetadata("/use-cases");
 export default function UseCases() {
   return (
     <>

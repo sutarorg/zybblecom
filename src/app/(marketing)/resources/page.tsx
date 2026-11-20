@@ -6,16 +6,12 @@ import {
   Scissors,
   Wallet,
 } from "lucide-react";
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro, ResourceCard } from "@/components/shared/page";
 import { IconTile, SectionTitle } from "@/components/ui/primitives";
 const description =
   "Learn how to prepare a recording, review your short clips, choose a credit pack, and find answers in the Zybble resource library.";
-export const metadata = pageMetadata(
-  "/resources",
-  "Video Repurposing Resources",
-  description,
-);
+export const metadata = marketingMetadata("/resources");
 const resources = [
   {
     href: "/how-it-works",

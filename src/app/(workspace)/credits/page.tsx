@@ -1,4 +1,4 @@
-import { checkoutEnabled } from "@/lib/backend/dodo";
+import { checkoutReadiness } from "@/lib/backend/dodo-readiness";
 import {
   Check,
   Coins,
@@ -26,6 +26,18 @@ export default async function Credits({
     getBalance(),
     requestPricing(),
   ]);
+  const packs = creditPacks.map((pack) => ({
+    ...pack,
+    checkout: checkoutReadiness(process.env, pack.id, currency),
+  }));
+  const checkoutAvailable = packs.some(({ checkout }) => checkout.ready);
+  const checkoutNotice = checkoutAvailable
+    ? "Test checkout only. No real payment will be collected."
+    : packs.every(({ checkout }) => checkout.production)
+      ? "Live checkout isn’t enabled. No payment can be collected here."
+      : packs.every(({ checkout }) => !checkout.enabled)
+        ? "Test checkout is turned off for this environment."
+        : "Test checkout isn’t configured for this region.";
   const cards = [
     {
       label: "Available",
@@ -89,8 +101,11 @@ export default async function Credits({
             <p>Simple, one-time purchases. Your credits never expire.</p>
           </div>
         </div>
+        <p id="credit-checkout-status" className="ws-muted">
+          {checkoutNotice}
+        </p>
         <div className="pricing-grid">
-          {creditPacks.map((pack) => (
+          {packs.map((pack) => (
             <article
               className={`card price-card pack-${pack.id}`}
               key={pack.id}
@@ -109,7 +124,16 @@ export default async function Credits({
               <CheckoutButton
                 packId={pack.id}
                 label="Buy Now"
-                enabled={checkoutEnabled(pack.id, currency)}
+                unavailable={
+                  pack.checkout.ready
+                    ? undefined
+                    : checkoutAvailable
+                      ? {
+                          message:
+                            "This pack isn’t configured for test checkout in your region.",
+                        }
+                      : { id: "credit-checkout-status" }
+                }
                 variant={pack.id === "creator" ? "primary" : "secondary"}
               />
               <ul>
@@ -130,11 +154,6 @@ export default async function Credits({
             <p>
               One credit covers one minute of standard video processing. Review
               your quote before generating.
-            </p>
-            <p className="ws-muted">
-              {creditPacks.some((pack) => checkoutEnabled(pack.id, currency))
-                ? "No subscription. Test checkout only; no live payments are collected."
-                : "No subscription. Checkout is not available in this environment. No payment will be collected."}
             </p>
           </div>
         </aside>

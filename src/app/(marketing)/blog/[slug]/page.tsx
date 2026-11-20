@@ -18,6 +18,7 @@ export async function generateMetadata({ params }: Props) {
   const article = articles.find((item) => item.slug === slug);
   if (!article) return {};
   return pageMetadata(`/blog/${slug}`, article.title, article.description, {
+    keywords: article.keywords,
     article: {
       publishedTime: article.publishedAt,
       author: article.author.name,
@@ -41,6 +42,7 @@ export default async function BlogArticle({ params }: Props) {
           "@context": "https://schema.org",
           "@type": "BlogPosting",
           headline: article.title,
+          keywords: article.keywords,
           description: article.description,
           mainEntityOfPage: url,
           datePublished: article.publishedAt,

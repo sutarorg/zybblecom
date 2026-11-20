@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Heading, Notice, Panel, DataList } from "@/components/admin/ui";
 import { SettingsEditor } from "@/components/admin/settings-editor";
+import { r2Config } from "@/lib/media/providers";
 import { checkoutReadiness } from "@/lib/backend/dodo-readiness";
 import { adminSession, adminRead } from "@/services/admin/server";
 import { money, num, duration } from "@/services/admin/format";
@@ -167,6 +168,27 @@ export default async function Settings() {
                           .join(" · "),
                   ] as const,
               ),
+            ]}
+          />
+        </Panel>
+      )}
+      {deployment && (
+        <Panel
+          title="Video storage readiness"
+          description="Archive credentials and the source-video uploader are separate. This check does not contact Cloudflare."
+        >
+          <DataList
+            items={[
+              [
+                "R2 archive configuration",
+                r2Config(process.env)
+                  ? "Present; not verified against R2"
+                  : "Missing or invalid",
+              ],
+              [
+                "Source-video upload",
+                "Not connected: no owner-scoped upload and verification adapter is installed",
+              ],
             ]}
           />
         </Panel>

@@ -7,7 +7,7 @@ import { workspaceMessage } from "@/services/workspace";
 import type { Preferences, Profile } from "@/services/workspace-contracts";
 import {
   aspects,
-  captionStyles,
+  selectableCaptions,
   validTitle,
 } from "@/services/generation-schema";
 
@@ -63,7 +63,11 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   );
 }
 export function PreferencesForm({ value }: { value: Preferences }) {
-  const [prefs, setPrefs] = useState(value);
+  const [prefs, setPrefs] = useState<Preferences>(() =>
+    value.defaultCaptions === "clean"
+      ? { ...value, defaultCaptions: "bold" }
+      : value,
+  );
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState({ text: "", error: false });
   return (
@@ -116,7 +120,7 @@ export function PreferencesForm({ value }: { value: Preferences }) {
       <fieldset className="ws-choice" data-choice="captions">
         <legend>Default captions</legend>
         <div>
-          {Object.entries(captionStyles).map(([id, label]) => (
+          {Object.entries(selectableCaptions).map(([id, label]) => (
             <label key={id}>
               <input
                 type="radio"
@@ -137,7 +141,7 @@ export function PreferencesForm({ value }: { value: Preferences }) {
                   data-caption={id}
                   aria-hidden="true"
                 >
-                  {id === "clean" ? "—" : "Aa"}
+                  Aa
                 </i>
                 {label}
               </span>

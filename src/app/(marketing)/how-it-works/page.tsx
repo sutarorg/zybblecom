@@ -1,4 +1,4 @@
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro } from "@/components/shared/page";
 import { Action } from "@/components/ui/primitives";
 import {
@@ -9,11 +9,7 @@ import {
 import { FAQSection } from "@/components/sections/faq";
 const description =
   "Learn how to turn a long video into shorts with Zybble: add a recording, review AI-selected highlights, and download vertical clips with captions.";
-export const metadata = pageMetadata(
-  "/how-it-works",
-  "How to Turn Long Videos into Shorts",
-  description,
-);
+export const metadata = marketingMetadata("/how-it-works");
 export default function HowItWorks() {
   return (
     <>

@@ -1,16 +1,12 @@
 import { Clapperboard, Captions, Focus, Smartphone } from "lucide-react";
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { EmptyState, PageIntro } from "@/components/shared/page";
 import { Action, IconTile, SectionTitle } from "@/components/ui/primitives";
 import { verifiedClips } from "@/config/editorial";
 import { Showcase } from "@/components/sections/product-sections";
 const description =
   "See how the Zybble workflow frames and captions vertical clips. This gallery is reserved for verified Zybble-generated videos.";
-export const metadata = pageMetadata(
-  "/examples",
-  "Vertical Clip Examples and Gallery",
-  description,
-);
+export const metadata = marketingMetadata("/examples");
 export default function Examples() {
   const checks = [
     {

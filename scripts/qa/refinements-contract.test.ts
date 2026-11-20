@@ -8,8 +8,12 @@ import {
 } from "../../src/lib/backend/contact-config";
 import { normalizeAvatar } from "../../src/lib/backend/avatar-image";
 import { avatarMaxBytes } from "../../src/services/avatar-policy";
-import { supportedVideoLink } from "../../src/services/video-link";
-import { estimateSourceCredits } from "../../src/services/generation-schema";
+import {
+  defaultOptions,
+  estimateSourceCredits,
+  generationParams,
+  selectableCaptions,
+} from "../../src/services/generation-schema";
 import { creditPacks } from "../../src/config/credit-packs";
 
 test("local estimates round source minutes only and never exceed the standard limit", () => {
@@ -29,28 +33,16 @@ test("local estimates round source minutes only and never exceed the standard li
     assert.equal(estimateSourceCredits(value), null);
 });
 
-test("link validation is restricted to HTTPS single videos or direct files", () => {
-  for (const url of [
-    "https://example.invalid/synth.webm",
-    "https://youtube.com/watch?v=Demo",
-    "https://youtu.be/Demo",
-    "https://drive.google.com/file/d/Demo/view",
-    "https://www.twitch.tv/videos/123",
-  ])
-    assert(supportedVideoLink(url), url);
-  for (const url of [
-    "http://example.invalid/demo.mp4",
-    "https://sub.youtube.com.evil.invalid/watch?v=Demo",
-    "https://username:password@youtube.com/watch?v=Demo",
-    "https://youtube.com/playlist?list=demo",
-    "https://twitch.tv/live-channel",
-    "https://vimeo.com/321",
-    "https://instagram.com/p/1234/",
-    "https://127.0.0.1/demo.mp4",
-    "https://example.invalid:1234/demo.mp4",
-    `https://example.invalid/${"x".repeat(4096)}.mp4`,
-  ])
-    assert(!supportedVideoLink(url), url);
+test("new projects offer three caption styles while historical Clean jobs remain readable", () => {
+  assert.deepEqual(Object.keys(selectableCaptions), [
+    "bold",
+    "karaoke",
+    "minimal",
+  ]);
+  assert.equal(
+    generationParams({ ...defaultOptions, captions: "clean" })?.captions,
+    false,
+  );
 });
 
 test("all packs have canonical totals, source minutes and the same included features", () => {

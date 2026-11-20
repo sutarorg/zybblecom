@@ -6,14 +6,15 @@ import { useId, useRef, useState } from "react";
 export function CheckoutButton({
   packId,
   label = "Continue to test checkout",
-  enabled = true,
+  unavailable,
   variant = "primary",
 }: {
   packId: string;
   label?: string;
-  enabled?: boolean;
+  unavailable?: { id: string } | { message: string };
   variant?: "primary" | "secondary";
 }) {
+  const enabled = unavailable === undefined;
   const router = useRouter();
   const hint = useId();
   const busy = useRef(false);
@@ -81,12 +82,20 @@ export function CheckoutButton({
         type="button"
         className={`button button-${variant}`}
         disabled={!enabled || pending}
-        aria-describedby={!enabled ? hint : undefined}
+        aria-describedby={
+          unavailable
+            ? "id" in unavailable
+              ? unavailable.id
+              : hint
+            : undefined
+        }
         onClick={checkout}
       >
         {pending ? "Opening checkout…" : label}
       </button>
-      {!enabled && <p id={hint}>Checkout isn’t available for this pack.</p>}
+      {unavailable && "message" in unavailable && (
+        <p id={hint}>{unavailable.message}</p>
+      )}
       {message && <p role="alert">{message}</p>}
     </>
   );

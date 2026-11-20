@@ -1,10 +1,10 @@
-import { pageMetadata } from "@/lib/seo/metadata";
+import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro } from "@/components/shared/page";
 import { HelpSearch } from "@/components/marketing/help-search";
 import { Action } from "@/components/ui/primitives";
 const description =
   "Search Zybble help topics about choosing a source video, reviewing clips, exporting MP4s, and using credit packs.";
-export const metadata = pageMetadata("/help", "Help Centre", description);
+export const metadata = marketingMetadata("/help");
 export default function Help() {
   return (
     <>
