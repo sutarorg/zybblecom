@@ -184,6 +184,36 @@ test("contact rejects malformed fields, honeypots and arbitrary recipients", () 
   );
 });
 
+test("contact sends to the owner in production and requires an explicit address elsewhere", () => {
+  const delivery = {
+    RESEND_API_KEY: "fixture",
+    CONTACT_FROM_EMAIL: "messages@example.invalid",
+  };
+  assert.equal(contactSettings(delivery), null);
+  assert.equal(contactSettings({ ...delivery, VERCEL_ENV: "preview" }), null);
+  assert.equal(
+    contactSettings({ ...delivery, CONTACT_TO_EMAIL: "qa@example.invalid" })
+      ?.to,
+    "qa@example.invalid",
+  );
+  assert.equal(
+    contactSettings({
+      ...delivery,
+      CONTACT_TO_EMAIL: "qa@example.invalid",
+      VERCEL_ENV: "production",
+    })?.to,
+    "tejassutar.business@gmail.com",
+  );
+  assert.equal(
+    contactSettings({
+      ...delivery,
+      RESEND_API_KEY: "",
+      VERCEL_ENV: "production",
+    }),
+    null,
+  );
+});
+
 test("avatar validator decodes accepted raster images and normalizes to bounded WebP", async () => {
   for (const format of ["png", "jpeg", "webp", "avif"] as const) {
     const source = await sharp({

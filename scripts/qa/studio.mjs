@@ -50,7 +50,7 @@ try {
     await viewport(width);
     for (const route of routes) {
       await go(route);
-      const root = page.locator(".ws-studio");
+      const root = page.locator(".ws-studio:visible");
       await root.getByRole("heading", { level: 1 }).waitFor();
       assert.equal(await root.count(), 1);
       assert(
@@ -106,6 +106,34 @@ try {
   await sidebar.getByRole("button", { name: "Expand sidebar" }).press("Enter");
   await capture("1440-expanded");
 
+  for (const width of [901, 1024, 1100]) {
+    await viewport(width);
+    await go("projects/new");
+    const expand = sidebar.getByRole("button", { name: "Expand sidebar" });
+    await expand.waitFor();
+    assert.equal(await expand.getAttribute("aria-expanded"), "false");
+    assert.equal((await sidebar.boundingBox()).width, 78);
+  }
+  await sidebar.getByRole("button", { name: "Expand sidebar" }).press("Enter");
+  const collapse = sidebar.getByRole("button", { name: "Collapse sidebar" });
+  assert.equal(await collapse.getAttribute("aria-expanded"), "true");
+  assert.equal((await sidebar.boundingBox()).width, 208);
+  await sidebar.getByRole("link", { name: "Projects", exact: true }).click();
+  await page.waitForURL("**/projects");
+  assert.equal(await collapse.getAttribute("aria-expanded"), "true");
+  await viewport(1101);
+  await go("projects/new");
+  await collapse.waitFor();
+  assert.equal((await sidebar.boundingBox()).width, 232);
+
+  await viewport(768);
+  await go("projects/new");
+  assert(!(await sidebar.isVisible()));
+  assert(
+    !(await page
+      .getByRole("dialog", { name: "Workspace navigation" })
+      .isVisible()),
+  );
   await viewport(390);
   await go("projects/new");
   const menu = page.getByRole("button", { name: "Open navigation" });
@@ -245,16 +273,35 @@ try {
   assert((await length("Message")) > 0);
   assert(await page.getByRole("button", { name: "Send request" }).isDisabled());
   await go("credits");
+  if (
+    await page.evaluate(
+      () =>
+        CSS.supports("scrollbar-color", "auto") &&
+        matchMedia("(pointer: fine) and (forced-colors: none)").matches,
+    )
+  ) {
+    for (const surface of [page.locator("html"), page.locator(".ws-sidebar")]) {
+      assert.deepEqual(
+        await surface.evaluate((el) => {
+          const style = getComputedStyle(el);
+          return [style.scrollbarWidth, style.scrollbarColor];
+        }),
+        ["thin", "rgb(212, 212, 216) rgb(250, 250, 250)"],
+      );
+    }
+  }
   for (const pack of ["starter", "creator", "studio"]) {
     const card = page.locator(`.ws-packs .pack-${pack}`);
+    const pay = card.getByRole("button", { name: "Pay Now", exact: true });
+    assert(await pay.isDisabled());
     assert.equal(
-      await card.getByRole("button", { name: "Buy Now", exact: true }).count(),
+      await pay.getAttribute("aria-describedby"),
+      "credit-checkout-notice",
+    );
+    assert.equal(
+      await card.getByRole("link", { name: /View .* pack/i }).count(),
       0,
     );
-    await card.getByRole("link", { name: `View ${pack} pack` }).click();
-    await page.waitForURL(`**/pricing/${pack}`);
-    await page.getByText("Checkout isn’t open yet.", { exact: true }).waitFor();
-    await page.goBack();
   }
   await page.getByRole("link", { name: "View History" }).click();
   await page.waitForURL("**/credits/history");

@@ -1,9 +1,15 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { navigation } from "@/config/site";
 import { Action, Brand } from "@/components/ui/primitives";
+import { accountServer } from "@/lib/services/account-server";
 import { MobileMenu } from "./mobile-menu";
 
-export function Header() {
+export async function Header() {
+  // The session is request-specific, even when Auth is configured only at runtime.
+  await connection();
+  const session = await accountServer.getSession();
+  const signedIn = session.ok && Boolean(session.value);
   return (
     <header className="site-header">
       <div className="container header-inner">
@@ -16,12 +22,18 @@ export function Header() {
           ))}
         </nav>
         <div className="header-actions">
-          <Link href="/login" className="login-link">
-            Log in
-          </Link>
-          <Action href="/signup">Get started</Action>
+          {signedIn ? (
+            <Action href="/dashboard">Dashboard</Action>
+          ) : (
+            <>
+              <Link href="/login" className="login-link">
+                Log in
+              </Link>
+              <Action href="/signup">Get started</Action>
+            </>
+          )}
         </div>
-        <MobileMenu />
+        <MobileMenu signedIn={signedIn} />
       </div>
     </header>
   );

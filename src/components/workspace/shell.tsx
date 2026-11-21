@@ -25,6 +25,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { Brand, Action } from "@/components/ui/primitives";
@@ -35,6 +36,17 @@ import type { Profile, Balance } from "@/services/workspace-contracts";
 import { type GenerationOptions } from "@/services/generation-schema";
 import { creditsText } from "@/services/workspace-format";
 import { workspaceMessage } from "@/services/workspace";
+
+// Keep this aligned with the compact workstation breakpoint in workspace.css.
+const compactWorkspaceQuery = "(max-width: 1100px)";
+function subscribeToWorkspaceWidth(onChange: () => void) {
+  const media = window.matchMedia(compactWorkspaceQuery);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+const isCompactWorkspace = () =>
+  window.matchMedia(compactWorkspaceQuery).matches;
+const serverWorkspaceDefault = () => false;
 
 const primary = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -79,7 +91,16 @@ export function WorkspaceShell({
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const menu = useRef<HTMLDetailsElement>(null);
-  const [compact, setCompact] = useState(false);
+  const compactByDefault = useSyncExternalStore(
+    subscribeToWorkspaceWidth,
+    isCompactWorkspace,
+    serverWorkspaceDefault,
+  );
+  const [sidebarChoice, setSidebarChoice] = useState<
+    Partial<Record<"compact" | "wide", boolean>>
+  >({});
+  const sidebarSize = compactByDefault ? "compact" : "wide";
+  const compact = sidebarChoice[sidebarSize] ?? compactByDefault;
   const [draft, setFile] = useState<File | null>(null);
   const [titleEdit, setTitle] = useState<string | null>(null);
   const [options, setOptions] = useState<GenerationOptions | null>(null);
@@ -221,7 +242,12 @@ export function WorkspaceShell({
             aria-label={compact ? "Expand sidebar" : "Collapse sidebar"}
             className="ws-icon-button ws-collapse"
             aria-expanded={!compact}
-            onClick={() => setCompact((value) => !value)}
+            onClick={() =>
+              setSidebarChoice((choice) => ({
+                ...choice,
+                [sidebarSize]: !(choice[sidebarSize] ?? compactByDefault),
+              }))
+            }
           >
             <ChevronsLeft size={17} aria-hidden="true" />
           </button>

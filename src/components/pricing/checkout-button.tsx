@@ -11,18 +11,20 @@ export function CheckoutButton({
     ? "Continue to test checkout"
     : "Continue to checkout",
   variant = "primary",
+  unavailableReasonId,
 }: {
   packId: string;
   mode: DodoMode;
   label?: string;
   variant?: "primary" | "secondary";
+  unavailableReasonId?: string;
 }) {
   const router = useRouter();
   const busy = useRef(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   async function checkout() {
-    if (busy.current) return;
+    if (busy.current || unavailableReasonId) return;
     busy.current = true;
     setPending(true);
     setMessage("");
@@ -76,7 +78,8 @@ export function CheckoutButton({
       <button
         type="button"
         className={`button button-${variant}`}
-        disabled={pending}
+        disabled={pending || Boolean(unavailableReasonId)}
+        aria-describedby={unavailableReasonId}
         onClick={checkout}
       >
         {pending ? "Opening checkout…" : label}

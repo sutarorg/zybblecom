@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { navigation } from "@/config/site";
 import { Action } from "@/components/ui/primitives";
 
-export function MobileMenu() {
+export function MobileMenu({ signedIn }: { signedIn: boolean }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLButtonElement>(null);
   return (
@@ -43,11 +43,17 @@ export function MobileMenu() {
             {item.label}
           </Link>
         ))}
-        <Link href="/login" onClick={() => setOpen(false)}>
-          Log in
-        </Link>
+        {!signedIn && (
+          <Link href="/login" onClick={() => setOpen(false)}>
+            Log in
+          </Link>
+        )}
         <div onClick={() => setOpen(false)}>
-          <Action href="/signup">Get started</Action>
+          {signedIn ? (
+            <Action href="/dashboard">Dashboard</Action>
+          ) : (
+            <Action href="/signup">Get started</Action>
+          )}
         </div>
       </nav>
     </div>

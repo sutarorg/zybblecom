@@ -26,7 +26,10 @@ const known = "job_q8w2e4r6t1y3u5i7o9p0";
 const unknown = "job_abcdefghijklmnopqrst";
 const received = [];
 const signupPasswords = [];
+const contactMail = [];
 const checkoutAttempts = [];
+const checkoutSessions = new Map();
+const connectedBrowserQA = process.env.CONNECTED_BROWSER_QA === "1";
 const stubId = "6c3b041b-0d89-4bf6-b5dd-524d00372897";
 const stubEmail = "fixture@example.invalid";
 const stubUser = {
@@ -48,7 +51,7 @@ let loginPassword = "long established password";
 let wallet = 0;
 const passwordUpdates = [];
 const stub = createServer(async (req, response) => {
-  const path = new URL(req.url, "http://127.0.0.1").pathname;
+  const { pathname: path, searchParams } = new URL(req.url, "http://127.0.0.1");
   const send = (status, payload) =>
     response
       .writeHead(status, { "Content-Type": "application/json" })
@@ -110,12 +113,83 @@ const stub = createServer(async (req, response) => {
     return wallet === null
       ? send(500, { message: "Synthetic wallet outage" })
       : send(200, { available: wallet, reserved: 0, consumed: 0 });
-  if (req.method === "POST" && path === "/rest/v1/credit_purchases") {
-    // Reject before the Dodo SDK can make any external call.
-    checkoutAttempts.push(await body());
-    return send(503, {
-      message: "Local fixture stops before the payment provider",
-    });
+  if (
+    connectedBrowserQA &&
+    path === "/__resend/emails" &&
+    req.method === "POST"
+  ) {
+    const mail = await body();
+    if (req.headers.authorization !== "Bearer local-resend-fixture")
+      return send(401, { message: "Unexpected provider credential" });
+    contactMail.push(mail);
+    return mail.text.includes("Simulated delivery failure")
+      ? send(200, {})
+      : send(200, { id: stubId });
+  }
+  if (connectedBrowserQA && path === "/rest/v1/credit_purchases") {
+    if (req.method === "POST") {
+      checkoutAttempts.push(await body());
+      return response.writeHead(201).end();
+    }
+    if (req.method === "PATCH") {
+      const id = searchParams.get("id")?.replace(/^eq\./, "");
+      const input = await body();
+      if (
+        checkoutSessions.get(id) !== input.dodo_checkout_session_id ||
+        searchParams.get("user_id") !== `eq.${stubId}`
+      )
+        return send(404, {
+          message: "Unexpected checkout session association",
+        });
+      return send(200, { id });
+    }
+  }
+  if (
+    connectedBrowserQA &&
+    req.method === "POST" &&
+    path.startsWith("/__dodo/checkouts")
+  ) {
+    const input = await body();
+    const [item] = input.product_cart;
+    const pack = checkoutAttempts.findLast(
+      (attempt) => attempt.dodo_product_id === item.product_id,
+    );
+    const expectedUsd = { starter: 900, creator: 1900, studio: 3900 };
+    if (
+      !pack ||
+      input.billing_currency !== "USD" ||
+      item.quantity !== 1 ||
+      pack.amount_minor !== expectedUsd[pack.pack_slug]
+    )
+      return send(400, { message: "Unexpected cart" });
+    if (path === "/__dodo/checkouts/preview") {
+      return send(200, {
+        currency: "USD",
+        current_breakup: { total_amount: pack.amount_minor, discount: 0 },
+        is_byop: false,
+        product_cart: [
+          {
+            ...item,
+            tax_inclusive: true,
+            is_subscription: false,
+            is_usage_based: false,
+          },
+        ],
+      });
+    }
+    if (
+      path === "/__dodo/checkouts" &&
+      input.metadata.zybble_purchase === pack.id &&
+      input.metadata.zybble_user === stubId &&
+      input.return_url === `${origin}/checkout/success?reference=${pack.id}`
+    ) {
+      const session_id = `cks_fixture_${pack.pack_slug}`;
+      checkoutSessions.set(pack.id, session_id);
+      return send(200, {
+        session_id,
+        checkout_url: `https://test.checkout.dodopayments.com/session/${session_id}`,
+      });
+    }
   }
   if (
     req.method !== "POST" ||
@@ -150,6 +224,9 @@ const secret = `whsec_${"s".repeat(32)}`;
 const child = spawn(
   process.execPath,
   [
+    ...(connectedBrowserQA
+      ? ["--import", "./tests/e2e/fixtures/provider-transport.mjs"]
+      : []),
     "node_modules/next/dist/bin/next",
     "start",
     "--hostname",
@@ -168,8 +245,11 @@ const child = spawn(
       AUTH_STATE_SECRET: "a".repeat(32),
       CLIPSDK_API_KEY: "synthetic-clip-key",
       CLIPSDK_WEBHOOK_SECRET: secret,
-      ...(process.env.CONNECTED_BROWSER_QA === "1"
+      ...(connectedBrowserQA
         ? {
+            CONTACT_TO_EMAIL: "tejassutar.business@gmail.com",
+            RESEND_API_KEY: "local-resend-fixture",
+            CONTACT_FROM_EMAIL: "messages@example.invalid",
             DODO_MODE: "test_mode",
             DODO_CHECKOUT_ENABLED: "1",
             DODO_PAYMENTS_BASE_URL: "https://must-not-use.example.invalid",
@@ -269,7 +349,8 @@ try {
     message: "Synthetic request only.",
     website: "",
   };
-  assert.equal((await submit("/api/contact", contact)).status, 503);
+  if (!connectedBrowserQA)
+    assert.equal((await submit("/api/contact", contact)).status, 503);
   assert.equal(
     (
       await submit("/api/contact", {
@@ -329,10 +410,41 @@ try {
     password: loginPassword,
   });
   assert.equal(login.status, 200);
-  const cookies = login.headers
+  const sessionHeaders = login.headers
     .getSetCookie()
-    .map((cookie) => cookie.split(";", 1)[0]);
-  assert(cookies.length > 0);
+    .filter((cookie) => /^sb-.*-auth-token(?:\.\d+)?=/.test(cookie));
+  assert(sessionHeaders.length > 0);
+  for (const cookie of sessionHeaders) {
+    assert.match(cookie, /; HttpOnly/i);
+    assert.match(cookie, /; Max-Age=[1-9]\d+/i);
+  }
+  const cookies = sessionHeaders.map((cookie) => cookie.split(";", 1)[0]);
+  for (const path of [
+    "/",
+    "/features",
+    "/blog/short-video-captions",
+    "/pricing",
+  ]) {
+    const marketing = await fetch(`${origin}${path}`, {
+      headers: { Cookie: cookies.join("; ") },
+    });
+    assert.match(
+      marketing.headers.get("Cache-Control"),
+      /private.*no-store/,
+      path,
+    );
+    assert.match(
+      await marketing.text(),
+      /<a[^>]*href="\/dashboard"[^>]*>Dashboard/,
+      path,
+    );
+    const guestMarketing = await fetch(`${origin}${path}`);
+    assert.doesNotMatch(
+      await guestMarketing.text(),
+      /<a[^>]*href="\/dashboard"[^>]*>Dashboard/,
+      path,
+    );
+  }
   const passwordChange = (payload) =>
     fetch(`${origin}/api/auth/change-password`, {
       method: "POST",
@@ -396,7 +508,7 @@ try {
   });
   assert.equal(uploadsWithoutR2.status, 503);
   assert.equal((await uploadsWithoutR2.json()).error.code, "unavailable");
-  if (process.env.CONNECTED_BROWSER_QA === "1") {
+  if (connectedBrowserQA) {
     const { connectedWorkspace } =
       await import("./fixtures/connected-workspace.mjs");
     await connectedWorkspace({
@@ -417,6 +529,23 @@ try {
         ["studio", "test_mode"],
       ],
     );
+    assert.equal(checkoutSessions.size, 3);
+    assert.deepEqual(contactMail, [
+      {
+        from: "messages@example.invalid",
+        to: ["tejassutar.business@gmail.com"],
+        reply_to: stubEmail,
+        subject: "Zybble contact: Product question",
+        text: `Name: Browser check\nEmail: ${stubEmail}\nTopic: Product question\n\nSynthetic browser submission.`,
+      },
+      {
+        from: "messages@example.invalid",
+        to: ["tejassutar.business@gmail.com"],
+        reply_to: stubEmail,
+        subject: "Zybble contact: Product question",
+        text: `Name: Browser check\nEmail: ${stubEmail}\nTopic: Product question\n\nSimulated delivery failure`,
+      },
+    ]);
   }
   const deliver = (
     id,

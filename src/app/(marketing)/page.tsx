@@ -9,6 +9,10 @@ import {
   UseCasePreview,
   WorkflowSection,
 } from "@/components/sections/product-sections";
+import {
+  SampleClipsSection,
+  TestimonialsSection,
+} from "@/components/sections/homepage-stories";
 import { PricingSection } from "@/components/pricing/pricing";
 import { FAQSection } from "@/components/sections/faq";
 import { JsonLd } from "@/components/shared/structured-data";
@@ -24,6 +28,8 @@ export default function Home() {
       <FeatureGrid />
       <Showcase />
       <UseCasePreview />
+      <SampleClipsSection />
+      <TestimonialsSection />
       <PricingSection preview />
       <FAQSection />
       <FinalCTA />

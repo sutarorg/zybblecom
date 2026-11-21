@@ -19,7 +19,7 @@ try {
   page.on("request", (r) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(r.method())) writes.push(r.url());
   });
-  const dashboard = page.locator(".ws-dashboard");
+  const dashboard = page.locator(".ws-dashboard:visible");
   const picker = dashboard.locator(".ws-picker");
   for (const width of widths) {
     const height = width < 768 ? 844 : 960;

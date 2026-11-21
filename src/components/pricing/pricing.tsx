@@ -1,4 +1,5 @@
 import { checkoutEnabled } from "@/lib/backend/dodo";
+import { expectedDodoMode } from "@/lib/backend/dodo-readiness";
 import {
   Check,
   CircleDollarSign,
@@ -77,10 +78,10 @@ export async function PricingSection({
                 <strong>{pack.credits} credits</strong>
               </div>
               <Action
-                href={`/pricing/${pack.id}`}
+                href="/signup"
                 variant={pack.id === "creator" ? "primary" : "secondary"}
               >
-                View {pack.name} pack
+                Get started
               </Action>
               <ul>
                 {pack.features.map((feature) => (
@@ -111,14 +112,16 @@ export async function PricingSection({
           </li>
           <li>
             <LockKeyhole size={17} aria-hidden="true" />
-            {enabled ? "Hosted test checkout" : "Secure checkout at launch"}
+            Secure checkout
           </li>
         </ul>
         {!preview && (
           <p className="launch-note">
-            {enabled
-              ? "Test checkout is enabled. No live payments are collected."
-              : "Checkout is not available yet. No payments are collected on this site."}
+            {!enabled
+              ? "Checkout is not available yet. No payments are collected on this site."
+              : expectedDodoMode(process.env) === "test_mode"
+                ? "Test checkout is enabled. No live payments are collected."
+                : "Sign up to buy credits from your dashboard using secure hosted checkout."}
           </p>
         )}
       </div>

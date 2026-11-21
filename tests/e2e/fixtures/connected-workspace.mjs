@@ -29,7 +29,9 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
     page.on("request", (request) => {
       if (
         !["GET", "HEAD", "OPTIONS"].includes(request.method()) &&
-        request.url() !== `${origin}/api/checkout`
+        !["/api/checkout", "/api/auth/logout", "/api/contact"]
+          .map((path) => origin + path)
+          .includes(request.url())
       )
         errors.push(`Unexpected write: ${request.url()}`);
     });
@@ -37,6 +39,30 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
       assert.equal((await page.goto(`${origin}${path}`)).status(), 200);
       assert.equal(new URL(page.url()).pathname, path);
     };
+    await go("/");
+    const header = page.getByRole("banner");
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 960 });
+      await page.reload();
+      if (width === 390)
+        await header.getByRole("button", { name: "Open menu" }).click();
+      const dashboard = header.getByRole("link", {
+        name: "Dashboard",
+        exact: true,
+      });
+      await dashboard.waitFor();
+      assert.equal(await dashboard.getAttribute("href"), "/dashboard");
+      for (const name of ["Log in", "Get started"])
+        assert.equal(
+          await header.getByRole("link", { name, exact: true }).count(),
+          0,
+        );
+      if (width === 390) {
+        await dashboard.click();
+        await page.waitForURL(`${origin}/dashboard`);
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
     for (const balance of [0, 1, 10, null]) {
       setWallet(balance);
       await go("/dashboard");
@@ -110,23 +136,67 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
         fullPage: true,
       });
     }
-    await go("/credits");
+    // Stop the browser at the expected hosted URL without visiting Dodo.
+    await page.route(
+      "https://test.checkout.dodopayments.com/session/**",
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/plain",
+          body: "Isolated checkout destination fixture",
+        }),
+    );
     for (const pack of ["starter", "creator", "studio"]) {
+      await go("/credits");
       const card = page.locator(`.ws-packs .pack-${pack}`);
-      const buy = card.getByRole("button", { name: "Buy Now", exact: true });
+      const pay = card.getByRole("button", { name: "Pay Now", exact: true });
       const response = page.waitForResponse(`${origin}/api/checkout`);
-      await buy.click();
+      await pay.click();
       const result = await response;
       assert.equal(result.request().postDataJSON().packId, pack);
-      assert.equal(result.status(), 503);
-      const alert = card.getByRole("alert");
-      await alert.waitFor();
-      assert.match(await alert.innerText(), /Checkout isn’t available/);
-      assert(await buy.isEnabled());
+      assert.equal(result.status(), 200);
+      await page.waitForURL(
+        `https://test.checkout.dodopayments.com/session/cks_fixture_${pack}`,
+      );
+    }
+    await go("/dashboard");
+    await page
+      .locator(".ws-sidebar")
+      .getByRole("button", { name: "Log out" })
+      .click();
+    await page.waitForURL(`${origin}/login`);
+    await go("/contact");
+    await header.getByRole("link", { name: "Log in", exact: true }).waitFor();
+    await header
+      .getByRole("link", { name: "Get started", exact: true })
+      .waitFor();
+    assert.equal(
+      await header
+        .getByRole("link", { name: "Dashboard", exact: true })
+        .count(),
+      0,
+    );
+    const submit = page.getByRole("button", {
+      name: "Submit Message",
+      exact: true,
+    });
+    for (const [message, expected] of [
+      [
+        "Synthetic browser submission.",
+        /Your message has been sent successfully/,
+      ],
+      ["Simulated delivery failure", /Your message could not be sent/],
+    ]) {
+      await page.locator("#contact-name").fill("Browser check");
+      await page.locator("#contact-email").fill("fixture@example.invalid");
+      await page.locator("#contact-topic").selectOption("Product question");
+      await page.locator("#contact-message").fill(message);
+      await submit.click();
+      await page.getByText(expected).waitFor();
     }
     assert.deepEqual(errors, []);
     console.log(
-      "Connected browser fixture: zero/insufficient/sufficient/unavailable balance, draft preservation and profile fields passed.",
+      "Connected browser fixture: zero/insufficient/sufficient/unavailable balance, draft preservation, profile fields, three Dodo test-mode redirects, returning session, sign-out, and contact delivery fixtures passed.",
     );
   } finally {
     await browser.close();
