@@ -172,7 +172,9 @@ export function NewProject({
   const fingerprint = quoteContext(verifiedProject?.id, params);
   const currentQuote = quote?.fingerprint === fingerprint ? quote.value : null;
   const quoteStatus = useCreditQuote(currentQuote);
-  const estimate = estimateSourceCredits(reading?.duration);
+  const estimate = estimateSourceCredits(
+    verifiedProject?.source?.durationSeconds ?? reading?.duration,
+  );
   const costText = (amount: number) =>
     `${creditsText(amount)} ${amount === 1 ? "credit" : "credits"}`;
   const liveQuote =
@@ -365,7 +367,11 @@ export function NewProject({
                           !validateVideo(file, maxBytes) &&
                           validTitle(title)
                         )
-                          void upload.start(file, title.trim());
+                          void upload
+                            .start(file, title.trim())
+                            .then((completed) => {
+                              if (completed) router.refresh();
+                            });
                       }}
                     >
                       {upload.phase === "failed"
@@ -497,7 +503,7 @@ export function NewProject({
                 verifiedProject?.source
                   ? durationText(verifiedProject.source.durationSeconds)
                   : reading?.duration
-                    ? `${durationText(reading.duration)} (local)`
+                    ? durationText(reading.duration)
                     : "Not available",
               ],
               [Clapperboard, "Clip count", String(options.clips)],
@@ -536,7 +542,7 @@ export function NewProject({
                       ? "—"
                       : "0"
                     : costText(estimate)}
-                {estimate !== null && !liveQuote && (
+                {estimate !== null && !liveQuote && !verifiedProject && (
                   <span className="sr-only"> (local estimate)</span>
                 )}
               </dd>

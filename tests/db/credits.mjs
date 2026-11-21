@@ -90,7 +90,169 @@ try {
       .rows[0].balance,
     120,
   );
-  // Exercise each frozen test snapshot against the real wallet transaction.
+  // Source upload state transactions use the same zero-balance wallet throughout.
+  const uploadOwner = id();
+  await q("insert into auth.users values ($1,'uploads@example.invalid',null)", [
+    uploadOwner,
+  ]);
+  const pending = [
+    uploadOwner,
+    id(),
+    id(),
+    id(),
+    "Real source",
+    "source.mp4",
+    "video/mp4",
+    100,
+    "source-test",
+  ];
+  const beginUpload = "select begin_source_upload($1,$2,$3,$4,$5,$6,$7,$8,$9)";
+  await assert.rejects(
+    a.query(beginUpload, pending),
+    /UPLOAD_ACCOUNT_UNAVAILABLE/,
+  );
+  await q("update profiles set onboarding_completed=true where id=$1", [
+    uploadOwner,
+  ]);
+  await a.query(beginUpload, pending);
+  const [user, project, asset, upload] = pending;
+  const wallet = () =>
+    q("select balance,reserved_balance from credit_wallets where user_id=$1", [
+      user,
+    ]).then(({ rows }) => rows);
+  assert.deepEqual(await wallet(), [{ balance: 0, reserved_balance: 0 }]);
+  const token = id();
+  await q(
+    "update upload_sessions set status='verifying',verification_token=$2,verification_started_at=now() where id=$1",
+    [upload, token],
+  );
+  const verifyUpload =
+    "select verify_source_upload($1,$2,$3,$4,$5,$6,$7,$8,$9)";
+  const attestation = [
+    user,
+    upload,
+    token,
+    100,
+    "etag",
+    "video/mp4",
+    2,
+    320,
+    180,
+  ];
+  await assert.rejects(
+    a.query(verifyUpload, [other, ...attestation.slice(1)]),
+    /UPLOAD_STATE_CONFLICT/,
+  );
+  await assert.rejects(
+    a.query(verifyUpload, [user, upload, id(), ...attestation.slice(3)]),
+    /UPLOAD_STATE_CONFLICT/,
+  );
+  await assert.rejects(
+    a.query(verifyUpload, [
+      ...attestation.slice(0, 3),
+      99,
+      ...attestation.slice(4),
+    ]),
+    /UPLOAD_STATE_CONFLICT/,
+  );
+  const discarded = "select discard_source_upload($1,$2,$3,$4) as discarded";
+  assert.equal(
+    (await a.query(discarded, [user, upload, null, false])).rows[0].discarded,
+    false,
+  );
+  await a.query(verifyUpload, attestation);
+  await assert.rejects(
+    a.query(verifyUpload, attestation),
+    /UPLOAD_STATE_CONFLICT/,
+  );
+  assert.equal(
+    (await a.query(discarded, [user, upload, null, true])).rows[0].discarded,
+    false,
+  );
+  assert.deepEqual(
+    (
+      await q(
+        "select status,original_media_asset_id from projects where id=$1",
+        [project],
+      )
+    ).rows,
+    [{ status: "uploaded", original_media_asset_id: asset }],
+  );
+  assert.deepEqual(await wallet(), [{ balance: 0, reserved_balance: 0 }]);
+  assert.equal(
+    (
+      await q(
+        "select count(*)::int as n from credit_transactions where user_id=$1",
+        [user],
+      )
+    ).rows[0].n,
+    0,
+  );
+  const multi = [
+    user,
+    id(),
+    id(),
+    id(),
+    "Large source",
+    "large.mp4",
+    "video/mp4",
+    17_000_000,
+    "source-test",
+  ];
+  await a.query(beginUpload, multi);
+  assert.equal(
+    (await q("select mode from upload_sessions where id=$1", [multi[3]]))
+      .rows[0].mode,
+    "multipart",
+  );
+  assert.equal(
+    (await a.query(discarded, [other, multi[3], null, false])).rows[0]
+      .discarded,
+    false,
+  );
+  assert.equal(
+    (await a.query(discarded, [user, multi[3], null, true])).rows[0].discarded,
+    false,
+  );
+  await q(
+    "update upload_sessions set expires_at=now()-interval '1 minute' where id=$1",
+    [multi[3]],
+  );
+  assert.equal(
+    (await a.query(discarded, [user, multi[3], null, true])).rows[0].discarded,
+    true,
+  );
+  assert.equal(
+    (await q("select status from projects where id=$1", [multi[1]])).rows[0]
+      .status,
+    "deleted",
+  );
+  await q("set role authenticated");
+  await q("select set_config('request.jwt.claim.sub',$1,false)", [other]);
+  await assert.rejects(q(verifyUpload, attestation), /permission denied/);
+  assert.deepEqual(
+    (await q("select id from projects where id=$1", [project])).rows,
+    [],
+  );
+  await q("select set_config('request.jwt.claim.sub',$1,false)", [user]);
+  assert.deepEqual(
+    (await q("select id from projects where id=$1", [project])).rows,
+    [{ id: project }],
+  );
+  assert.deepEqual((await q("select * from get_workspace_overview()")).rows, [
+    { videos_processed: "0", clips_generated: "0" },
+  ]);
+  await q("reset role");
+  // A real SQL error must propagate, not be translated into zero metrics.
+  await q(
+    "begin; revoke execute on function public.get_workspace_overview() from authenticated; set local role authenticated",
+  );
+  await assert.rejects(
+    q("select * from get_workspace_overview()"),
+    /permission denied/,
+  );
+  await q("rollback");
+  // Exercise each frozen test and live snapshot against the real wallet transaction.
   const matrixOwner = id();
   await q("insert into auth.users values ($1,'matrix@example.invalid',null)", [
     matrixOwner,
@@ -104,15 +266,39 @@ try {
     ["studio", "INR", 249900, 300],
   ];
   let total = 0;
-  for (const [pack, currency, amount, credits] of matrix) {
+  for (const [mode, [pack, currency, amount, credits]] of [
+    "test_mode",
+    "live_mode",
+  ].flatMap((mode) => matrix.map((pack) => [mode, pack]))) {
     const [pid, session, paymentId, product] = Array.from({ length: 4 }, id);
     await q(
       `insert into credit_purchases(id,user_id,pack_slug,credits,amount_minor,currency,provider_mode,dodo_product_id,dodo_checkout_session_id)
-      values($1,$2,$3,$4,$5,$6,'test_mode',$7,$8)`,
-      [pid, matrixOwner, pack, credits, amount, currency, product, session],
+      values($1,$2,$3,$4,$5,$6,$9,$7,$8)`,
+      [
+        pid,
+        matrixOwner,
+        pack,
+        credits,
+        amount,
+        currency,
+        product,
+        session,
+        mode,
+      ],
     );
-    const fulfill =
-      "select grant_purchase_credits($1,$2,$3,$4,$5,$6,$7,'test_mode') as granted";
+    const fulfill = `select grant_purchase_credits($1,$2,$3,$4,$5,$6,$7,'${mode}') as granted`;
+    await assert.rejects(
+      a.query("select grant_purchase_credits($1,$2,$3,$4,$5,$6,1,$7)", [
+        pid,
+        session,
+        paymentId,
+        product,
+        amount,
+        currency,
+        mode === "live_mode" ? "test_mode" : "live_mode",
+      ]),
+      /PAYMENT_MISMATCH/,
+    );
     await assert.rejects(
       a.query(fulfill, [pid, session, paymentId, product, amount, currency, 2]),
       /PAYMENT_MISMATCH/,
@@ -359,6 +545,9 @@ try {
     "select id,video_asset_id from clips where id=$1 and status='ready'";
   await q("set role authenticated");
   await q("select set_config('request.jwt.claim.sub',$1,false)", [owner]);
+  assert.deepEqual((await q("select * from get_workspace_overview()")).rows, [
+    { videos_processed: "1", clips_generated: "1" },
+  ]);
   assert.deepEqual((await q(visibleClip, [archiveClip])).rows, [
     { id: archiveClip, video_asset_id: archiveAsset },
   ]);
@@ -368,6 +557,9 @@ try {
   );
   await q("select set_config('request.jwt.claim.sub',$1,false)", [other]);
   assert.deepEqual((await q(visibleClip, [archiveClip])).rows, []);
+  assert.deepEqual((await q("select * from get_workspace_overview()")).rows, [
+    { videos_processed: "0", clips_generated: "0" },
+  ]);
   await q("reset role");
   await assert.rejects(
     a.query("select adjust_user_credits($1,$2,5,$3,'Valid reason')", [

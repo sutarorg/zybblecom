@@ -172,7 +172,6 @@ export default async function Dashboard() {
             </p>
           </header>
           <DashboardPicker
-            available={balance.ok ? balance.value.available : null}
             maxBytes={policy.ok ? policy.value.maxBytes : undefined}
           />
           <p className="dash-upload-note">
@@ -199,7 +198,7 @@ export default async function Dashboard() {
                 {creditsText(value)}
               </strong>
               <p className="dash-metric-detail">
-                {value === undefined ? "Not connected" : detail}
+                {value === undefined ? "Unavailable right now" : detail}
               </p>
             </li>
           ))}

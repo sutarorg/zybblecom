@@ -1,3 +1,4 @@
+import { expectedDodoMode } from "@/lib/backend/dodo-readiness";
 import { checkoutEnabled } from "@/lib/backend/dodo";
 import { accountServer } from "@/lib/services/account-server";
 import { CheckoutButton } from "@/components/pricing/checkout-button";
@@ -26,6 +27,7 @@ export default async function PackPage({ params }: Props) {
   const selected = creditPacks.find((item) => item.id === pack);
   if (!selected) notFound();
   const { currency } = await requestPricing();
+  const mode = expectedDodoMode(process.env);
   const enabled = checkoutEnabled(selected.id, currency);
   const session = enabled ? await accountServer.getSession() : null;
   return (
@@ -54,12 +56,13 @@ export default async function PackPage({ params }: Props) {
                 <div className="notice">
                   <LockKeyhole size={19} aria-hidden="true" />
                   <p>
-                    Test mode only. You’ll continue to Dodo’s hosted checkout.
-                    No real payment will be collected.
+                    {mode === "test_mode"
+                      ? "Test mode only. No real payment will be collected."
+                      : "You’ll pay securely through Dodo’s hosted checkout."}
                   </p>
                 </div>
                 {session?.ok && session.value ? (
-                  <CheckoutButton packId={selected.id} />
+                  <CheckoutButton packId={selected.id} mode={mode} />
                 ) : (
                   <Action href={`/login?pack=${selected.id}`}>
                     Sign in to continue

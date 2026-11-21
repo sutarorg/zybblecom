@@ -2,13 +2,7 @@
 import { useRouter } from "next/navigation";
 import { FilePicker } from "./file-picker";
 import { useLocalDraft } from "./shell";
-export function DashboardPicker({
-  maxBytes,
-  available,
-}: {
-  maxBytes?: number;
-  available: number | null;
-}) {
+export function DashboardPicker({ maxBytes }: { maxBytes?: number }) {
   const { setFile } = useLocalDraft();
   const router = useRouter();
   return (
@@ -16,11 +10,6 @@ export function DashboardPicker({
       file={null}
       maxBytes={maxBytes}
       dashboard
-      onBeforePick={() => {
-        if (available !== 0) return true;
-        router.push("/credits");
-        return false;
-      }}
       onFile={(file) => {
         if (file) {
           setFile(file);

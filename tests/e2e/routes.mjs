@@ -46,6 +46,8 @@ const handlers = {
   "/api/credits/history": ["GET", "/api/credits/history", 503],
   "/api/credits/wallet": ["GET", "/api/credits/wallet", 503],
   "/api/settings/[section]": ["POST", "/api/settings/preferences", 503],
+  "/api/uploads": ["POST", "/api/uploads", 503],
+  "/api/uploads/cleanup": ["GET", "/api/uploads/cleanup", 503],
   "/api/webhooks/dodo": ["POST", "/api/webhooks/dodo", 503],
 };
 const app = "src/app";

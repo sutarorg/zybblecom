@@ -1,3 +1,4 @@
+import { sourceStorageConfig } from "@/lib/backend/source-upload-config";
 import {
   Coins,
   FileVideo,
@@ -143,7 +144,8 @@ export default async function Settings() {
             items={[
               ["Environment", deployment.environment],
               ["Deployment commit", deployment.version ?? "Not reported"],
-              ["Test checkout switch", deployment.enabled ? "On" : "Off"],
+              ["Expected Dodo mode", deployment.mode],
+              ["Checkout switch", deployment.enabled ? "On" : "Off"],
               ...checkout.map(
                 (entry) =>
                   [
@@ -151,9 +153,6 @@ export default async function Settings() {
                     entry.ready
                       ? "Configuration ready"
                       : [
-                          entry.production
-                            ? "Test checkout blocked in production"
-                            : null,
                           !entry.enabled
                             ? "DODO_CHECKOUT_ENABLED is not 1"
                             : null,
@@ -187,7 +186,13 @@ export default async function Settings() {
               ],
               [
                 "Source-video upload",
-                "Not connected: no owner-scoped upload and verification adapter is installed",
+                !sourceStorageConfig(process.env)
+                  ? "Missing or invalid source bucket configuration"
+                  : process.env.R2_SOURCE_UPLOAD_ENABLED !== "1"
+                    ? "R2_SOURCE_UPLOAD_ENABLED is not 1"
+                    : (process.env.CRON_SECRET?.length ?? 0) < 32
+                      ? "Missing or invalid CRON_SECRET"
+                      : "Present; not verified against R2",
               ],
             ]}
           />

@@ -30,20 +30,11 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
       if (!["GET", "HEAD", "OPTIONS"].includes(request.method()))
         errors.push(`Unexpected write: ${request.url()}`);
     });
-    let chooserOpened = false;
-    page.on("filechooser", () => {
-      chooserOpened = true;
-    });
     const go = async (path) => {
       assert.equal((await page.goto(`${origin}${path}`)).status(), 200);
       assert.equal(new URL(page.url()).pathname, path);
     };
-    setWallet(0);
-    await go("/dashboard");
-    await page.getByRole("button", { name: "Browse files" }).click();
-    await page.waitForURL(`${origin}/credits`);
-    assert.equal(chooserOpened, false);
-    for (const balance of [1, 10, null]) {
+    for (const balance of [0, 1, 10, null]) {
       setWallet(balance);
       await go("/dashboard");
       const chooser = page.waitForEvent("filechooser");
@@ -51,6 +42,15 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
       await (await chooser).setFiles("tests/fixtures/estimate-61s.webm");
       await page.waitForURL(`${origin}/projects/new`);
       const summary = page.locator(".ws-summary");
+      await page.getByText(/Local video:.*Not verified by Zybble/).waitFor();
+      const original = summary
+        .locator(".ws-summary-list > div")
+        .filter({ hasText: "Original duration" });
+      assert.doesNotMatch(await original.innerText(), /\(local\)/);
+      assert.equal(
+        await page.getByRole("list", { name: "Preview settings" }).count(),
+        0,
+      );
       await summary
         .getByText("2 credits (local estimate)", { exact: true })
         .waitFor();
@@ -61,7 +61,7 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
       const insufficient = summary.getByText("You don't have enough credits", {
         exact: true,
       });
-      if (balance === 1) {
+      if (balance === 0 || balance === 1) {
         await insufficient.waitFor();
         const title = page.getByLabel("Project title");
         await title.fill("Local fixture draft");

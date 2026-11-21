@@ -1,15 +1,20 @@
 "use client";
 
+import { hostedCheckoutURL, type DodoMode } from "@/lib/payments/dodo-url";
 import { useRouter } from "next/navigation";
 import { useId, useRef, useState } from "react";
 
 export function CheckoutButton({
   packId,
-  label = "Continue to test checkout",
+  mode,
+  label = mode === "test_mode"
+    ? "Continue to test checkout"
+    : "Continue to checkout",
   unavailable,
   variant = "primary",
 }: {
   packId: string;
+  mode: DodoMode;
   label?: string;
   unavailable?: { id: string } | { message: string };
   variant?: "primary" | "secondary";
@@ -44,7 +49,7 @@ export function CheckoutButton({
       }
       if (response.status === 503) {
         setMessage(
-          "Test checkout isn’t available for this pack right now. Please try again later.",
+          "Checkout isn’t available for this pack right now. Please try again later.",
         );
         return;
       }
@@ -55,19 +60,13 @@ export function CheckoutButton({
         typeof payload.data?.checkoutUrl !== "string"
       )
         throw new Error();
-      const url = new URL(payload.data.checkoutUrl);
-      if (
-        url.origin !== "https://test.checkout.dodopayments.com" ||
-        url.username ||
-        url.password ||
-        !url.pathname.startsWith("/session/")
-      )
-        throw new Error();
+      const url = hostedCheckoutURL(payload.data.checkoutUrl, mode);
+      if (!url) throw new Error();
       window.location.assign(url.href);
       leaving = true;
     } catch {
       setMessage(
-        "Couldn’t open test checkout. Check purchase history if you already submitted a payment.",
+        "Couldn’t open checkout. Check purchase history if you already submitted a payment.",
       );
     } finally {
       if (!leaving) {

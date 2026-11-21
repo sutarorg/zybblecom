@@ -8,6 +8,12 @@ import { storedPreferences } from "./settings-schema";
 import { avatarUrl } from "@/lib/backend/avatars";
 import { archivedClip } from "@/lib/backend/media";
 import { clipLocator } from "@/lib/media/providers";
+import { uploadPolicy } from "@/lib/backend/source-upload-config";
+import {
+  getOwnedProject,
+  listOwnedProjects,
+  workspaceOverview,
+} from "@/lib/backend/project-reads";
 import type { Clip, Result } from "./workspace-contracts";
 async function read<T>(fn: () => Promise<T>): Promise<Result<T>> {
   try {
@@ -83,6 +89,10 @@ export const workspace = createWorkspaceServices({
         canEditMetadata: false,
       };
     }),
+  getOverview: () => read(workspaceOverview),
+  listProjects: (input) => read(() => listOwnedProjects(input)),
+  getProject: (id) => read(() => getOwnedProject(id)),
+  getUploadPolicy: () => read(uploadPolicy),
   getBalance: () => read(creditSummary),
   listLedger: ({ filter, cursor }) =>
     read(() => creditActivity(filter, cursor)),

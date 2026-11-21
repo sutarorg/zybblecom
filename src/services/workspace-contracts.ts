@@ -7,7 +7,8 @@ export type WorkspaceError =
   | "not_found"
   | "insufficient_credits"
   | "conflict"
-  | "cancelled";
+  | "cancelled"
+  | "invalid_media";
 export type Result<T> =
   | ServiceResult<T>
   | { ok: false; error: Exclude<WorkspaceError, ServiceError> };
@@ -136,6 +137,7 @@ export type ClipQuery = {
 };
 export type UploadPolicy = { maxBytes: number; mode: "put" | "multipart" };
 export type UploadTicket =
+  | { uploadId: string; projectId: string; mode: "stored" }
   | {
       uploadId: string;
       projectId: string;
@@ -178,6 +180,7 @@ export interface WorkspaceAdapter {
   finishUpload(input: {
     uploadId: string;
     parts: readonly { number: number; etag: string }[];
+    etag?: string;
   }): Promise<Result<VerifiedUpload>>;
   cancelUpload(uploadId: string): Promise<Result<null>>;
   quoteGeneration(input: {

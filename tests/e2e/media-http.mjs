@@ -220,6 +220,28 @@ try {
       headers: { Origin: site, "Content-Type": type },
       body: type === "application/json" ? JSON.stringify(input) : input,
     });
+  const uploadBegin = {
+    action: "begin",
+    title: "Local HTTP guard check",
+    filename: "short.mp4",
+    bytes: 1000,
+    mime: "video/mp4",
+  };
+  assert.equal((await submit("/api/uploads", uploadBegin)).status, 401);
+  assert.equal(
+    (await submit("/api/uploads", uploadBegin, "https://other.example.invalid"))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await submit("/api/uploads", {
+        ...uploadBegin,
+        objectKey: "not-a-client-field",
+      })
+    ).status,
+    400,
+  );
   const contact = {
     name: "Browser check",
     email: "fixture@example.invalid",
@@ -343,6 +365,17 @@ try {
     ).status,
     200,
   );
+  const uploadsWithoutR2 = await fetch(`${origin}/api/uploads`, {
+    method: "POST",
+    headers: {
+      Origin: origin,
+      "Content-Type": "application/json",
+      Cookie: cookies.join("; "),
+    },
+    body: JSON.stringify(uploadBegin),
+  });
+  assert.equal(uploadsWithoutR2.status, 503);
+  assert.equal((await uploadsWithoutR2.json()).error.code, "unavailable");
   if (process.env.CONNECTED_BROWSER_QA === "1") {
     const { connectedWorkspace } =
       await import("./fixtures/connected-workspace.mjs");

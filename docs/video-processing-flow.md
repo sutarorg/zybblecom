@@ -1,6 +1,6 @@
 # Video processing: partial integration, not production-ready
 
-The application reads R2 and ClipSDK configuration on the server. Verified, archived clips from completed and settled jobs can obtain short-lived private R2 links in the editor. ClipSDK terminal deliveries for known jobs are verified and recorded for later reconciliation. Administrators can read the provider status of an already correlated job. None of these paths submits or bills a job. There is still no writer that produces archived clips, no user upload path, and no automatic reconciliation/archiving worker.
+The application reads R2 and ClipSDK configuration on the server. Verified, archived clips from completed and settled jobs can obtain short-lived private R2 links in the editor. ClipSDK terminal deliveries for known jobs are verified and recorded for later reconciliation. Administrators can read the provider status of an already correlated job. None of these paths submits or bills a job. The [source upload path](source-uploads.md) is separate from archived clips. There is still no writer that produces archived clips and no automatic reconciliation/archiving worker.
 
 ## Isolated staging setup
 
@@ -13,7 +13,7 @@ Official references: [R2 presigned URLs](https://developers.cloudflare.com/r2/ap
 
 Planned gating sequence:
 
-1. Private R2 origin-scoped CORS for browser PUTs, durable upload sessions and server-controlled keys. Multipart init/sign/list/complete/abort; list parts and check sizes, then verify media metadata independently. Do not treat client duration or file content type as verified. Prove the initial 2 GB / 180-minute limits and clean abandoned objects/sessions.
+1. Validate direct [source uploads](source-uploads.md) and cleanup against isolated Cloudflare R2 before enabling them.
 2. Dispatch `POST /v1/clips?wait=0` only after credit reservation and trusted input verification. Persist encrypted immutable request bytes, including the source URL, and one stable provider key. Bound dispatch to provider account quotas and honor Retry-After. Unknown state after the idempotency window requires investigation, not another paid job.
 3. Verify signed raw webhook bytes before durable receipt; correlate via known job ID, then reconcile against provider status. Archive all required returned assets to private R2 with leases, per-attempt fencing, HTTPS host allowlists, no redirects, and bounded transfer/storage. Mark completion only after stored files are available. Keep clip rank/score/stages only when verified.
 4. Exercise direct upload, actual processing, recovery and signed download using a real short MP4 in staging. No claimed latency, codec coverage or provider throughput until measured.
