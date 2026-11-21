@@ -168,7 +168,27 @@ import { launchBrowser } from "./browser.mjs";
     "$39",
   ]);
   assert.equal(await page.locator(".price-card").count(), 3);
-  await page.getByRole("link", { name: "View Creator pack" }).click();
+  for (const route of ["/", "/pricing"]) {
+    await page.goto(origin + route);
+    const pricing = page.locator(".pricing-section");
+    await pricing.getByText("Secure checkout", { exact: true }).waitFor();
+    const links = pricing.getByRole("link", {
+      name: "Get started",
+      exact: true,
+    });
+    assert.deepEqual(
+      await links.evaluateAll((items) =>
+        items.map((link) => link.getAttribute("href")),
+      ),
+      ["/signup", "/signup", "/signup"],
+    );
+  }
+  await page
+    .locator(".pack-creator")
+    .getByRole("link", { name: "Get started", exact: true })
+    .click();
+  await page.waitForURL("**/signup");
+  await page.goto(origin + "/pricing/creator");
   await page.getByText("Checkout isn’t open yet.").waitFor();
   const india = await page.request.get(origin + "/pricing", {
     headers: { "x-vercel-ip-country": "IN" },
@@ -180,6 +200,22 @@ import { launchBrowser } from "./browser.mjs";
     headers: { "x-vercel-ip-country": "GB" },
   });
   assert.ok((await otherMarket.text()).includes("$39"));
+  for (const route of ["/", "/pricing", "/contact", "/signup"]) {
+    await page.goto(origin + route);
+    assert.deepEqual(
+      await page.evaluate(() => {
+        if (
+          !CSS.supports("scrollbar-color", "auto") ||
+          !matchMedia("(pointer: fine) and (forced-colors: none)").matches
+        )
+          return null;
+        const style = getComputedStyle(document.documentElement);
+        return [style.scrollbarWidth, style.scrollbarColor];
+      }),
+      ["thin", "rgb(212, 212, 216) rgb(250, 250, 250)"],
+      route,
+    );
+  }
   for (const route of [
     "/",
     "/features",

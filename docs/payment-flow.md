@@ -20,9 +20,9 @@ Create **six distinct tax-inclusive, fixed-price, one-time Dodo products in each
 
 Register the **separate endpoint in each Dodo dashboard mode**: `<APP_ORIGIN>/api/webhooks/dodo`. Give Dodo access through any deployment protection and use that endpoint’s signing secret. Subscribe to `payment.succeeded`, `payment.failed`, `payment.cancelled`, `refund.succeeded`, `refund.failed`, and the supported `dispute.*` events. Turning checkout off stops new sessions, not fulfillment of existing sessions; retain the paired API and webhook keys during a pause.
 
-## If Buy Now is missing from Credits
+## If Pay Now is disabled on Credits
 
-Credits shows **Buy Now** only for a pack and currency that pass the checkout readiness checks. Otherwise, it links to the pack details instead of displaying a disabled purchase button. On Vercel, open **Admin → Settings → Checkout readiness** on the affected deployment to see the switch and missing or invalid variable names. Check the **Production** or **Preview** scope in Vercel, redeploy after editing settings, and confirm readiness there before testing. Do not set the switch alone: Production also requires `DODO_MODE=live_mode` and the separate live credentials, products, and webhook above.
+**Pay Now** opens Dodo’s hosted checkout for a pack and currency that pass the readiness checks. When checkout is unavailable, the button is disabled with an explanation. On Vercel, open **Admin → Settings → Checkout readiness** on the affected deployment to see the switch and missing or invalid variable names. Check the **Production** or **Preview** scope in Vercel, redeploy after editing settings, and confirm readiness there before testing. Do not set the switch alone: Production also requires `DODO_MODE=live_mode` and the separate live credentials, products, and webhook above.
 
 ## Validation and settlement
 

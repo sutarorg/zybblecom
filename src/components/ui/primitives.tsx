@@ -66,11 +66,13 @@ export function Eyebrow({
 }
 export function SectionTitle({
   label,
+  headingId,
   title,
   description,
   align = "center",
 }: {
   label?: string;
+  headingId?: string;
   title: ReactNode;
   description?: string;
   align?: "left" | "center";
@@ -78,7 +80,7 @@ export function SectionTitle({
   return (
     <div className={`section-title ${align === "left" ? "is-left" : ""}`}>
       {label && <Eyebrow>{label}</Eyebrow>}
-      <h2>{title}</h2>
+      <h2 id={headingId}>{title}</h2>
       {description && <p>{description}</p>}
     </div>
   );

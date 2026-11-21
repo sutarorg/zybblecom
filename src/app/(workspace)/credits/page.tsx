@@ -37,7 +37,7 @@ export default async function Credits({
       ? "You’ll pay securely through Dodo’s hosted checkout."
       : "Test checkout only. No real payment will be collected."
     : !enabled
-      ? "Credit purchases are turned off right now. You can still review the packs."
+      ? "Credit purchases are turned off right now."
       : "Checkout isn’t available for these packs right now. No payment can be collected here.";
   const cards = [
     {
@@ -102,7 +102,9 @@ export default async function Credits({
             <p>Simple, one-time purchases. Your credits never expire.</p>
           </div>
         </div>
-        <p className="ws-muted">{checkoutNotice}</p>
+        <p id="credit-checkout-notice" className="ws-muted">
+          {checkoutNotice}
+        </p>
         <div className="pricing-grid">
           {packs.map((pack) => (
             <article
@@ -120,26 +122,23 @@ export default async function Credits({
                 <strong>{pack.credits} credits</strong>
               </div>
               {activePack === pack.id && <p role="status">Selected pack</p>}
-              {pack.checkout.ready ? (
-                <CheckoutButton
-                  packId={pack.id}
-                  mode={pack.checkout.mode}
-                  label="Buy Now"
-                  variant={pack.id === "creator" ? "primary" : "secondary"}
-                />
-              ) : (
-                <>
-                  <Action
-                    href={`/pricing/${pack.id}`}
-                    variant="secondary"
-                    arrow={false}
-                  >
-                    View {pack.name} pack
-                  </Action>
-                  {checkoutAvailable && (
-                    <p>Checkout for this pack is unavailable right now.</p>
-                  )}
-                </>
+              <CheckoutButton
+                packId={pack.id}
+                mode={pack.checkout.mode}
+                label="Pay Now"
+                variant={pack.id === "creator" ? "primary" : "secondary"}
+                unavailableReasonId={
+                  pack.checkout.ready
+                    ? undefined
+                    : checkoutAvailable
+                      ? `${pack.id}-checkout-notice`
+                      : "credit-checkout-notice"
+                }
+              />
+              {!pack.checkout.ready && checkoutAvailable && (
+                <p id={`${pack.id}-checkout-notice`}>
+                  Checkout for this pack is unavailable right now.
+                </p>
               )}
               <ul>
                 {pack.features.map((feature) => (

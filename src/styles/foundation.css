@@ -475,28 +475,31 @@ button:disabled {
   }
 }
 
-/* Style existing scroll surfaces without changing their overflow or sizing. */
+/* Use one scrollbar theme without changing scroll surfaces or touch behavior. */
 @media (pointer: fine) and (forced-colors: none) {
-  @supports not selector(::-webkit-scrollbar) {
-    * {
-      scrollbar-color: #dcd5ed #f8f7fb;
+  :root {
+    --scrollbar-thumb: #d4d4d8;
+    --scrollbar-track: #fafafa;
+  }
+  @supports (scrollbar-color: auto) and (scrollbar-width: thin) {
+    :where(*) {
+      scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
       scrollbar-width: thin;
     }
   }
-  ::-webkit-scrollbar:vertical {
-    width: 6px;
-  }
-  ::-webkit-scrollbar-track:vertical {
-    background: #f8f7fb;
-  }
-  ::-webkit-scrollbar-thumb:vertical {
-    background: #dcd5ed;
-    border-radius: 999px;
-  }
-  ::-webkit-scrollbar-thumb:vertical:hover {
-    background: #cbbfe3;
-  }
-  ::-webkit-scrollbar-thumb:vertical:active {
-    background: #beafd9;
+  @supports not ((scrollbar-color: auto) and (scrollbar-width: thin)) {
+    ::-webkit-scrollbar:vertical {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track:vertical {
+      background: var(--scrollbar-track);
+    }
+    ::-webkit-scrollbar-thumb:vertical {
+      background: var(--scrollbar-thumb);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:vertical:hover {
+      background: #a1a1aa;
+    }
   }
 }

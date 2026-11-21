@@ -48,6 +48,18 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/auth/callback",
+    // Public pages with a session-aware header also need cookie refresh.
+    "/",
+    "/blog/:path*",
+    "/contact",
+    "/examples",
+    "/faq",
+    "/features",
+    "/help",
+    "/how-it-works",
+    "/pricing/:path*",
+    "/resources",
+    "/use-cases",
     "/login",
     "/admin/:path*",
     "/dashboard/:path*",
