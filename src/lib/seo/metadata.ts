@@ -12,7 +12,7 @@ export function pageMetadata(
     exactTitle?: boolean;
     article?: {
       publishedTime: string;
-      author: string;
+      authorUrl?: string;
       thumbnail?: { src: string; alt: string };
     };
   } = {},
@@ -51,7 +51,9 @@ export function pageMetadata(
           siteName: site.name,
           images,
           publishedTime: options.article.publishedTime,
-          authors: [options.article.author],
+          authors: options.article.authorUrl
+            ? [options.article.authorUrl]
+            : undefined,
         }
       : {
           type: "website",
@@ -79,9 +81,10 @@ export function pageMetadata(
 export function marketingMetadata(
   path: keyof typeof marketingSeo,
   noindex?: boolean,
+  canonicalPath: string = path,
 ) {
   const [title, description, keywords] = marketingSeo[path];
-  return pageMetadata(path, title, description, {
+  return pageMetadata(canonicalPath, title, description, {
     exactTitle: true,
     keywords: keywords.split(", "),
     noindex,

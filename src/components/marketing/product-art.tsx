@@ -56,7 +56,7 @@ export function HeroArt() {
             src={host}
             alt="A podcast host speaking into a studio microphone"
             fill
-            sizes="(max-width: 540px) 168px, 260px"
+            sizes="(min-width: 760px) min(246px, 20vw), min(230px, 39vw)"
             preload
             className="object-cover"
           />

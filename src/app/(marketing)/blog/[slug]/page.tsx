@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { articles } from "@/config/editorial";
 import { site } from "@/config/site";
 import { pageMetadata } from "@/lib/seo/metadata";
+import { publisher } from "@/lib/seo/structured-data";
 import { publicationDate, readingTime } from "@/lib/utils/editorial";
 import { PageIntro } from "@/components/shared/page";
 import { JsonLd } from "@/components/shared/structured-data";
@@ -21,7 +22,7 @@ export async function generateMetadata({ params }: Props) {
     keywords: article.keywords,
     article: {
       publishedTime: article.publishedAt,
-      author: article.author.name,
+      authorUrl: article.author.url,
       thumbnail: article.thumbnail,
     },
   });
@@ -44,15 +45,21 @@ export default async function BlogArticle({ params }: Props) {
           headline: article.title,
           keywords: article.keywords,
           description: article.description,
-          mainEntityOfPage: url,
+          url,
+          mainEntityOfPage: { "@type": "WebPage", "@id": url },
           datePublished: article.publishedAt,
           author: {
             "@type": "Organization",
             name: article.author.name,
             ...(article.author.url ? { url: article.author.url } : {}),
           },
-          publisher: { "@type": "Organization", name: site.name },
-          image: `${site.url}${article.thumbnail.src}`,
+          publisher,
+          image: {
+            "@type": "ImageObject",
+            url: `${site.url}${article.thumbnail.src}`,
+            width: 1200,
+            height: 675,
+          },
         }}
       />
       <article>
@@ -81,7 +88,7 @@ export default async function BlogArticle({ params }: Props) {
               alt={article.thumbnail.alt}
               width={1200}
               height={675}
-              sizes="(max-width: 768px) 95vw, 760px"
+              sizes="(min-width: 842px) 770px, (min-width: 760px) calc(100vw - 72px), calc(100vw - 40px)"
             />
             {article.sections.length > 2 && (
               <nav

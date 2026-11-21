@@ -52,7 +52,7 @@ test("all 19 articles have distinct metadata, covers, and keyword sets", () => {
         keywords: article.keywords,
         article: {
           publishedTime: article.publishedAt,
-          author: article.author.name,
+          authorUrl: article.author.url,
           thumbnail: article.thumbnail,
         },
       },
