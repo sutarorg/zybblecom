@@ -246,12 +246,15 @@ try {
   assert(await page.getByRole("button", { name: "Send request" }).isDisabled());
   await go("credits");
   for (const pack of ["starter", "creator", "studio"]) {
-    const response = await page.request.get(`${origin}/pricing/${pack}`);
-    assert.equal(response.status(), 200);
     const card = page.locator(`.ws-packs .pack-${pack}`);
-    const buy = card.getByRole("button", { name: "Buy Now", exact: true });
-    assert(await buy.isDisabled());
-    assert.equal(await card.locator(`a[href="/pricing/${pack}"]`).count(), 0);
+    assert.equal(
+      await card.getByRole("button", { name: "Buy Now", exact: true }).count(),
+      0,
+    );
+    await card.getByRole("link", { name: `View ${pack} pack` }).click();
+    await page.waitForURL(`**/pricing/${pack}`);
+    await page.getByText("Checkout isn’t open yet.", { exact: true }).waitFor();
+    await page.goBack();
   }
   await page.getByRole("link", { name: "View History" }).click();
   await page.waitForURL("**/credits/history");

@@ -28,11 +28,9 @@ export function dodoSettings() {
     client: new DodoPayments({
       bearerToken,
       environment: mode,
-      // Pin the API host so an SDK environment override cannot mix modes.
-      baseURL:
-        mode === "live_mode"
-          ? "https://live.dodopayments.com"
-          : "https://test.dodopayments.com",
+      // Use the SDK's mode-specific host and suppress DODO_PAYMENTS_BASE_URL.
+      // The SDK throws if both a base URL and environment are supplied.
+      baseURL: null,
       webhookKey,
       timeout: 8000,
       maxRetries: 0,

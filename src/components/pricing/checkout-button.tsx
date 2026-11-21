@@ -2,7 +2,7 @@
 
 import { hostedCheckoutURL, type DodoMode } from "@/lib/payments/dodo-url";
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 export function CheckoutButton({
   packId,
@@ -10,23 +10,19 @@ export function CheckoutButton({
   label = mode === "test_mode"
     ? "Continue to test checkout"
     : "Continue to checkout",
-  unavailable,
   variant = "primary",
 }: {
   packId: string;
   mode: DodoMode;
   label?: string;
-  unavailable?: { id: string } | { message: string };
   variant?: "primary" | "secondary";
 }) {
-  const enabled = unavailable === undefined;
   const router = useRouter();
-  const hint = useId();
   const busy = useRef(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   async function checkout() {
-    if (busy.current || !enabled) return;
+    if (busy.current) return;
     busy.current = true;
     setPending(true);
     setMessage("");
@@ -80,21 +76,11 @@ export function CheckoutButton({
       <button
         type="button"
         className={`button button-${variant}`}
-        disabled={!enabled || pending}
-        aria-describedby={
-          unavailable
-            ? "id" in unavailable
-              ? unavailable.id
-              : hint
-            : undefined
-        }
+        disabled={pending}
         onClick={checkout}
       >
         {pending ? "Opening checkout…" : label}
       </button>
-      {unavailable && "message" in unavailable && (
-        <p id={hint}>{unavailable.message}</p>
-      )}
       {message && <p role="alert">{message}</p>}
     </>
   );
