@@ -14,15 +14,9 @@ type Props = {
     page?: string | string[];
   }>;
 };
-export async function generateMetadata({ searchParams }: Props) {
-  const query = await searchParams;
-  return marketingMetadata(
-    "/blog",
-    !articles.length || Boolean(query.q || query.category || query.page),
-  );
-}
-export default async function Blog({ searchParams }: Props) {
-  const params = await searchParams;
+const pageSize = 6;
+
+function journalListing(params: Awaited<Props["searchParams"]>) {
   const q = typeof params.q === "string" ? params.q.trim().slice(0, 120) : "";
   const category = categories.find((item) => item === params.category) ?? "";
   const matches = articles.filter(
@@ -35,18 +29,30 @@ export default async function Blog({ searchParams }: Props) {
   const featured =
     !q && !category ? matches.find((item) => item.featured) : undefined;
   const listing = matches.filter((item) => item !== featured);
-  const count = Math.max(1, Math.ceil(listing.length / 6));
-  const page = Math.min(
-    count,
-    Math.max(
-      1,
-      Number(
-        typeof params.page === "string" && /^\d+$/.test(params.page)
-          ? params.page
-          : 1,
-      ),
-    ),
-  );
+  const count = Math.max(1, Math.ceil(listing.length / pageSize));
+  const requested =
+    typeof params.page === "string" && /^\d+$/.test(params.page)
+      ? Number(params.page)
+      : 1;
+  const page = Math.min(count, Math.max(1, requested));
+  return { q, category, matches, featured, listing, count, page, requested };
+}
+
+export async function generateMetadata({ searchParams }: Props) {
+  const params = await searchParams;
+  const { count, page, requested } = journalListing(params);
+  const invalidPage =
+    params.page !== undefined &&
+    (params.page !== String(requested) || requested < 1 || requested > count);
+  const noindex =
+    !articles.length || Boolean(params.q || params.category) || invalidPage;
+  const canonical = !noindex && page > 1 ? `/blog?page=${page}` : "/blog";
+  return marketingMetadata("/blog", noindex, canonical);
+}
+
+export default async function Blog({ searchParams }: Props) {
+  const { q, category, matches, featured, listing, count, page } =
+    journalListing(await searchParams);
   const href = (nextCategory: string, nextPage = 1) => {
     const next = new URLSearchParams();
     if (q) next.set("q", q);
@@ -57,7 +63,7 @@ export default async function Blog({ searchParams }: Props) {
   return (
     <>
       <PageIntro
-        path="/blog"
+        path={href(category, page)}
         label="Blog"
         title={
           <>
@@ -133,9 +139,11 @@ export default async function Blog({ searchParams }: Props) {
                 <ArticleCard article={featured} featured />
               )}
               <div className="grid-three">
-                {listing.slice((page - 1) * 6, page * 6).map((article) => (
-                  <ArticleCard key={article.slug} article={article} />
-                ))}
+                {listing
+                  .slice((page - 1) * pageSize, page * pageSize)
+                  .map((article) => (
+                    <ArticleCard key={article.slug} article={article} />
+                  ))}
               </div>
               {count > 1 && (
                 <nav className="filter-row" aria-label="Article pages">

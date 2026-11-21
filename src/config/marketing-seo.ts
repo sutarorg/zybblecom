@@ -1,7 +1,7 @@
 /** Public page snippets. Keep titles exact rather than applying the root template. */
 export const marketingSeo = {
   "/": [
-    "AI Video Repurposing Tool for Creators & Teams",
+    "AI Repurposing Tool for Creators & Teams",
     "Turn one long video or podcast into shorts, clips, captions, blog posts and carousels in minutes. Repurpose your content with AI using Zybble.",
     "AI video repurposing, content repurposing tool, repurpose video, video to shorts, podcast clips, Zybble",
   ],

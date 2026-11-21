@@ -23,8 +23,8 @@ export function ArticleCard({
         height={675}
         sizes={
           featured
-            ? "(max-width: 768px) 95vw, 1060px"
-            : "(max-width: 768px) 95vw, 360px"
+            ? "(min-width: 1288px) 1216px, (min-width: 760px) calc(100vw - 72px), calc(100vw - 40px)"
+            : "(min-width: 1288px) 390px, (min-width: 1000px) 30vw, (min-width: 650px) 47vw, calc(100vw - 40px)"
         }
       />
       <p className="overline">

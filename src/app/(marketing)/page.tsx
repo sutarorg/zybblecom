@@ -1,4 +1,4 @@
-import { site } from "@/config/site";
+import { websiteGraph } from "@/lib/seo/structured-data";
 import { marketingMetadata } from "@/lib/seo/metadata";
 import {
   FeatureGrid,
@@ -17,15 +17,7 @@ export const metadata = marketingMetadata("/");
 export default function Home() {
   return (
     <>
-      <JsonLd
-        value={{
-          "@context": "https://schema.org",
-          "@type": "WebSite",
-          name: site.name,
-          url: site.url,
-          description: site.description,
-        }}
-      />
+      <JsonLd value={websiteGraph} />
       <Hero />
       <PlatformStrip />
       <WorkflowSection />

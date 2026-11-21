@@ -3,6 +3,8 @@ const config: NextConfig = {
   allowedDevOrigins: ["*.e2b.app"],
   devIndicators: false,
   poweredByHeader: false,
+  // Cover the responsive hero slot at 2x density without jumping to 384px.
+  images: { imageSizes: [32, 48, 64, 96, 128, 256, 320, 384] },
   async headers() {
     const sensitive = [
       "/api/:path*",
@@ -22,13 +24,21 @@ const config: NextConfig = {
       "/support",
       "/admin/:path*",
     ];
-    return [...sensitive, "/pricing/:path*"].map((source) => ({
-      source,
-      headers: [
-        { key: "Referrer-Policy", value: "no-referrer" },
-        { key: "Cache-Control", value: "private, no-store" },
-      ],
-    }));
+    return [
+      ...[...sensitive, "/pricing/:path*"].map((source) => ({
+        source,
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      })),
+      ...(process.env.VERCEL_ENV === "preview"
+        ? [{
+            source: "/:path*",
+            headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+          }]
+        : []),
+    ];
   },
 };
 export default config;

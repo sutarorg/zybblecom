@@ -30,8 +30,9 @@ export function Hero() {
         <div className="hero-copy">
           <Eyebrow pill>AI VIDEO REPURPOSING PLATFORM</Eyebrow>
           <h1>
-            Turn Long Videos
-            <br className="hero-break" /> Into{" "}
+            Turn Long Videos{" "}
+            <br className="hero-break" />
+            Into{" "}
             <span className="gradient-text">Viral Shorts.</span>
           </h1>
           <p>
@@ -252,7 +253,7 @@ export function UseCasePreview() {
                     src={item.image}
                     alt={item.alt}
                     fill
-                    sizes="(min-width: 1050px) 370px, (min-width: 650px) 45vw, 95vw"
+                    sizes="(min-width: 1288px) 390px, (min-width: 1000px) 30vw, (min-width: 650px) 47vw, calc(100vw - 40px)"
                     className="object-cover"
                   />
                 </div>
