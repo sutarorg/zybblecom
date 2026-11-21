@@ -2608,23 +2608,6 @@
   border-radius: 14px;
   background: radial-gradient(ellipse at 50% 18%, #f9f6ff, #eee7fb);
 }
-.ws-preview-settings {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-.ws-preview-settings li {
-  color: #52536a;
-  border: 1px solid #ebe6f5;
-  border-radius: 6px;
-  padding: 3px 7px;
-  background: #fff;
-  font-size: 0.7rem;
-  font-weight: 650;
-}
 .ws-preview-stage {
   position: relative;
   overflow: hidden;

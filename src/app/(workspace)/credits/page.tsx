@@ -32,7 +32,9 @@ export default async function Credits({
   }));
   const checkoutAvailable = packs.some(({ checkout }) => checkout.ready);
   const checkoutNotice = checkoutAvailable
-    ? "Test checkout only. No real payment will be collected."
+    ? packs[0].checkout.production
+      ? "You’ll pay securely through Dodo’s hosted checkout."
+      : "Test checkout only. No real payment will be collected."
     : packs.every(({ checkout }) => checkout.production)
       ? "Live checkout isn’t enabled. No payment can be collected here."
       : packs.every(({ checkout }) => !checkout.enabled)
@@ -123,6 +125,7 @@ export default async function Credits({
               {activePack === pack.id && <p role="status">Selected pack</p>}
               <CheckoutButton
                 packId={pack.id}
+                mode={pack.checkout.mode}
                 label="Buy Now"
                 unavailable={
                   pack.checkout.ready
@@ -130,7 +133,7 @@ export default async function Credits({
                     : checkoutAvailable
                       ? {
                           message:
-                            "This pack isn’t configured for test checkout in your region.",
+                            "This pack isn’t configured for checkout in your region.",
                         }
                       : { id: "credit-checkout-status" }
                 }

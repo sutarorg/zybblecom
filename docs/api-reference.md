@@ -16,7 +16,7 @@ JSON endpoints return `{success:true,data,requestId}` or `{success:false,error:{
 | GET    | `/api/credits/history`                 | Verified owner; optional `filter=all                                                            | purchases | usage` and opaque page cursor |
 | POST   | `/api/webhooks/dodo`                   | Raw UTF-8, max 128 KB; three Standard Webhooks headers                                          |
 
-Missing configuration fails closed. Profile/settings writes, support intake, uploads, media access, generation, ClipSDK webhook, and typed admin command/read APIs beyond the admin session guard are not wired yet.
+Missing configuration fails closed. Source uploads use the authenticated [`POST /api/uploads`](source-uploads.md) operations. Generation dispatch and reconciliation remain out of scope.
 
 ### Creator settings
 

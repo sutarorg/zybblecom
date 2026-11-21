@@ -32,9 +32,3 @@ export async function getLocalizedPricing() {
     amountMinor: pack.pricesMinor[currency],
   }));
 }
-export function getDodoProductId(packId: string, currency: Currency) {
-  if (!creditPacks.some((pack) => pack.id === packId)) return null;
-  return (
-    process.env[`DODO_PRODUCT_${packId.toUpperCase()}_${currency}`] || null
-  );
-}

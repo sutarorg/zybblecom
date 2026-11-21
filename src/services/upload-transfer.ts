@@ -100,17 +100,20 @@ export async function transferVideo(input: {
     });
   }
   const parts: { number: number; etag: string }[] = [];
+  let etag: string | undefined;
   try {
     if (signal.aborted) return { ok: false, error: "cancelled" };
     if (ticket.value.mode === "put") {
-      await putBlob(
-        ticket.value.url,
-        ticket.value.headers,
-        file,
-        signal,
-        report,
-      );
-    } else {
+      etag =
+        (await putBlob(
+          ticket.value.url,
+          ticket.value.headers,
+          file,
+          signal,
+          report,
+        )) ?? undefined;
+      if (!etag) return { ok: false, error: "unexpected" };
+    } else if (ticket.value.mode === "multipart") {
       const { partSize, completedParts, uploadId } = ticket.value;
       if (
         !Number.isSafeInteger(partSize) ||
@@ -138,21 +141,32 @@ export async function transferVideo(input: {
         if (signal.aborted) return { ok: false, error: "cancelled" };
         let etag = known.get(number);
         if (!etag) {
-          const part = await workspace.run("signPart", { uploadId, number });
-          if (!part.ok) return part;
           const blob = file.slice(start, Math.min(file.size, start + partSize));
-          etag =
-            (await putBlob(
-              part.value.url,
-              part.value.headers,
-              blob,
-              signal,
-              (loaded) => report(sent + loaded),
-            )) ?? undefined;
-          if (!etag) return { ok: false, error: "unexpected" };
+          // A retry of the same part number is safe; R2 keeps only the newest part.
+          for (let attempt = 0; attempt < 2 && !etag; attempt++) {
+            if (signal.aborted) return { ok: false, error: "cancelled" };
+            const part = await workspace.run("signPart", { uploadId, number });
+            if (!part.ok) return part;
+            try {
+              etag =
+                (await putBlob(
+                  part.value.url,
+                  part.value.headers,
+                  blob,
+                  signal,
+                  (loaded) => report(sent + loaded),
+                )) ?? undefined;
+              // Missing CORS-exposed ETag cannot be retried in place; resume using R2 ListParts.
+              if (!etag) return { ok: false, error: "unexpected" };
+            } catch (error) {
+              if (signal.aborted || attempt === 1) throw error;
+              report(sent);
+            }
+          }
           sent += blob.size;
           report(sent);
         }
+        if (!etag) return { ok: false, error: "unexpected" };
         parts.push({ number, etag });
       }
     }
@@ -162,6 +176,7 @@ export async function transferVideo(input: {
     const result = await workspace.run("finishUpload", {
       uploadId: ticket.value.uploadId,
       parts,
+      etag,
     });
     if (
       result.ok &&

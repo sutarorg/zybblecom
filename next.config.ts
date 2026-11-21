@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   allowedDevOrigins: ["*.e2b.app"],
   devIndicators: false,
+  // Use the Node build and one package instance across server entries.
+  serverExternalPackages: ["mediabunny"],
   poweredByHeader: false,
   // Cover the responsive hero slot at 2x density without jumping to 384px.
   images: { imageSizes: [32, 48, 64, 96, 128, 256, 320, 384] },
@@ -33,10 +35,12 @@ const config: NextConfig = {
         ],
       })),
       ...(process.env.VERCEL_ENV === "preview"
-        ? [{
-            source: "/:path*",
-            headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
-          }]
+        ? [
+            {
+              source: "/:path*",
+              headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+            },
+          ]
         : []),
     ];
   },

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { dodoSettings, testMode } from "@/lib/backend/dodo";
+import { dodoSettings } from "@/lib/backend/dodo";
 import { ApiError, readBody, respond } from "@/lib/backend/http";
 import { privilegedDB } from "@/lib/backend/supabase";
 
@@ -52,18 +52,16 @@ export async function POST(request: Request) {
     const { type, data } = event.data;
     const paymentId = data.payment_id;
     const db = privilegedDB();
-    const { error: saveError } = await db
-      .from("webhook_events")
-      .upsert(
-        {
-          provider: "dodo",
-          provider_event_id: eventId,
-          event_type: type,
-          signature_verified: true,
-          payload_sanitized: { paymentId: paymentId ?? null },
-        },
-        { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
-      );
+    const { error: saveError } = await db.from("webhook_events").upsert(
+      {
+        provider: "dodo",
+        provider_event_id: eventId,
+        event_type: type,
+        signature_verified: true,
+        payload_sanitized: { paymentId: paymentId ?? null },
+      },
+      { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
+    );
     if (saveError) throw new ApiError("unavailable", 503);
     const { data: stored, error: loadError } = await db
       .from("webhook_events")
@@ -121,7 +119,7 @@ export async function POST(request: Request) {
     if (
       payment.payment_id !== paymentId ||
       payment.metadata.zybble_user !== purchase.user_id ||
-      purchase.provider_mode !== testMode ||
+      purchase.provider_mode !== config.mode ||
       payment.checkout_session_id !== purchase.dodo_checkout_session_id
     )
       return mark("PURCHASE_BINDING_MISMATCH_REVIEW");
@@ -170,7 +168,7 @@ export async function POST(request: Request) {
       p_amount: payment.total_amount,
       p_currency: payment.currency,
       p_quantity: cart[0].quantity,
-      p_mode: testMode,
+      p_mode: config.mode,
     });
     if (grantError?.message === "PAYMENT_REVIEW_REQUIRED")
       return mark("PAYMENT_REVIEW_REQUIRED");

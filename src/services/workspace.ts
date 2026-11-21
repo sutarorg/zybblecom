@@ -1,3 +1,4 @@
+import { uploadAdapter } from "./upload-client";
 import { downloadClip } from "./clip-download-client";
 import type {
   WorkspaceAdapter,
@@ -29,7 +30,10 @@ export function createWorkspaceServices(
     subscribe: adapter.subscribe,
   };
 }
-export const workspace = createWorkspaceServices({ downloadClip });
+export const workspace = createWorkspaceServices({
+  downloadClip,
+  ...uploadAdapter,
+});
 export function workspaceMessage(error: WorkspaceError) {
   if (error === "unavailable")
     return "This workspace service isn’t connected yet. No changes were made.";
@@ -39,6 +43,8 @@ export function workspaceMessage(error: WorkspaceError) {
     return "Your available credits don’t cover this request. Review your balance before continuing.";
   if (error === "conflict")
     return "This changed while you were working. Refresh and try again.";
+  if (error === "invalid_media")
+    return "This file could not be verified. Choose an MP4, MOV, or WebM video up to 180 minutes and 8192 pixels per side.";
   if (error === "cancelled") return "The operation was cancelled.";
   return serviceMessage(error);
 }

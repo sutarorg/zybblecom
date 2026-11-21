@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { DodoPayments } from "dodopayments";
-import { checkoutEnabled, dodoSettings, testMode } from "@/lib/backend/dodo";
+import { checkoutEnabled, dodoSettings } from "@/lib/backend/dodo";
 import {
   ApiError,
   limitActor,
@@ -11,7 +11,9 @@ import {
 import { verifySession } from "@/lib/backend/session";
 import { privilegedDB } from "@/lib/backend/supabase";
 import { creditPacks } from "@/config/credit-packs";
-import { getDodoProductId, requestPricing } from "@/lib/pricing/region";
+import { hostedCheckoutURL } from "@/lib/payments/dodo-url";
+import { productVariable } from "@/lib/backend/dodo-readiness";
+import { requestPricing } from "@/lib/pricing/region";
 
 const schema = z.strictObject({
   packId: z.enum(["starter", "creator", "studio"]),
@@ -30,8 +32,10 @@ export async function POST(request: Request) {
     if (!profile.onboarding_completed) throw new ApiError("unauthorized", 403);
     await limitActor("checkout_user", user.id, 5, 600);
     const pack = creditPacks.find((p) => p.id === packId)!;
-    const product = getDodoProductId(packId, currency)!;
-    const { client, origin } = dodoSettings()!;
+    const config = dodoSettings();
+    if (!config) throw new ApiError("unavailable", 503);
+    const { client, origin, mode } = config;
+    const product = process.env[productVariable(mode, packId, currency)]!;
     const opts = {
       billing_currency: currency,
       billing_address: {
@@ -53,7 +57,7 @@ export async function POST(request: Request) {
       credits: pack.credits,
       amount_minor: pack.pricesMinor[currency],
       currency,
-      provider_mode: testMode,
+      provider_mode: mode,
       dodo_product_id: product,
     });
     if (error)
@@ -88,15 +92,9 @@ export async function POST(request: Request) {
       cancel_url: `${origin}/checkout/cancelled`,
       metadata: { zybble_purchase: requestKey, zybble_user: user.id },
     });
-    const url = session.checkout_url ? new URL(session.checkout_url) : null;
-    if (
-      !url ||
-      url.origin !== "https://test.checkout.dodopayments.com" ||
-      url.username ||
-      url.password ||
-      !url.pathname.startsWith("/session/") ||
-      !session.session_id
-    )
+    const url =
+      session.checkout_url && hostedCheckoutURL(session.checkout_url, mode);
+    if (!url || !/^[A-Za-z0-9_-]{1,160}$/.test(session.session_id ?? ""))
       throw new ApiError("unavailable", 503);
     const { data, error: saveError } = await db
       .from("credit_purchases")

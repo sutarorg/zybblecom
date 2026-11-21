@@ -1,10 +1,5 @@
 import Image from "next/image";
-import {
-  aspects,
-  captionStyles,
-  frames,
-  type GenerationOptions,
-} from "@/services/generation-schema";
+import type { GenerationOptions } from "@/services/generation-schema";
 
 const sample = "/images/generation-sample-16x9.webp";
 const sentence = "Small steps make the biggest difference".split(" ");
@@ -52,13 +47,6 @@ export function GenerationPreview({ options }: { options: GenerationOptions }) {
           )}
         </figure>
       </div>
-      <ul className="ws-preview-settings" aria-label="Preview settings">
-        <li>
-          {aspect} {aspects[aspect]}
-        </li>
-        <li>{frames[reframe]}</li>
-        <li>{captionStyles[captions]} captions</li>
-      </ul>
     </section>
   );
 }

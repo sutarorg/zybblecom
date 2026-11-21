@@ -4,29 +4,35 @@ import { authSettings } from "./supabase";
 import type { Currency } from "@/config/credit-packs";
 import {
   checkoutReadiness,
-  productionCheckoutOrigin,
-  testMode,
+  dodoEnvironmentMatches,
+  dodoVariable,
+  expectedDodoMode,
 } from "./dodo-readiness";
 
-export { testMode };
 export function dodoSettings() {
-  const bearerToken = process.env.DODO_PAYMENTS_API_KEY?.trim();
-  const webhookKey = process.env.DODO_WEBHOOK_SECRET?.trim();
+  const mode = expectedDodoMode(process.env);
+  const bearerToken =
+    process.env[dodoVariable(mode, "PAYMENTS_API_KEY")]?.trim();
+  const webhookKey = process.env[dodoVariable(mode, "WEBHOOK_SECRET")]?.trim();
   const config = authSettings();
   if (
     !config ||
     !bearerToken ||
     !webhookKey ||
-    process.env.DODO_MODE !== testMode ||
-    productionCheckoutOrigin(process.env)
+    !dodoEnvironmentMatches(process.env, mode)
   )
     return null;
   return {
     origin: config.origin,
-    webhookKey,
+    mode,
     client: new DodoPayments({
       bearerToken,
-      environment: testMode,
+      environment: mode,
+      // Pin the API host so an SDK environment override cannot mix modes.
+      baseURL:
+        mode === "live_mode"
+          ? "https://live.dodopayments.com"
+          : "https://test.dodopayments.com",
       webhookKey,
       timeout: 8000,
       maxRetries: 0,

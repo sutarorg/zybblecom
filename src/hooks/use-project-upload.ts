@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { transferVideo, type UploadProgress } from "@/services/upload-transfer";
 import type { Project, UploadTicket } from "@/services/workspace-contracts";
 import { workspace, workspaceMessage } from "@/services/workspace";
+// Keep the exact File identity across workspace navigation; never reuse parts for a different file.
+const sessions = new WeakMap<File, { title: string; uploadId: string }>();
 export function useProjectUpload() {
   const controller = useRef<AbortController>(null);
   const ticket = useRef<{ value: UploadTicket; file: File; title: string }>(
@@ -40,13 +42,17 @@ export function useProjectUpload() {
     setMessage("");
     setProgress(undefined);
     setPhase("sending");
+    const saved = sessions.get(file);
     const result = await transferVideo({
       file,
       title,
       signal: abort.signal,
-      resumeId: ticket.current?.value.uploadId,
+      resumeId:
+        ticket.current?.value.uploadId ??
+        (saved?.title === title ? saved.uploadId : undefined),
       onTicket(value) {
         ticket.current = { file, title, value };
+        sessions.set(file, { title, uploadId: value.uploadId });
         if (!abortOnUnmount.current) {
           setCanResume(value.mode === "multipart");
           setHasTicket(true);
@@ -60,17 +66,25 @@ export function useProjectUpload() {
         if (!abortOnUnmount.current) setPhase("verifying");
       },
     });
-    if (abort.signal.aborted && ticket.current) {
+    if (abort.signal.aborted && !abortOnUnmount.current && ticket.current) {
       const cancelled = await workspace.run(
         "cancelUpload",
         ticket.current.value.uploadId,
       );
-      if (cancelled.ok) ticket.current = null;
-      else if (!abortOnUnmount.current)
+      if (cancelled.ok) {
+        sessions.delete(file);
+        ticket.current = null;
+      } else if (!abortOnUnmount.current)
         setMessage(workspaceMessage(cancelled.error));
     }
     controller.current = null;
     verifying.current = false;
+    if (
+      result.ok ||
+      (!abort.signal.aborted &&
+        ["invalid_media", "cancelled", "not_found"].includes(result.error))
+    )
+      sessions.delete(file);
     if (abortOnUnmount.current) return;
     if (result.ok) {
       ticket.current = null;
@@ -78,7 +92,13 @@ export function useProjectUpload() {
       setHasTicket(false);
       setPhase("complete");
       setCanResume(false);
+      return true;
     } else {
+      if (
+        ["invalid_media", "cancelled", "not_found"].includes(result.error) &&
+        !abort.signal.aborted
+      )
+        ticket.current = null;
       setPhase(
         result.error === "cancelled" && !ticket.current ? "idle" : "failed",
       );
@@ -104,6 +124,7 @@ export function useProjectUpload() {
     );
     cancelling.current = false;
     if (result.ok) {
+      sessions.delete(ticket.current.file);
       ticket.current = null;
       setHasTicket(false);
       setCanResume(false);
