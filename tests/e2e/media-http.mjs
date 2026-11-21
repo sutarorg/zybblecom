@@ -26,6 +26,7 @@ const known = "job_q8w2e4r6t1y3u5i7o9p0";
 const unknown = "job_abcdefghijklmnopqrst";
 const received = [];
 const signupPasswords = [];
+const checkoutAttempts = [];
 const stubId = "6c3b041b-0d89-4bf6-b5dd-524d00372897";
 const stubEmail = "fixture@example.invalid";
 const stubUser = {
@@ -109,6 +110,13 @@ const stub = createServer(async (req, response) => {
     return wallet === null
       ? send(500, { message: "Synthetic wallet outage" })
       : send(200, { available: wallet, reserved: 0, consumed: 0 });
+  if (req.method === "POST" && path === "/rest/v1/credit_purchases") {
+    // Reject before the Dodo SDK can make any external call.
+    checkoutAttempts.push(await body());
+    return send(503, {
+      message: "Local fixture stops before the payment provider",
+    });
+  }
   if (
     req.method !== "POST" ||
     ![
@@ -160,6 +168,18 @@ const child = spawn(
       AUTH_STATE_SECRET: "a".repeat(32),
       CLIPSDK_API_KEY: "synthetic-clip-key",
       CLIPSDK_WEBHOOK_SECRET: secret,
+      ...(process.env.CONNECTED_BROWSER_QA === "1"
+        ? {
+            DODO_MODE: "test_mode",
+            DODO_CHECKOUT_ENABLED: "1",
+            DODO_PAYMENTS_BASE_URL: "https://must-not-use.example.invalid",
+            DODO_PAYMENTS_API_KEY: "local-fixture-not-a-provider-key",
+            DODO_WEBHOOK_SECRET: "local-fixture-signature",
+            DODO_PRODUCT_STARTER_USD: "pdt_fixture_starter",
+            DODO_PRODUCT_CREATOR_USD: "pdt_fixture_creator",
+            DODO_PRODUCT_STUDIO_USD: "pdt_fixture_studio",
+          }
+        : {}),
       NEXT_TELEMETRY_DISABLED: "1",
     },
     stdio: "inherit",
@@ -386,6 +406,17 @@ try {
         wallet = amount;
       },
     });
+    assert.deepEqual(
+      checkoutAttempts.map(({ pack_slug, provider_mode }) => [
+        pack_slug,
+        provider_mode,
+      ]),
+      [
+        ["starter", "test_mode"],
+        ["creator", "test_mode"],
+        ["studio", "test_mode"],
+      ],
+    );
   }
   const deliver = (
     id,

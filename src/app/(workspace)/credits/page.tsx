@@ -31,15 +31,14 @@ export default async function Credits({
     checkout: checkoutReadiness(process.env, pack.id, currency),
   }));
   const checkoutAvailable = packs.some(({ checkout }) => checkout.ready);
+  const { production, enabled } = packs[0].checkout;
   const checkoutNotice = checkoutAvailable
-    ? packs[0].checkout.production
+    ? production
       ? "You’ll pay securely through Dodo’s hosted checkout."
       : "Test checkout only. No real payment will be collected."
-    : packs.every(({ checkout }) => checkout.production)
-      ? "Live checkout isn’t enabled. No payment can be collected here."
-      : packs.every(({ checkout }) => !checkout.enabled)
-        ? "Test checkout is turned off for this environment."
-        : "Test checkout isn’t configured for this region.";
+    : !enabled
+      ? "Credit purchases are turned off right now. You can still review the packs."
+      : "Checkout isn’t available for these packs right now. No payment can be collected here.";
   const cards = [
     {
       label: "Available",
@@ -103,9 +102,7 @@ export default async function Credits({
             <p>Simple, one-time purchases. Your credits never expire.</p>
           </div>
         </div>
-        <p id="credit-checkout-status" className="ws-muted">
-          {checkoutNotice}
-        </p>
+        <p className="ws-muted">{checkoutNotice}</p>
         <div className="pricing-grid">
           {packs.map((pack) => (
             <article
@@ -123,22 +120,27 @@ export default async function Credits({
                 <strong>{pack.credits} credits</strong>
               </div>
               {activePack === pack.id && <p role="status">Selected pack</p>}
-              <CheckoutButton
-                packId={pack.id}
-                mode={pack.checkout.mode}
-                label="Buy Now"
-                unavailable={
-                  pack.checkout.ready
-                    ? undefined
-                    : checkoutAvailable
-                      ? {
-                          message:
-                            "This pack isn’t configured for checkout in your region.",
-                        }
-                      : { id: "credit-checkout-status" }
-                }
-                variant={pack.id === "creator" ? "primary" : "secondary"}
-              />
+              {pack.checkout.ready ? (
+                <CheckoutButton
+                  packId={pack.id}
+                  mode={pack.checkout.mode}
+                  label="Buy Now"
+                  variant={pack.id === "creator" ? "primary" : "secondary"}
+                />
+              ) : (
+                <>
+                  <Action
+                    href={`/pricing/${pack.id}`}
+                    variant="secondary"
+                    arrow={false}
+                  >
+                    View {pack.name} pack
+                  </Action>
+                  {checkoutAvailable && (
+                    <p>Checkout for this pack is unavailable right now.</p>
+                  )}
+                </>
+              )}
               <ul>
                 {pack.features.map((feature) => (
                   <li key={feature}>

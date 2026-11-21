@@ -27,7 +27,10 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("request", (request) => {
-      if (!["GET", "HEAD", "OPTIONS"].includes(request.method()))
+      if (
+        !["GET", "HEAD", "OPTIONS"].includes(request.method()) &&
+        request.url() !== `${origin}/api/checkout`
+      )
         errors.push(`Unexpected write: ${request.url()}`);
     });
     const go = async (path) => {
@@ -106,6 +109,20 @@ export async function connectedWorkspace({ origin, cookies, setWallet }) {
         path: `${shots}/${width}-profile.png`,
         fullPage: true,
       });
+    }
+    await go("/credits");
+    for (const pack of ["starter", "creator", "studio"]) {
+      const card = page.locator(`.ws-packs .pack-${pack}`);
+      const buy = card.getByRole("button", { name: "Buy Now", exact: true });
+      const response = page.waitForResponse(`${origin}/api/checkout`);
+      await buy.click();
+      const result = await response;
+      assert.equal(result.request().postDataJSON().packId, pack);
+      assert.equal(result.status(), 503);
+      const alert = card.getByRole("alert");
+      await alert.waitFor();
+      assert.match(await alert.innerText(), /Checkout isn’t available/);
+      assert(await buy.isEnabled());
     }
     assert.deepEqual(errors, []);
     console.log(
