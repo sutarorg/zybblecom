@@ -293,8 +293,8 @@ export function AuthForm({
                     onBlur={(e) => blur(e.currentTarget.form)}
                   />{" "}
                   <span>
-                    I acknowledge the Terms and have read the Privacy notice
-                    linked below.
+                    I acknowledge the Terms of Service and have read the Privacy
+                    Policy linked below.
                   </span>
                 </label>
               ) : (

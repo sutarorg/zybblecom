@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
+import { legalLinks } from "@/config/legal";
 import { navigation } from "@/config/site";
 import { Action, Brand } from "@/components/ui/primitives";
 import { accountServer } from "@/lib/services/account-server";
@@ -62,6 +63,7 @@ const footerGroups = [
       { href: "/login", label: "Log in" },
     ],
   },
+  { title: "Legal", links: legalLinks },
 ];
 export function Footer() {
   return (

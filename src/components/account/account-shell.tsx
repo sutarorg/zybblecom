@@ -76,9 +76,9 @@ export function AccountFrame({
           {children}
           {legal && (
             <div className="account-legal">
-              <Link href="/privacy">Privacy</Link>
+              <Link href="/privacy">Privacy Policy</Link>
               <span aria-hidden="true">·</span>
-              <Link href="/terms">Terms</Link>
+              <Link href="/terms">Terms of Service</Link>
               <span aria-hidden="true">·</span>
               <Link href="/help">Help centre</Link>
             </div>

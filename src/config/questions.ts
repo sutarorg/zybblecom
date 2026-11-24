@@ -1,3 +1,5 @@
+import { creditPacks } from "./credit-packs";
+
 export type Topic = "Getting started" | "Clips & exports" | "Credits & pricing";
 export type Question = {
   id: string;
@@ -52,8 +54,7 @@ export const questions: readonly Question[] = [
     id: "studio-availability",
     topic: "Credits & pricing",
     question: "Are bulk and priority processing guaranteed in Studio?",
-    answer:
-      "No. Studio includes bulk processing when available and priority processing subject to availability. It is a 400-credit pack, not unlimited processing.",
+    answer: `No. Studio is a fixed pack of ${creditPacks.find((pack) => pack.id === "studio")!.credits} credits, not unlimited processing. Bulk or priority processing is not guaranteed.`,
   },
   {
     id: "publish",

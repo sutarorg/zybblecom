@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { checkoutReadiness } from "@/lib/backend/dodo-readiness";
 import {
   Check,
@@ -103,7 +104,15 @@ export default async function Credits({
           </div>
         </div>
         <p id="credit-checkout-notice" className="ws-muted">
-          {checkoutNotice}
+          {checkoutNotice} Review our{" "}
+          <Link className="ws-billing-policy" href="/terms">
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link className="ws-billing-policy" href="/refund-policy">
+            Refund Policy
+          </Link>{" "}
+          before paying.
         </p>
         <div className="pricing-grid">
           {packs.map((pack) => (
