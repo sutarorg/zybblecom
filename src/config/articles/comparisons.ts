@@ -30,7 +30,8 @@ export const comparisonArticles = [
       "podcast clip workflow",
     ],
     category: "Video repurposing",
-    alt: "A branching diagram with a source recording splitting into an editing timeline and three portrait clips",
+    alt:
+      "OpusClip video fragments beside the kind of transcript and waveform timeline used in Descript",
     updatedAt: "2026-11-20",
     wordCount: 1887,
     links: [
@@ -61,7 +62,8 @@ export const comparisonArticles = [
       "AI clipping alternatives",
     ],
     category: "Creator workflows",
-    alt: "A creator comparing a camera, phone and notebook at a sunlit desk",
+    alt:
+      "Repurpose.io illustration with a video source routed to audio, articles, images, short video, and a calendar",
     sections: [
       {
         id: "diagnose",
@@ -126,7 +128,8 @@ export const comparisonArticles = [
       "brand voice content workflows",
     ],
     category: "Creator workflows",
-    alt: "A writer marking up a printed draft beside a laptop and plum stationery",
+    alt:
+      "A purple quill and drafts for Jasper beside branching automation blocks for Copy.ai",
     sections: [
       {
         id: "difference",
@@ -188,7 +191,8 @@ export const comparisonArticles = [
       "AI podcast repurposing",
     ],
     category: "Creator workflows",
-    alt: "A podcast microphone in front of a laptop displaying an audio waveform",
+    alt:
+      "A podcast microphone sends a waveform toward three documents beneath Castmagic and Podsqueeze labels",
     sections: [
       {
         id: "same-episode",
@@ -251,7 +255,8 @@ export const comparisonArticles = [
       "cost per approved clip",
     ],
     category: "Video repurposing",
-    alt: "Calculator and small video camera beside a laptop on a lavender desk",
+    alt:
+      "Three displays of video clips and credit tokens labeled OpusClip, Munch, and Vizard",
     sections: [
       {
         id: "snapshot",

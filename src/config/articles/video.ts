@@ -12,7 +12,8 @@ export const videoArticles = [
     description:
       "Repurpose a YouTube video from a clean master. Choose the right edit for portrait, landscape or square, then verify captions, rights and the uploaded file.",
     category: "Video repurposing",
-    alt: "A wide spreadsheet recording branching into portrait, landscape and square compositions",
+    alt:
+      "A widescreen mountain biking video adapted to portrait, landscape, and square formats",
     updatedAt: "2026-11-20",
     wordCount: 1504,
     featured: true,
@@ -53,7 +54,8 @@ export const videoArticles = [
     description:
       "Choose self-contained podcast moments, protect guest context, and build a practical clip-editing and review process for your show.",
     category: "Video repurposing",
-    alt: "Two broadcast microphones and headphones on a dark walnut podcast desk",
+    alt:
+      "Two people recording a podcast beside three portrait clip previews and an audio waveform",
     links: [
       captionGuide,
       youtubeShorts,
@@ -134,7 +136,8 @@ export const videoArticles = [
     description:
       "Make short video captions readable and accurate. Work through a timing example, pick the right caption track, and check the finished upload on a phone.",
     category: "Video repurposing",
-    alt: "An illustrated portrait video beside two timed subtitle cues and a waveform",
+    alt:
+      "A presenter on a phone with a high-contrast caption band beside a waveform and two timed cues",
     links: [
       {
         href: "https://www.bbc.co.uk/accessibility/forproducts/guides/subtitles/",
@@ -158,7 +161,8 @@ export const videoArticles = [
     description:
       "Turn widescreen footage into 9:16 without losing the shot’s point. Compare center crops, speaker tracking, and full-frame fit across four types of footage.",
     category: "Video repurposing",
-    alt: "A landscape composition next to three portrait treatments: center crop, speaker crop, and full-frame inset",
+    alt:
+      "A widescreen crop outline and the resulting portrait view both keep a speaker and the pink cube visible",
     links: [
       {
         href: "https://helpx.adobe.com/premiere/desktop/add-video-effects/commonly-used-effects/add-auto-reframe-effect-to-a-sequence.html",
