@@ -143,15 +143,6 @@
   box-shadow: inset 3px 0 #6338f5;
   color: #542dcc;
 }
-.ad-nav a i {
-  display: block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #7045ec;
-  margin-left: auto;
-  flex: none;
-}
 .ad-side-foot {
   margin-top: auto;
   padding-top: 10px;

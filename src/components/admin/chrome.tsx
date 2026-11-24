@@ -149,7 +149,6 @@ export function AdminChrome({
                 >
                   <Icon size={17} aria-hidden="true" />
                   <span>{title}</span>
-                  {active?.[1] === url && <i aria-hidden="true" />}
                 </Link>
               ))}
             </div>
