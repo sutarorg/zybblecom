@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { site } from "@/config/site";
+import { faviconMetadata } from "@/lib/seo/metadata";
 import "@/styles/globals.css";
 
 const jakarta = localFont({
@@ -14,14 +15,7 @@ export const metadata: Metadata = {
   title: { default: "Zybble — AI Video Repurposing", template: "%s | Zybble" },
   description: site.description,
   manifest: "/manifest.webmanifest",
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "16x16 32x32 48x48", type: "image/x-icon" },
-      { url: "/icons/favicon-96.png", sizes: "96x96", type: "image/png" },
-      { url: "/icon.svg", sizes: "any", type: "image/svg+xml" },
-    ],
-    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
-  },
+  icons: faviconMetadata(),
   robots:
     process.env.VERCEL_ENV === "preview"
       ? { index: false, follow: false }

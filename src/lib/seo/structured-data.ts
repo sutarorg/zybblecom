@@ -22,7 +22,6 @@ export const websiteGraph = {
       "@id": `${homeUrl}#website`,
       "@type": "WebSite",
       name: site.name,
-      alternateName: site.name,
       url: homeUrl,
       description: site.description,
       publisher: { "@id": publisher["@id"] },
