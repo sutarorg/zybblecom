@@ -50,6 +50,21 @@ export const marketingSeo = {
     "Answers to common questions about Zybble: supported formats, how AI clipping works, pricing, exports, and getting started with video repurposing.",
     "Zybble FAQ, video repurposing questions, AI clip generator FAQ, content repurposing help",
   ],
+  "/terms": [
+    "Zybble Terms of Service",
+    "Read the terms for Zybble accounts, AI video tools, one-time credit purchases, digital delivery and customer responsibilities.",
+    "Zybble terms of service, video repurposing service terms, credit purchase terms",
+  ],
+  "/privacy": [
+    "Zybble Privacy Policy",
+    "Learn how Zybble handles account details, uploaded media, payment records and support messages, and how to exercise your privacy rights.",
+    "Zybble privacy policy, account privacy, uploaded video data",
+  ],
+  "/refund-policy": [
+    "Zybble Refund & Cancellation Policy",
+    "See when one-time Zybble credit purchases are final, what exceptions apply, and how to report a missing, duplicate or unauthorized payment.",
+    "Zybble refund policy, cancellation policy, digital credit purchase refunds",
+  ],
   "/blog": [
     "Blog Posts",
     "Practical guides on repurposing YouTube videos, podcasts and blogs into short clips, captions, carousels and posts that grow your audience.",

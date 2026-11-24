@@ -2175,6 +2175,11 @@
 .ws-studio-billing .price-card .pack-price strong {
   font-size: clamp(25px, 4cqi, 38px);
 }
+.ws-billing-policy {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
 .ws-credit-trust {
   display: flex;
   align-items: start;

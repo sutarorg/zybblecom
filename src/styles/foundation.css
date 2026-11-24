@@ -427,9 +427,6 @@ button:disabled {
   .footer-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-  .footer-grid > div {
-    grid-column: auto;
-  }
 }
 @media (min-width: 1000px) {
   .grid-three {
@@ -444,7 +441,10 @@ button:disabled {
     display: flex;
   }
   .footer-grid {
-    grid-template-columns: 1.65fr repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1.65fr repeat(4, minmax(0, 1fr));
+  }
+  .footer-grid > div {
+    grid-column: auto;
   }
 }
 @media (min-width: 760px) {

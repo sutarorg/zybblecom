@@ -7,7 +7,7 @@ import { marketingSeo } from "../../src/config/marketing-seo";
 import { marketingMetadata, pageMetadata } from "../../src/lib/seo/metadata";
 
 test("public pages use their exact titles, descriptions and keyword sets", () => {
-  assert.equal(Object.keys(marketingSeo).length, 11);
+  assert.equal(Object.keys(marketingSeo).length, 14);
   for (const path of Object.keys(
     marketingSeo,
   ) as (keyof typeof marketingSeo)[]) {

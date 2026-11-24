@@ -1,5 +1,6 @@
 import { authSettings } from "@/lib/backend/supabase";
 import { contactSettings } from "@/lib/backend/contact-config";
+import { supportEmail } from "@/config/legal";
 import { CircleHelp, Wallet } from "lucide-react";
 import { marketingMetadata } from "@/lib/seo/metadata";
 import { PageIntro, ResourceCard } from "@/components/shared/page";
@@ -27,6 +28,12 @@ export default function Contact() {
             connected={Boolean(authSettings() && contactSettings(process.env))}
           />
           <aside className="contact-aside" aria-label="Other ways to get help">
+            <ResourceCard
+              href={`mailto:${supportEmail}`}
+              title="Email Zybble support"
+              text={supportEmail}
+              icon={CircleHelp}
+            />
             <ResourceCard
               href="/help"
               title="Help centre"

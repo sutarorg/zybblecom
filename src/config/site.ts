@@ -1,3 +1,5 @@
+import { legalLinks } from "./legal";
+
 export const site = {
   name: "Zybble",
   url: (process.env.SITE_URL || "https://zybble.com").replace(/\/$/, ""),
@@ -25,4 +27,5 @@ export const publicPaths = [
   "/help",
   "/contact",
   "/faq",
+  ...legalLinks.map(({ href }) => href),
 ] as const;

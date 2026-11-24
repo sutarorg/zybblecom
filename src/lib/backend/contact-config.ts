@@ -1,6 +1,5 @@
 import { z } from "zod";
-
-const productionRecipient = "tejassutar.business@gmail.com";
+import { supportEmail } from "@/config/legal";
 const address = z.string().max(254).pipe(z.email());
 export const contactFields = z.strictObject({
   name: z
@@ -26,7 +25,7 @@ export function contactSettings(
   const from = address.safeParse(env.CONTACT_FROM_EMAIL?.trim());
   const to = address.safeParse(
     env.VERCEL_ENV === "production"
-      ? productionRecipient
+      ? supportEmail
       : env.CONTACT_TO_EMAIL?.trim(),
   );
   if (!key || !from.success || !to.success) return null;
