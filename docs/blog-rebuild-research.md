@@ -1,0 +1,34 @@
+# Rebuild research and fact checks
+
+Working ledger, not publication approval. Search results were used to understand intent; competing or contradictory pricing excerpts were not used as product evidence. Date used for verified comparisons: November 20, 2026. Illustrative workflows are not product trials or customer data.
+
+## OpusClip vs Descript — rewritten
+
+- Primary query: `OpusClip vs Descript`. Commercial investigation; recurring questions: can both find clips, does one replace a long-form editor, what costs money, and what happens with multi-speaker video? Search landscape included OpenAIToolsHub, ToolChase, Prizmad, ShortStack and FrameOS. Recurring gaps: treating clip discovery as exclusive to OpusClip; flattening media hours into AI credits; mixing annual prices and monthly limits.
+- Official evidence: [OpusClip pricing](https://www.opus.pro/pricing) (monthly $15 Starter, $29 Pro, watermark-free export paid); [credit rules](https://help.opus.pro/docs/article/how-are-credits-consumed) (150/300 credits, one per source minute for standard processing, monthly credits expire after 60 days); [Descript pricing](https://www.descript.com/pricing) (Hobbyist $24 monthly/$16 annual equivalent, Creator $35/$24; media hours and AI credits separate); [Create Clips](https://help.descript.com/repurpose/create-clips-from-your-content) (candidate count/length, portrait layouts, editable compositions); [Descript terminology](https://help.descript.com/descript-terms-and-concepts) (single-track beta centering vs multicam cutting).
+- Original approach: evaluate which master the team owns, compare a 220-minute workload without conflating meters, and run a same-source approval pilot. Staged body: **1,297 words**.
+
+## How to repurpose a YouTube video — rewritten
+
+- Primary query: `how to repurpose a YouTube video`. Informational/production intent; choose an eligible source, reframe without losing the demonstration, and export a working Short. Search landscape included Creatoressentials, Upload-Post, SendShort, Mixcord and Kajabi. Gaps: articles often unify the native 60-second cut with three-minute upload eligibility or conflate YouTube Clips with Shorts.
+- Official evidence: [edit a video into a Short](https://support.google.com/youtube/answer/12836917?hl=en) (eligible public own upload, up to 60 seconds, linked original); [three-minute Short eligibility and claim rule](https://support.google.com/youtube/answer/15424877?hl=en) (square/vertical eligible; active claim blocks a Short over one minute); [download your own uploads](https://support.google.com/youtube/answer/56100?hl=en) (720p/360p fallback); [upload encoding](https://support.google.com/youtube/answer/1722171?hl=en) (MP4/H.264/AAC, preserve source frame rate; article does not make that partner guidance a requirement); [related video](https://support.google.com/youtube/answer/14075157?hl=en) (advanced features required); [captions](https://support.google.com/youtube/answer/2734796?hl=en).
+- Original approach: one cabinet tutorial, with rights, visual evidence and verification checkpoints; not the separate 20-asset editorial slate. Staged body: **1,214 words**.
+
+## How to turn one YouTube video into 20 pieces of content — rewritten
+
+- Primary query: `how to turn one YouTube video into 20 pieces of content`. Informational/slate-planning intent. Search landscape included OverseerOS, Eliro, Digitelia, Reelsfarm and Klypse. Gaps: counting identical cross-posts and demanding twenty clips out of every source.
+- Official evidence: [YouTube Posts](https://support.google.com/youtube/answer/7124474?hl=en) (text, image, video, poll, quiz, scheduling); [related videos in Shorts](https://support.google.com/youtube/answer/14075157?hl=en); [YouTube content performance](https://support.google.com/youtube/answer/12220281?hl=en) (stayed to watch and engaged views as Shorts-specific measures).
+- Original approach: a ceramics photography tutorial, five pieces each for video, written material, visuals and audience participation. Distinct reasons to watch/read/use/answer, with a reduced first batch and no fabricated metrics. Staged body: **1,301 words**.
+
+## Research in progress — no editorial sign-off yet
+
+| Slug | Search landscape and gap | Evidence/next step |
+| --- | --- | --- |
+| `repurpose-io-alternatives` | `Repurpose.io alternatives`: Castmagic, PostOnce, Mirra, G2, Reddit creator threads. Some rank unrelated products together; distinguish trigger-based transfer from production. | Verify Repurpose.io plus relevant VEED, Munch, Vizard, Klap, Riverside, Buffer, Later and Metricool features, exports and plans. |
+| `jasper-vs-copy-ai` | `Jasper vs Copy.ai`: ComputerTech, AI Tool Briefing, eesel, KeepyLabs, Fritz; contradictory old pricing and long-vs-short framing. | Verify Jasper brand context and pipeline access; verify Copy.ai GTM workflows, brand context and plan restrictions. |
+| `castmagic-vs-podsqueeze` | `Castmagic vs Podsqueeze`: Castmagic and Podsqueeze comparisons, EpisodeOps comparison and agency guide, MakerStack. Direct competitor pages disagree about clip tools and free tiers. | Verify both live pricing/usage pages and a concrete quote-verification workflow. |
+| `opusclip-munch-vizard-pricing` | `OpusClip Munch Vizard pricing comparison`: AIBirdview, Cut, Influencer AI Agents, Forkoff, UGCMarketplace. Incompatible Munch product generations and stale figures. | Verify Vizard pricing/storage/export and Munch scope and billing directly; do not equate current Munch Studio with a discontinued or separate legacy offer. Reverify immediately prepublication. |
+| `short-video-captions` | VideoCaptions.AI, Hollyland, MCPMarket, Quso, OpusClip. Emphasis on animation can obscure timing and accessibility. | [W3C captions](https://www.w3.org/WAI/media/av/captions/), [YouTube Studio captions](https://support.google.com/youtube/answer/2734796?hl=en), [TikTok viewer accessibility](https://support.tiktok.com/en/using-tiktok/exploring-videos/accessibility-for-watching-videos), [CapCut edit/translate guide](https://www.capcut.com/resource/how-to-translate-and-edit-video-captions-in-capcut). Verify extra platform requirements as applicable. |
+| `vertical-video-framing` | OpusClip, Klap, Loopdesk, Cinevision, Adobe, VEED. A generic safe zone or speaker lock is not enough for demos. | [Premiere Auto Reframe](https://helpx.adobe.com/premiere/desktop/add-video-effects/commonly-used-effects/add-auto-reframe-effect-to-a-sequence.html), [VEED resize](https://www.veed.io/tools/resize-video), [OpusClip vertical tool](https://www.opus.pro/tools/vertical-video-maker). Verify other target-platform limits. |
+
+The other ten slugs still need independent searches and fact-checking. Google people-first, starter guide and Search Essentials were reviewed; see the staging ledger for their URLs. The brief’s word-count threshold is an editorial acceptance criterion, not a Google ranking rule.

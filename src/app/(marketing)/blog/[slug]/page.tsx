@@ -1,3 +1,4 @@
+import { ArticleFrame } from "@/components/marketing/articles/article-frame";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -69,7 +70,14 @@ export default async function BlogArticle({ params }: Props) {
           },
         }}
       />
-      {CustomView ? (
+      {article.edition ? (
+        <ArticleFrame
+          article={article}
+          edition={article.edition}
+          path={path}
+          url={url}
+        />
+      ) : CustomView ? (
         <>
           <JsonLd
             value={{

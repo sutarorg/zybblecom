@@ -1,18 +1,18 @@
+import { youtubeContentPlanEdition } from "./editions/youtube-video-twenty-posts";
 import { editorialArticle, helpfulContent } from "./shared";
 
 export const creatorGuides = [
   editorialArticle({
     slug: "youtube-video-twenty-posts",
-    title: "How to turn one YouTube video into 20 distinct posts",
+    title: "How to Turn One YouTube Video Into 20 Pieces of Content",
     description:
-      "Plan twenty posts from a single YouTube tutorial. See a worked studio example, a four-week slate, and how to avoid repeating one idea across channels.",
+      "Plan 20 distinct videos, articles, visuals and community posts from one YouTube tutorial. See a complete ceramics studio example and what to publish first.",
     category: "Creator workflows",
-    alt:
-      "A long studio video fans out into a short, an audio clip, an article, a carousel, a photo, and a poll",
+    alt: "One video becomes twenty content ideas, shown as clips, audio, illustrated cards and a poll",
     updatedAt: "2026-11-20",
-    wordCount: 1632,
+    edition: youtubeContentPlanEdition,
     keywords: [
-      "turn one YouTube video into twenty posts",
+      "how to turn one YouTube video into 20 pieces of content",
       "20 content repurposing ideas",
       "YouTube content calendar",
       "video to social posts",
@@ -27,8 +27,8 @@ export const creatorGuides = [
         label: "YouTube Help: related videos in Shorts",
       },
       {
-        href: "https://support.google.com/youtube/answer/9002587?hl=en",
-        label: "YouTube Insights reports",
+        href: "https://support.google.com/youtube/answer/12220281?hl=en",
+        label: "YouTube Help: content performance and engaged views",
       },
     ],
   }),
@@ -44,8 +44,7 @@ export const creatorGuides = [
       "Buffer Add to Queue",
     ],
     category: "Creator workflows",
-    alt:
-      "A connected workflow from media on the Zapier side through an approval check to a Buffer publishing queue",
+    alt: "Automate your content workflow, with Zapier and Buffer beside a media-to-approval-to-queue sequence",
     sections: [
       {
         id: "architecture",
@@ -107,8 +106,7 @@ export const creatorGuides = [
       "LinkedIn document PDF",
     ],
     category: "Creator workflows",
-    alt:
-      "A long article on one side and a sequence of five illustrated LinkedIn carousel pages on the other",
+    alt: "Blog to LinkedIn carousel, with four editorial slides unfolding from a source page",
     sections: [
       {
         id: "extract",
@@ -170,8 +168,7 @@ export const creatorGuides = [
       "social media scheduling vs clipping",
     ],
     category: "Creator workflows",
-    alt:
-      "A Hootsuite scheduling calendar beside Zybble’s lightning mark and two portrait video clips",
+    alt: "Hootsuite versus AI repurposing, with a scheduling calendar beside a reel of portrait clips",
     sections: [
       {
         id: "separate",
@@ -233,8 +230,7 @@ export const creatorGuides = [
       "repurpose long-form content",
     ],
     category: "Video repurposing",
-    alt:
-      "Video, audio, and a written page pass through a lavender prism and emerge as new publishing formats",
+    alt: "AI content repurposing, illustrated by video, audio and text passing through a prism into new formats",
     sections: [
       {
         id: "definition",
