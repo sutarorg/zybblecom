@@ -1805,18 +1805,6 @@
   box-shadow: none;
   color: #5429cd;
 }
-.ws-shell .ws-navigation [aria-current]::after {
-  content: "";
-  margin-left: auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #6338f5;
-  flex: none;
-}
-.ws-shell.ws-collapsed .ws-sidebar .ws-navigation [aria-current]::after {
-  display: none;
-}
 .ws-shell .ws-sidebar-credit {
   padding: 10px;
   border: 1px solid #ece3ff;
