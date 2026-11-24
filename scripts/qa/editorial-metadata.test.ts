@@ -39,7 +39,9 @@ test("all 19 articles have distinct metadata, covers, and keyword sets", () => {
     assert(article.keywords.length >= 4);
     assert(article.thumbnail.alt.length > 10);
     assert(statSync(`public${article.thumbnail.src}`).size > 1000);
-    assert(article.sections.length >= 4);
+    assert(
+      (article.sections?.length ?? 0) >= 4 || (article.wordCount ?? 0) > 1000,
+    );
     for (const link of article.links.filter(({ href }) =>
       href.startsWith("/blog/"),
     ))

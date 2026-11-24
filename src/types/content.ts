@@ -6,7 +6,9 @@ export type Article = {
   category: string;
   author: { name: string; url?: string };
   publishedAt: string;
-  sections: readonly {
+  updatedAt?: string;
+  wordCount?: number;
+  sections?: readonly {
     id: string;
     title: string;
     paragraphs: readonly string[];

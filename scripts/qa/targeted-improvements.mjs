@@ -135,7 +135,9 @@ try {
       structured.some(
         ({ "@type": type, image }) =>
           type === "BlogPosting" &&
-          image.endsWith(`${path.replace("/blog/", "/images/blog/")}.webp`),
+          image?.url?.endsWith(
+            `${path.replace("/blog/", "/images/blog/")}.webp`,
+          ),
       ),
       path,
     );

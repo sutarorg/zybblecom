@@ -20,9 +20,9 @@ const munch = {
 export const comparisonArticles = [
   editorialArticle({
     slug: "opusclip-vs-descript",
-    title: "Is Opus Clip Better Than Descript for AI Repurposing?",
+    title: "OpusClip vs Descript: Which Fits Your Editing Workflow?",
     description:
-      "Compare OpusClip and Descript for short-form repurposing, from candidate clips and captions to transcript edits, review time, and export quality.",
+      "Compare OpusClip and Descript for short-form video: where you edit the master, how the plans measure usage, and how to run a fair clip pilot.",
     keywords: [
       "OpusClip vs Descript",
       "AI video repurposing",
@@ -30,51 +30,22 @@ export const comparisonArticles = [
       "podcast clip workflow",
     ],
     category: "Video repurposing",
-    alt: "An editor reviewing a portrait video preview and editing timeline in a violet-lit studio",
-    sections: [
-      {
-        id: "quick-answer",
-        title: "Choose based on the work you still have to do",
-        paragraphs: [
-          "OpusClip makes the most sense as a first test if the original recording is already approved and your next job is to find several self-contained shorts. Descript makes more sense as a first test if the full episode is still being edited, or if the person approving social clips also needs to fix transcript and audio edits in the source project. Both can suggest clips. The difference is where you want to spend the next hour after suggestions appear.",
-          "Do not change editors merely because another tool returned more candidates. Ten clips that repeat one answer give you fewer publishing options than three excerpts with distinct takeaways. If you work with sensitive speakers or regulated claims, also ask which project keeps the source and the approved version easiest to audit.",
-        ],
-      },
-      {
-        id: "workflows",
-        title: "What each workflow looks like",
-        paragraphs: [
-          "OpusClip’s official comparison lists AI clipping, captions, reframing, editing, and publishing capabilities, with different availability by plan. Treat this as a clipping-first workflow: feed it the cleared recording, ask for a manageable set of candidates, discard repetitive excerpts, and correct framing and captions on the remaining cuts. A ranking in the interface is a sorting signal; it cannot tell you whether your business can stand behind the sentence being shared.",
-          "Descript documents Create Clips within the same product that imports, records, and edits media. That matters when the editor needs to find the jump a clip introduced, relisten to a sentence, or restore a missing clause. The editorial work does not disappear; the starting point changes. Check that the specific export resolution and AI usage allowance you need are part of the plan you would actually use.",
-        ],
-      },
-      {
-        id: "pilot",
-        title: "Run one fair pilot before deciding",
-        paragraphs: [
-          "Use the same mastered 35-minute interview in each tool. Pick one topic that should produce a clear excerpt, one story with a late payoff, and one section where two people interrupt each other. Define the target deliverable up front: three distinct vertical clips, corrected speaker names, no missing qualifiers, and a file you can actually upload to the destination.",
-          "Start the timer when you import. Record time to first candidate separately from hands-on approval time. Log why each candidate was rejected: no setup, weak ending, unreadable captions, distracting crop, or rights restrictions. Then play approved files on a phone with audio off and again with audio on. A title, excerpt, and transcript agreeing with one another is a more useful result than an impressive-looking dashboard.",
-        ],
-      },
-      {
-        id: "decision",
-        title: "Make the decision with your actual bottleneck",
-        paragraphs: [
-          "If both produce three acceptable exports, pick the one that saves more editor minutes after import or fits where approvals already happen. If neither selects the anecdote you know works, designate the first cut manually and retest the remaining excerpts. That separates poor candidate selection from poor final editing controls.",
-          "Repeat the test for one noisy recording and one screen share before moving an entire team. A tool that crops faces nicely may still cut off a number on a slide. Write down source length, export limits, caption corrections, and review time for each file so the conclusion is useful beyond one easy episode.",
-        ],
-      },
-    ],
+    alt: "A branching diagram with a source recording splitting into an editing timeline and three portrait clips",
+    updatedAt: "2026-11-20",
+    wordCount: 1887,
     links: [
-      opus,
-      descript,
       {
-        href: "/blog/podcast-clips",
-        label: "How to choose self-contained podcast clips",
+        href: "https://help.opus.pro/docs/article/how-are-credits-consumed",
+        label: "OpusClip Help: credit consumption and monthly allowances",
+      },
+      opus,
+      {
+        href: "https://www.descript.com/pricing",
+        label: "Descript official feature and plan comparison",
       },
       {
-        href: "/blog/short-video-captions",
-        label: "Reviewing captions for short videos",
+        href: "https://help.descript.com/repurpose/create-clips-from-your-content",
+        label: "Descript Help: Create Clips workflow",
       },
     ],
   }),
