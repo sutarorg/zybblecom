@@ -1,3 +1,4 @@
+import { youtubeShortsEdition } from "./editions/repurpose-youtube-video";
 import {
   captionGuide,
   editorialArticle,
@@ -8,14 +9,13 @@ import {
 export const videoArticles = [
   editorialArticle({
     slug: "repurpose-youtube-video",
-    title: "How to repurpose a YouTube video: Source files, edits, and exports",
+    title: "How to Repurpose a YouTube Video Into Shorts",
     description:
-      "Repurpose a YouTube video from a clean master. Choose the right edit for portrait, landscape or square, then verify captions, rights and the uploaded file.",
+      "Turn your YouTube video into a Short with an in-app remix or a separate edit. Check the source rights, portrait framing, captions and final upload.",
     category: "Video repurposing",
-    alt:
-      "A widescreen mountain biking video adapted to portrait, landscape, and square formats",
+    alt: "YouTube video to Shorts, illustrated by a wildlife shot and two portrait excerpts",
     updatedAt: "2026-11-20",
-    wordCount: 1504,
+    edition: youtubeShortsEdition,
     featured: true,
     keywords: [
       "how to repurpose a YouTube video",
@@ -24,6 +24,14 @@ export const videoArticles = [
       "clean video master",
     ],
     links: [
+      {
+        href: "https://support.google.com/youtube/answer/12836917?hl=en",
+        label: "YouTube Help: edit an eligible video into a Short",
+      },
+      {
+        href: "https://support.google.com/youtube/answer/14075157?hl=en",
+        label: "YouTube Help: add a related video to a Short",
+      },
       {
         href: "https://support.google.com/youtube/answer/56100?hl=en",
         label: "Download your own uploaded videos",
@@ -54,8 +62,7 @@ export const videoArticles = [
     description:
       "Choose self-contained podcast moments, protect guest context, and build a practical clip-editing and review process for your show.",
     category: "Video repurposing",
-    alt:
-      "Two people recording a podcast beside three portrait clip previews and an audio waveform",
+    alt: "Turn podcasts into clips, with two hosts, a waveform and portrait video previews",
     links: [
       captionGuide,
       youtubeShorts,
@@ -136,8 +143,7 @@ export const videoArticles = [
     description:
       "Make short video captions readable and accurate. Work through a timing example, pick the right caption track, and check the finished upload on a phone.",
     category: "Video repurposing",
-    alt:
-      "A presenter on a phone with a high-contrast caption band beside a waveform and two timed cues",
+    alt: "AI video captions guide, illustrated by a phone with caption bands and a timed waveform",
     links: [
       {
         href: "https://www.bbc.co.uk/accessibility/forproducts/guides/subtitles/",
@@ -161,8 +167,7 @@ export const videoArticles = [
     description:
       "Turn widescreen footage into 9:16 without losing the shot’s point. Compare center crops, speaker tracking, and full-frame fit across four types of footage.",
     category: "Video repurposing",
-    alt:
-      "A widescreen crop outline and the resulting portrait view both keep a speaker and the pink cube visible",
+    alt: "Master 9:16 video framing, with a presenter and pink sample shown in two crops",
     links: [
       {
         href: "https://helpx.adobe.com/premiere/desktop/add-video-effects/commonly-used-effects/add-auto-reframe-effect-to-a-sequence.html",

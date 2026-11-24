@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { statSync } from "node:fs";
 import { test } from "node:test";
 import { articles } from "../../src/config/editorial";
+import { editionWordCount } from "../../src/lib/utils/article-edition";
 import { marketingSeo } from "../../src/config/marketing-seo";
 import { marketingMetadata, pageMetadata } from "../../src/lib/seo/metadata";
 
@@ -39,9 +40,42 @@ test("all 19 articles have distinct metadata, covers, and keyword sets", () => {
     assert(article.keywords.length >= 4);
     assert(article.thumbnail.alt.length > 10);
     assert(statSync(`public${article.thumbnail.src}`).size > 1000);
-    assert(
-      (article.sections?.length ?? 0) >= 4 || (article.wordCount ?? 0) > 1000,
-    );
+    if (article.edition) {
+      const edition = article.edition;
+      assert(editionWordCount(edition) >= 1000, article.slug);
+      const ids = edition.sections.map(({ id }) => id);
+      assert.equal(new Set(ids).size, ids.length, article.slug);
+      assert(
+        ids.every((id) => !["conclusion", "references"].includes(id)),
+        article.slug,
+      );
+      const internal = new Set<string>();
+      for (const { blocks } of edition.sections) {
+        for (const block of blocks) {
+          if (block.kind === "table") {
+            assert(
+              block.rows.every((row) => row.length === block.headers.length),
+              article.slug,
+            );
+          }
+          if (block.kind !== "paragraph" || typeof block.content === "string")
+            continue;
+          for (const part of block.content) {
+            if (typeof part === "string" || !part.href.startsWith("/"))
+              continue;
+            internal.add(part.href);
+            if (part.href.startsWith("/blog/"))
+              assert(slugs.has(part.href.slice(6)), part.href);
+          }
+        }
+      }
+      assert(internal.size >= 3 && internal.size <= 6, article.slug);
+    } else {
+      assert(
+        (article.sections?.length ?? 0) >= 4 || (article.wordCount ?? 0) > 1000,
+        article.slug,
+      );
+    }
     for (const link of article.links.filter(({ href }) =>
       href.startsWith("/blog/"),
     ))

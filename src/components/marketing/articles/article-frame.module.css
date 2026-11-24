@@ -1,0 +1,88 @@
+.frame .container {
+  padding-block: 2rem 4rem;
+}
+.frame .share {
+  justify-content: flex-start;
+  margin-block: 1rem;
+}
+.frame .cover {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  border-radius: 1rem;
+  margin: 0 0 2rem;
+}
+.frame .toc {
+  display: block;
+  padding: 1.25rem 1.5rem;
+  margin-block-end: 2rem;
+}
+.frame .toc ul {
+  margin: 0.5rem 0 0;
+  padding-inline-start: 1.25rem;
+}
+.frame .toc a {
+  display: inline;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.frame .body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.frame .body p a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.frame .body > section,
+.frame section[id] {
+  scroll-margin-top: 7rem;
+}
+.frame .body :is(ol, ul) {
+  padding-inline-start: 1.5rem;
+  margin-block: 1rem;
+}
+.frame .body li + li {
+  margin-block-start: 0.6rem;
+}
+.frame .tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  margin-block: 1.5rem;
+}
+.frame .tableScroll:focus-visible {
+  outline: 2px solid #6338f5;
+  outline-offset: 3px;
+}
+.frame table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 36rem;
+  text-align: start;
+}
+.frame caption {
+  text-align: start;
+  font-weight: 700;
+  padding: 0.8rem 1rem;
+}
+.frame :is(th, td) {
+  padding: 0.65rem 1rem;
+  vertical-align: top;
+  border-top: 1px solid var(--line);
+  text-align: start;
+}
+.frame thead {
+  background: #f5f2ff;
+  color: #17182c;
+}
+.frame .cta {
+  padding: clamp(1.25rem, 4vw, 2rem);
+  margin-block-start: 2rem;
+}
+.frame .cta p {
+  margin-block: 0.75rem 1.25rem;
+}

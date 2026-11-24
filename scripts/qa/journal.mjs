@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import { launchBrowser } from "./browser.mjs";
 
 const origin = process.env.ORIGIN ?? "http://localhost:3100";
 const custom = {
-  "opusclip-vs-descript": "comparison-desk",
+  "opusclip-vs-descript": "journal-article",
   "short-video-captions": "timing-clinic",
   "vertical-video-framing": "framing-field-guide",
-  "repurpose-youtube-video": "production-bench",
-  "youtube-video-twenty-posts": "editorial-slate",
+  "repurpose-youtube-video": "journal-article",
+  "youtube-video-twenty-posts": "journal-article",
 };
 const browser = await launchBrowser();
 try {
@@ -46,9 +47,13 @@ try {
     const expectedImage = `/images/blog/${slug}.webp`;
     const image = await page.request.get(`${origin}${expectedImage}`);
     assert.equal(image.status(), 200, expectedImage);
-    const { width, height, format } = await sharp(
-      await image.body(),
-    ).metadata();
+    const bytes = await image.body();
+    assert.deepEqual(
+      bytes,
+      await readFile(`public${expectedImage}`),
+      expectedImage,
+    );
+    const { width, height, format } = await sharp(bytes).metadata();
     assert.deepEqual(
       [width, height, format],
       [1200, 675, "webp"],
@@ -160,7 +165,7 @@ try {
       await page.setViewportSize({ width: 320, height: 844 });
       if (slug === "youtube-video-twenty-posts") {
         const sections = article.locator(
-          'section[aria-labelledby^="slate-"]:has(ol[start])',
+          "[data-article-body] > section:has(ol[start])",
         );
         assert.equal(await sections.count(), 4);
         assert.deepEqual(
@@ -183,18 +188,39 @@ try {
       if (slug === "vertical-video-framing") {
         assert.equal(await article.locator("figure:has(svg)").count(), 3);
       }
-      if (slug === "repurpose-youtube-video") {
+      if (custom[slug] === "journal-article") {
         assert.equal(
           await article
-            .getByRole("navigation", { name: "Production steps" })
+            .getByRole("navigation", { name: "Table of contents" })
             .getByRole("link")
             .count(),
-          5,
+          (await article.locator("[data-article-body] > section").count()) + 1,
+        );
+        assert.equal(
+          await article
+            .getByRole("region", { name: /Scrollable table/ })
+            .count(),
+          1,
+          path,
+        );
+        assert.equal(
+          await article
+            .getByRole("navigation", { name: "Share this article" })
+            .count(),
+          1,
+          path,
+        );
+        const coverRatio = await article
+          .locator("img.article-cover")
+          .evaluate((image) => image.clientWidth / image.clientHeight);
+        assert(
+          Math.abs(coverRatio - 16 / 9) < 0.015,
+          `${path} cover ratio ${coverRatio}`,
         );
       }
       if (slug === "opusclip-vs-descript") {
         const table = article.getByRole("region", {
-          name: /Scrollable OpusClip/,
+          name: /Scrollable table: Choosing an editing workflow/,
         });
         assert(
           await table.evaluate((node) => node.scrollWidth > node.clientWidth),
@@ -213,6 +239,45 @@ try {
     const response = await page.request.get(`${origin}${href}`);
     assert(response.ok(), `${href}: ${response.status()}`);
   }
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    const listed = new Set();
+    for (let number = 1; number <= 3; ++number) {
+      await page.goto(`${origin}/blog${number === 1 ? "" : `?page=${number}`}`);
+      const cards = await page.locator("main article.article-card").all();
+      for (const card of cards) {
+        const path = await card.locator("a.article-read").getAttribute("href");
+        const image = card.locator("img.article-thumbnail");
+        await image.scrollIntoViewIfNeeded();
+        assert(
+          await image.evaluate(async (img) => {
+            await img.decode();
+            return img.naturalWidth > 0;
+          }),
+          path,
+        );
+        listed.add(path);
+      }
+    }
+    assert.deepEqual(
+      [...listed].sort(),
+      [...paths].sort(),
+      `listing width ${width}`,
+    );
+    for (const path of paths) {
+      await page.goto(`${origin}${path}`);
+      const cover = page.locator("main article img.article-cover");
+      await cover.scrollIntoViewIfNeeded();
+      assert(
+        await cover.evaluate(async (img) => {
+          await img.decode();
+          return img.naturalWidth > 0;
+        }),
+        path,
+      );
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${origin}/blog`);
   await page.getByRole("link", { name: "Next page" }).click();
   await page.waitForURL("**/blog?page=2");
@@ -230,7 +295,7 @@ try {
   await page.getByRole("heading", { name: "Related articles" }).waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    `Verified 19 raw routes and cover files, ${internal.size} internal targets, ${Object.keys(custom).length} article layouts at four widths, keyboard table, and listing/search/filter.`,
+    `Verified 19 raw routes and cover files, ${internal.size} internal targets, ${Object.keys(custom).length} article layouts at four widths, keyboard table, all card and cover decodes at three widths, and listing/search/filter.`,
   );
 } finally {
   await browser.close();

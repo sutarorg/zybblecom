@@ -1,3 +1,4 @@
+import { opusclipDescriptEdition } from "./editions/opusclip-vs-descript";
 import { editorialArticle } from "./shared";
 
 const opus = {
@@ -20,9 +21,9 @@ const munch = {
 export const comparisonArticles = [
   editorialArticle({
     slug: "opusclip-vs-descript",
-    title: "OpusClip vs Descript: Which Fits Your Editing Workflow?",
+    title: "OpusClip vs Descript: Batch Clips or Edit the Full Episode?",
     description:
-      "Compare OpusClip and Descript for short-form video: where you edit the master, how the plans measure usage, and how to run a fair clip pilot.",
+      "Compare OpusClip and Descript on clip selection, transcript editing, pricing and usage limits. Use a one-episode pilot to choose the right workflow.",
     keywords: [
       "OpusClip vs Descript",
       "AI video repurposing",
@@ -30,10 +31,9 @@ export const comparisonArticles = [
       "podcast clip workflow",
     ],
     category: "Video repurposing",
-    alt:
-      "OpusClip video fragments beside the kind of transcript and waveform timeline used in Descript",
+    alt: "OpusClip and Descript compared, with a filmstrip, portrait excerpts and a transcript waveform",
     updatedAt: "2026-11-20",
-    wordCount: 1887,
+    edition: opusclipDescriptEdition,
     links: [
       {
         href: "https://help.opus.pro/docs/article/how-are-credits-consumed",
@@ -47,6 +47,11 @@ export const comparisonArticles = [
       {
         href: "https://help.descript.com/repurpose/create-clips-from-your-content",
         label: "Descript Help: Create Clips workflow",
+      },
+      {
+        href: "https://help.descript.com/descript-terms-and-concepts",
+        label:
+          "Descript Help: transcript editing, speaker centering and multicam terminology",
       },
     ],
   }),
@@ -62,8 +67,7 @@ export const comparisonArticles = [
       "AI clipping alternatives",
     ],
     category: "Creator workflows",
-    alt:
-      "Repurpose.io illustration with a video source routed to audio, articles, images, short video, and a calendar",
+    alt: "Repurpose.io alternatives, illustrated by a video hub routing media into different formats",
     sections: [
       {
         id: "diagnose",
@@ -128,8 +132,7 @@ export const comparisonArticles = [
       "brand voice content workflows",
     ],
     category: "Creator workflows",
-    alt:
-      "A purple quill and drafts for Jasper beside branching automation blocks for Copy.ai",
+    alt: "Jasper and Copy.ai compared, with a pen nib, folded drafts and connected automation blocks",
     sections: [
       {
         id: "difference",
@@ -191,8 +194,7 @@ export const comparisonArticles = [
       "AI podcast repurposing",
     ],
     category: "Creator workflows",
-    alt:
-      "A podcast microphone sends a waveform toward three documents beneath Castmagic and Podsqueeze labels",
+    alt: "Castmagic and Podsqueeze compared, with podcast audio transforming into three documents",
     sections: [
       {
         id: "same-episode",
@@ -255,8 +257,7 @@ export const comparisonArticles = [
       "cost per approved clip",
     ],
     category: "Video repurposing",
-    alt:
-      "Three displays of video clips and credit tokens labeled OpusClip, Munch, and Vizard",
+    alt: "AI clipper pricing comparison, with three stacks of clips and processing tokens",
     sections: [
       {
         id: "snapshot",
