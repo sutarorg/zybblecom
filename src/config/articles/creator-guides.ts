@@ -7,7 +7,8 @@ export const creatorGuides = [
     description:
       "Plan twenty posts from a single YouTube tutorial. See a worked studio example, a four-week slate, and how to avoid repeating one idea across channels.",
     category: "Creator workflows",
-    alt: "A studio floor plan and four rows of colored cards representing a twenty-post editorial slate",
+    alt:
+      "A long studio video fans out into a short, an audio clip, an article, a carousel, a photo, and a poll",
     updatedAt: "2026-11-20",
     wordCount: 1632,
     keywords: [
@@ -43,7 +44,8 @@ export const creatorGuides = [
       "Buffer Add to Queue",
     ],
     category: "Creator workflows",
-    alt: "Two coworkers mapping a social publishing process on a glass board",
+    alt:
+      "A connected workflow from media on the Zapier side through an approval check to a Buffer publishing queue",
     sections: [
       {
         id: "architecture",
@@ -105,7 +107,8 @@ export const creatorGuides = [
       "LinkedIn document PDF",
     ],
     category: "Creator workflows",
-    alt: "A designer arranging cream, charcoal, and lilac page proofs on a desk",
+    alt:
+      "A long article on one side and a sequence of five illustrated LinkedIn carousel pages on the other",
     sections: [
       {
         id: "extract",
@@ -167,7 +170,8 @@ export const creatorGuides = [
       "social media scheduling vs clipping",
     ],
     category: "Creator workflows",
-    alt: "A social media editor reviewing a phone video beside a calendar and laptop",
+    alt:
+      "A Hootsuite scheduling calendar beside Zybble’s lightning mark and two portrait video clips",
     sections: [
       {
         id: "separate",
@@ -229,7 +233,8 @@ export const creatorGuides = [
       "repurpose long-form content",
     ],
     category: "Video repurposing",
-    alt: "A creator’s small recording desk with a camera, phone, microphone and notebook",
+    alt:
+      "Video, audio, and a written page pass through a lavender prism and emerge as new publishing formats",
     sections: [
       {
         id: "definition",

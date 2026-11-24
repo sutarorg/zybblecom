@@ -19,7 +19,8 @@ export const workflowArticles = [
     description:
       "A practical source-to-publish workflow for small teams, including an asset record, human approvals, and safe automation between a tracker and a scheduler.",
     category: "Creator workflows",
-    alt: "Two colleagues organizing headphones, a notebook, and production cards on a pale desk",
+    alt:
+      "A connected sequence of planning, media creation, review, approval, and publishing stages",
     links: [
       helpfulContent,
       {
@@ -99,7 +100,8 @@ export const workflowArticles = [
     description:
       "Turn a podcast transcript into a self-contained article with a query-driven outline, attributed examples, and a repeatable fact-checking pass.",
     category: "Creator workflows",
-    alt: "A writer reviewing a printout next to a recorder and headphones",
+    alt:
+      "Sound waves from a podcast recorder flow into a structured article with sections and a pull quote",
     links: [
       helpfulContent,
       captionGuide,
@@ -179,7 +181,8 @@ export const workflowArticles = [
     description:
       "A slide-by-slide workflow for rewriting an article as a readable visual sequence, with an example, design checks, and a publishing handoff.",
     category: "Creator workflows",
-    alt: "A designer arranging violet and ivory cards in a sequence",
+    alt:
+      "An idea from a long article becomes a sequence of four illustrated portrait cards",
     links: [
       helpfulContent,
       {
@@ -260,7 +263,8 @@ export const workflowArticles = [
     description:
       "Set a clear repurposing scope, define which clips need approval, and deliver secure, versioned exports without adding unnecessary project overhead.",
     category: "Creator workflows",
-    alt: "Two colleagues reviewing a wall of video stills in a post-production suite",
+    alt:
+      "Three people review client video previews around a table with an approval marker and delivery folder",
     links: [
       youtubeShorts,
       captionGuide,
@@ -338,7 +342,8 @@ export const workflowArticles = [
     description:
       "Compare subscriptions, source-minute pricing and manual editing using the same pilot, with examples that separate software fees from real delivery costs.",
     category: "Creator workflows",
-    alt: "A stopwatch, calculator, memory card and lens on a violet-gray desk",
+    alt:
+      "A balance scale compares film, editing time, and software credits with finished portrait clips",
     links: [
       captionGuide,
       youtubeShorts,
