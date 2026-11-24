@@ -8,7 +8,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...paths.map((path) => ({ url: `${site.url}${path}` })),
     ...articles.map((article) => ({
       url: `${site.url}/blog/${article.slug}`,
-      lastModified: article.publishedAt,
+      lastModified: article.updatedAt ?? article.publishedAt,
     })),
   ];
 }

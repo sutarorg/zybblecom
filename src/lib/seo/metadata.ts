@@ -33,6 +33,7 @@ export function pageMetadata(
     exactTitle?: boolean;
     article?: {
       publishedTime: string;
+      modifiedTime?: string;
       authorUrl?: string;
       thumbnail?: { src: string; alt: string };
     };
@@ -72,6 +73,9 @@ export function pageMetadata(
           siteName: site.name,
           images,
           publishedTime: options.article.publishedTime,
+          ...(options.article.modifiedTime
+            ? { modifiedTime: options.article.modifiedTime }
+            : {}),
           authors: options.article.authorUrl
             ? [options.article.authorUrl]
             : undefined,

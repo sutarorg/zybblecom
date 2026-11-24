@@ -1,68 +1,33 @@
-import {
-  editorialArticle,
-  helpfulContent,
-  youtubeShorts,
-  youtubeCaptions,
-} from "./shared";
+import { editorialArticle, helpfulContent } from "./shared";
 
 export const creatorGuides = [
   editorialArticle({
     slug: "youtube-video-twenty-posts",
-    title: "How to Turn One YouTube Video Into Twenty Posts",
+    title: "How to turn one YouTube video into 20 distinct posts",
     description:
-      "Build a twenty-post plan from a single YouTube tutorial with a numbered example, channel-specific angles, and a manageable two-week publishing calendar.",
+      "Plan twenty posts from a single YouTube tutorial. See a worked studio example, a four-week slate, and how to avoid repeating one idea across channels.",
+    category: "Creator workflows",
+    alt: "A studio floor plan and four rows of colored cards representing a twenty-post editorial slate",
+    updatedAt: "2026-11-20",
+    wordCount: 1632,
     keywords: [
       "turn one YouTube video into twenty posts",
+      "20 content repurposing ideas",
       "YouTube content calendar",
-      "repurpose YouTube tutorials",
       "video to social posts",
     ],
-    category: "Creator workflows",
-    alt: "Overhead view of a video production desk with grouped lavender planning notes",
-    sections: [
-      {
-        id: "working-example",
-        title: "Start from one practical video, not twenty formats",
-        paragraphs: [
-          "Imagine you made a 28-minute tutorial on improving a podcast recording in a small room. It includes an untreated-room demo, a mic placement adjustment, an equipment comparison, a listening checklist, and a conclusion. You have permission to reuse the original audio and visuals. Download your own master and open the approved transcript so each planned post has a traceable source.",
-          "Create a row for each post with an ID, audience question, source timestamp, asset format, and next action. Timestamps should come from your own master; the ideas below are a planning example, not evidence from a published Zybble project. Reject any new row whose question and answer are already handled by another row.",
-        ],
-      },
-      {
-        id: "posts-1-10",
-        title: "Posts 1–10: the demonstrations and supporting visuals",
-        paragraphs: [
-          "1. A cold-open Short comparing the same sentence before and after mic placement. 2. A vertical demonstration of the distance change, shot with a side view. 3. A clip identifying the sound of room reflections. 4. A short answer to ‘Should I buy a new mic first?’ 5. A comparison of two speaking angles with the exact same gain. These five videos give the viewer five different reasons to stop, even though they point back to one source.",
-          "6. A carousel showing the order of adjustments. 7. A single diagram of the room layout. 8. A screenshot showing where the level peaked, with a text explanation. 9. A photo of the low-cost setup with its limitations noted. 10. A saveable pre-recording checklist. Do not use a graph as decoration: label the signal, what changed, and what the viewer should check on their own equipment. Include a text counterpart so the lesson is not only visual.",
-        ],
-      },
-      {
-        id: "posts-11-20",
-        title: "Posts 11–20: writing and conversation",
-        paragraphs: [
-          "11. A LinkedIn post about the trade-off between room treatment and new gear. 12. A text post walking through one recording mistake. 13. A three-step listening exercise readers can do immediately. 14. A poll about the audience’s most noticeable recording issue. 15. A follow-up post answering the most useful poll response. Leave the poll follow-up as a placeholder until there is a real response; never invent audience participation to fill the slot.",
-          "16. A community question asking people to share how they test their own recordings. 17. A short blog post explaining the decision tree in more depth. 18. An email with the recording checklist as the main takeaway. 19. An FAQ post on when the advice does not apply. 20. A closing post that collects what changed after a real follow-up test and points back to the tutorial. Each format has a job: demonstrate, explain, collect feedback, or send someone to a deeper resource.",
-        ],
-      },
-      {
-        id: "delivery",
-        title: "Schedule in two waves and review what earns a follow-up",
-        paragraphs: [
-          "In the first week, lead with a comparison, then rotate a written lesson, a checklist, and a question. In the second week, publish the other examples and use the early responses to shape the remaining slots. Twenty posts is an inventory, not an instruction to flood one feed. Reorder or retire a post if a previous one already answered its question.",
-          "Export vertical video with enough margin for the destination’s interface, check captions word for word, and review music rights for each platform. YouTube’s Shorts eligibility and caption-upload documentation are linked below. Review completion on clips, saves on checklists, and qualified replies on discussions; no single metric tells you whether all twenty pieces were useful. Keep the angles that helped readers and apply them to the next source before inventing new formats.",
-        ],
-      },
-    ],
     links: [
-      youtubeShorts,
-      youtubeCaptions,
       {
-        href: "/blog/repurpose-youtube-video",
-        label: "The source-to-asset planning guide",
+        href: "https://support.google.com/youtube/answer/7124474?hl=en",
+        label: "YouTube Help: create and schedule Posts",
       },
       {
-        href: "/blog/short-video-captions",
-        label: "Review your short-form captions",
+        href: "https://support.google.com/youtube/answer/14075157?hl=en",
+        label: "YouTube Help: related videos in Shorts",
+      },
+      {
+        href: "https://support.google.com/youtube/answer/9002587?hl=en",
+        label: "YouTube Insights reports",
       },
     ],
   }),
