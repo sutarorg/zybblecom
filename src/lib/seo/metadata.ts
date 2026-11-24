@@ -2,6 +2,27 @@ import type { Metadata } from "next";
 import { marketingSeo } from "@/config/marketing-seo";
 import { site } from "@/config/site";
 
+// Keep stable assets and let the homepage advertise the 96px PNG first.
+export function faviconMetadata(preferred: "ico" | "png" = "ico") {
+  const png = {
+    url: "/icons/favicon-96.png",
+    sizes: "96x96",
+    type: "image/png",
+  };
+  const ico = {
+    url: "/favicon.ico",
+    sizes: "16x16 32x32 48x48",
+    type: "image/x-icon",
+  };
+  return {
+    icon: [
+      ...(preferred === "png" ? [png, ico] : [ico, png]),
+      { url: "/icon.svg", sizes: "any", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  } satisfies NonNullable<Metadata["icons"]>;
+}
+
 export function pageMetadata(
   path: string,
   title: string,

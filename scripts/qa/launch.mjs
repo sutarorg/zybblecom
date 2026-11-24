@@ -171,6 +171,10 @@ try {
   outcomes["untrusted-geo"] = "PASS";
   await stopApp();
   const origin = await startApp("app", ciEnv);
+  await step("seo-http", node, ["scripts/qa/seo-http.mjs"], {
+    ...ciEnv,
+    ORIGIN: origin,
+  });
   for (const name of suites) {
     await step(name, node, [`scripts/qa/${name}.mjs`], {
       ...ciEnv,
